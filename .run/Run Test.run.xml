@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Run Test" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="dev.ultreon.test.Main" />
+    <module name="python-vm.compiled.main" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="dev.ultreon.test.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+      <option name="RunConfigurationTask" enabled="true" run_configuration_name="Run Compiler" run_configuration_type="Application" />
+    </method>
+  </configuration>
+</component>
