@@ -11,6 +11,6 @@ plugins {
 }
 
 rootProject.name = "python-vm"
-include("app")
-include("compiled")
+include("compiler")
+include("testing")
 include("pylib")

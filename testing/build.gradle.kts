@@ -2,12 +2,8 @@ plugins {
     id("java")
 }
 
-group = "dev.ultreon.pythonvm"
-version = "1.0"
-
-base {
-    archivesName.set("pylib")
-}
+group = "dev.ultreon.quantum"
+version = "unspecified"
 
 repositories {
     mavenCentral()
@@ -16,11 +12,14 @@ repositories {
 dependencies {
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+
+    if (file("../build/libs/example-1.0.jar").exists()) {
+        implementation(files("../build/libs/example-1.0.jar"))
+    }
+
+    implementation(project(":pylib"))
 }
 
 tasks.test {
     useJUnitPlatform()
 }
-
-java.sourceCompatibility = JavaVersion.VERSION_1_8
-java.targetCompatibility = JavaVersion.VERSION_1_8

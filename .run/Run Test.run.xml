@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Run Test" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="dev.ultreon.test.Main" />
-    <module name="python-vm.compiled.main" />
+    <module name="python-vm.testing.main" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="dev.ultreon.test.*" />

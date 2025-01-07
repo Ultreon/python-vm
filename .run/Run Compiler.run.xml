@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Run Compiler" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="dev.ultreon.pythonc.App" />
-    <module name="python-vm.app.main" />
+    <module name="python-vm.compiler.main" />
     <extension name="coverage">
       <pattern>
         <option name="PATTERN" value="dev.ultreon.pythonc.*" />
