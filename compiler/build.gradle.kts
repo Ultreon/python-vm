@@ -6,63 +6,74 @@
  */
 
 plugins {
-    // Apply the application plugin to add support for building a CLI application in Java.
-    application
+  // Apply the application plugin to add support for building a CLI application in Java.
+  application
 }
 
 group = "dev.ultreon.pythonvm"
 version = "1.0"
 
 repositories {
-    // Use Maven Central for resolving dependencies.
-    mavenCentral()
+  // Use Maven Central for resolving dependencies.
+  mavenCentral()
+}
+
+sourceSets {
+  main {
+    java {
+      srcDir("src/main/gen")
+    }
+  }
 }
 
 dependencies {
-    // Use JUnit Jupiter for testing.
-    testImplementation(libs.junit.jupiter)
+  implementation(libs.annotations)
+  // Use JUnit Jupiter for testing.
+  testImplementation(libs.junit.jupiter)
 
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+  testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    // This dependency is used by the application.
-    implementation(libs.guava)
+  // This dependency is used by the application.
+  implementation(libs.guava)
 
-    // Antlr4 Runtime
-    implementation(libs.antlr.runtime)
+  // Antlr4 Runtime
+  implementation(libs.antlr.runtime)
 
-    // ASM
-    implementation(libs.asm)
-    implementation(libs.asm.tree)
+  // ASM
+  implementation(libs.asm)
+  implementation(libs.asm.tree)
 
-    implementation(project(":pylib"))
+  implementation(project(":pylib"))
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
+  toolchain {
+    languageVersion = JavaLanguageVersion.of(21)
+  }
 }
 
 application {
-    // Define the main class for the application.
-    mainClass = "org.example.App"
+  // Define the main class for the application.
+  mainClass = "org.example.App"
 }
 
 tasks.register<Jar>("dist") {
-    manifest {
-        attributes["Main-Class"] = "dev.ultreon.pythonc.App"
-    }
+  manifest {
+    attributes["Main-Class"] = "dev.ultreon.pythonc.App"
+  }
 
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) } + sourceSets.main.get().output)
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  from(
+    configurations.runtimeClasspath.get()
+      .map { if (it.isDirectory) it else zipTree(it) } + sourceSets.main.get().output)
 
-    archiveFileName.set("pythonvm-compiler.jar")
+  archiveFileName.set("pythonvm-compiler.jar")
 }
 
 tasks.jar.get().finalizedBy("dist")
 
 tasks.named<Test>("test") {
-    // Use JUnit Platform for unit tests.
-    useJUnitPlatform()
+  // Use JUnit Platform for unit tests.
+  useJUnitPlatform()
 }

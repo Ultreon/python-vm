@@ -1,28 +1,29 @@
-from java.awt import Button
-from java.awt import Frame
-from java.lang import Runnable, String
+from java.awt import Button, Frame
+from java.lang import Runnable, System, Long
+from java.util import Objects
 
-STRING: str = "Hello, world!"
+STRING = "Hello, world!"
 
-
-# noinspection PyMethodMayBeStatic
-class MyRunnable(Runnable):
-    def run(self):
-        print("Hello, world from a runnable!")
+HASHCODE = Objects.hashCode("Hello, world!")
+INTEGER = 42
+FLOAT = 3.14
 
 
 def init():
-    number: int = 42
+    print(Objects.hashCode("Hello, world!"))
 
-    frame: Frame = Frame()
+    print(HASHCODE)
+    print(INTEGER)
+    print(FLOAT)
+    print(STRING)
+
+    number = 3.141592653589793
+
+    frame = Frame()
     frame.setVisible(True)
 
-    button: Button = Button()
-    button.setLabel("Hello, world!")
-    # frame.add(button)  # TODO
+    button = Button("Click me!")
+    button.setLabel("Click me!")
+    frame.add(button)
 
-    MyRunnable().run()
-
-    String.valueOf(Button().getLabel())
-
-    print("Hey there!", STRING)
+    print("Hey there!", number)

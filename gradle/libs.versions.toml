@@ -7,6 +7,7 @@ junit-jupiter = "5.11.1"
 antlr4 = "4.13.1"
 antlr4-runtime = "4.13.1"
 asm = "9.5"
+annotations = "24.0.0"
 
 [libraries]
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
@@ -15,3 +16,4 @@ antlr-runtime = { module = "org.antlr:antlr4-runtime", version.ref = "antlr4-run
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+annotations = { group = "org.jetbrains", name = "annotations", version.ref = "annotations" }

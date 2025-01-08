@@ -1,0 +1,904 @@
+package dev.ultreon.pythonc;
+
+import com.google.common.collect.ImmutableList;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Type;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.*;
+import java.util.stream.Collectors;
+
+import static org.objectweb.asm.Opcodes.*;
+
+final class FuncCall implements Symbol {
+    public static final String E_CLASS_NOT_IN_CP = "Class not found in classpath (yet), maybe the class isn't initialized yet: %s (%s)";
+    final PythonParser.PrimaryContext atom;
+    final PythonParser.PrimaryContext primaryContext;
+    final PythonParser.ArgumentsContext arguments;
+    private Method method;
+    private Constructor<?> constructor;
+    private boolean kwargs;
+    private boolean varArgs;
+    private boolean dynCtor;
+    private Object callArgs;
+    private Type owner;
+    private Type[] paramTypes;
+
+    FuncCall(PythonParser.PrimaryContext atom, PythonParser.PrimaryContext primaryContext,
+             PythonParser.ArgumentsContext arguments) {
+        this.atom = atom;
+        this.primaryContext = primaryContext;
+        this.arguments = arguments;
+    }
+
+    public void write(MethodVisitor mv, PythonCompiler compiler) {
+        mv.visitLineNumber(atom.getStart().getLine(), new Label());
+        Object visit = compiler.visit(atom);
+        if (visit == null) {
+            throw new RuntimeException("atom not supported for:\n" + atom.getText());
+        }
+
+        if (visit instanceof TypedName) {
+            throw new RuntimeException("atom not supported for:\n" + atom.getText());
+        } else if (visit instanceof PyObjectRef) {
+            // Print the array
+            Symbol symbol = (Symbol) compiler.visit(atom);
+            if (symbol == null) {
+                throw new CompilerException("Symbol '" + name() + "' not found (" + compiler.getLocation(this) + ")");
+            }
+            String named = symbol.name();
+            Type owner = symbol.type(compiler);
+            if (symbol instanceof PyObjectRef(String name, int lineNo)) {
+                symbol = compiler.symbols.get(name);
+                switch (symbol) {
+                    case PyBuiltinFunction builtinFunction -> {
+                        this.varArgs = builtinFunction.varArgs;
+                        this.kwargs = builtinFunction.kwargs;
+                        this.dynCtor = builtinFunction.dynCtor;
+
+                        if (dynCtor) {
+                            compiler.flags.set(PythonCompiler.F_DYN_CALL);
+                            try {
+                                setupCallArgs(mv, compiler);
+                            } finally {
+                                compiler.flags.clear(PythonCompiler.F_DYN_CALL);
+                            }
+
+                            // Create Object Array
+                            createArray(mv, compiler, ((List<?>) callArgs).stream().map(v -> (PyExpr) switch (v) {
+                                case String s -> new PyConstant(s, lineNo);
+                                case Integer i -> new PyConstant(i, lineNo);
+                                case Long l -> new PyConstant(l, lineNo);
+                                case Float f -> new PyConstant(f, lineNo);
+                                case Double d -> new PyConstant(d, lineNo);
+                                case Boolean b -> new PyConstant(b, lineNo);
+                                case Byte b -> new PyConstant(b, lineNo);
+                                case Short s -> new PyConstant(s, lineNo);
+                                case Character c -> new PyConstant(c, lineNo);
+                                case PyExpr pyExpr -> pyExpr;
+                                case null, default ->
+                                        throw new RuntimeException("argument not supported for:\n" + arguments.getText());
+                            }).toList(), new Object[((List<?>) callArgs).size()]);
+
+                            // Kwargs
+                            // Create Map<String, Object>
+                            // Call Mao.of()
+                            mv.visitMethodInsn(INVOKESTATIC, "java/util/Map", "of", "()Ljava/util/Map;", true);
+                            mv.visitMethodInsn(INVOKESTATIC, "pythonvm/builtins/BuiltinsPy", "print", "([Ljava/lang/Object;Ljava/util/Map;)V", false);
+                            return;
+                        }
+
+                        if (atom.NAME() == null && atom.atom() != null && atom.atom().NAME() != null) {
+                            Type mapOwner = builtinFunction.mapOwner;
+                            setupCallArgs(mv, compiler);
+
+                            mv.visitMethodInsn(INVOKESTATIC, mapOwner.getInternalName(), name(), "(" + argDesc(compiler, callArgs) + ")" + type(compiler), false);
+                            return;
+                        } else {
+                            throw new RuntimeException("Unexpected builtin function call!");
+                        }
+                    }
+                    case JClass jClass -> {
+                        if (atom.NAME() == null && atom.atom() != null && atom.atom().NAME() != null) {
+                            // Constructor Call
+                            mv.visitTypeInsn(NEW, owner.getInternalName());
+                            mv.visitInsn(DUP);
+                            setupCallArgs(mv, compiler);
+                            installArgs(mv, compiler, owner);
+
+                            mv.visitMethodInsn(INVOKESPECIAL, owner.getInternalName(), "<init>", "(" + argDesc(compiler, callArgs) + ")V", false);
+                            return;
+                        }
+
+                        compiler.flags.set(PythonCompiler.F_DYN_CALL);
+                        try {
+                            setupCallArgs(mv, compiler);
+                        } finally {
+                            compiler.flags.clear(PythonCompiler.F_DYN_CALL);
+                        }
+
+                        if (callArgs == null) {
+                            throw new RuntimeException("Call args not found for:\n" + arguments.getText());
+                        }
+
+                        Type type = jClass.type(compiler);
+                        setupCallArgs(mv, compiler);
+                        installArgs(mv, compiler, type);
+
+                        boolean isInterface = jClass.isInterface(compiler);
+                        mv.visitMethodInsn(INVOKESTATIC, owner.getInternalName(), name(), "(" + Arrays.stream(paramTypes).map(Type::getDescriptor).collect(Collectors.joining("")) + ")" + type(compiler), isInterface);
+                        return;
+                    }
+                    case PyVariable pyVariable -> {
+                        symbol.load(mv, compiler, symbol.preload(mv, compiler, false), false);
+                        setupCallArgs(mv, compiler);
+
+                        installArgs(mv, compiler, pyVariable.type(compiler));
+
+                        String s = argDesc(compiler, callArgs);
+                        if (owner.getSort() == Type.OBJECT) {
+                            String internalName = owner.getInternalName();
+                            Symbol symbol1 = compiler.symbols.get(internalName.substring(internalName.lastIndexOf("/") + 1));
+                            if (symbol1 == null) {
+                                throw new CompilerException("Symbol '" + owner.getClassName() + "' not found (" + compiler.getLocation(this) + ")");
+                            }
+
+                            if (symbol1 instanceof JClass jClass) {
+                                owner = jClass.type(compiler);
+                                if (owner.getSort() == Type.OBJECT) {
+                                    String internal = owner.getInternalName();
+                                    String qualified = internal.replace("/", ".");
+                                    Class<?> aClass = null;
+                                    try {
+                                        aClass = Class.forName(qualified, false, getClass().getClassLoader());
+                                        if (aClass.isInterface()) {
+                                            mv.visitMethodInsn(INVOKEINTERFACE, internal, name(), "(" + s + ")" + type(compiler), true);
+                                            return;
+                                        }
+                                    } catch (ClassNotFoundException e) {
+                                        throw new CompilerException("JVM Class '" + qualified + "' not found (" + compiler.getLocation(this) + ")");
+                                    }
+                                }
+                            } else if (symbol1 instanceof PyBuiltinFunction func) {
+                                owner = func.owner(compiler);
+                            } else {
+                                throw new RuntimeException("Unknown symbol type: " + symbol1.getClass().getSimpleName());
+                            }
+                        } else {
+                            throw new RuntimeException("Unknown JVM descriptor for class name: " + owner);
+                        }
+                        mv.visitMethodInsn(INVOKEVIRTUAL, owner.getInternalName(), name(), "(" + s + ")" + type(compiler), false);
+                    }
+                    case PyClass pyClass -> {
+                        Type owner1 = owner(compiler);
+                        mv.visitTypeInsn(NEW, owner1.getInternalName());
+                        mv.visitInsn(DUP);
+                        setupCallArgs(mv, compiler);
+                        mv.visitMethodInsn(INVOKESPECIAL, owner1.getInternalName(), "<init>", "(" + argDesc(compiler, callArgs) + ")V", false);
+                        return;
+                    }
+                    case null, default ->
+                            throw new UnsupportedOperationException("Not implemented: " + symbol.getClass().getSimpleName());
+                }
+            }
+            if (symbol instanceof PyBuiltinFunction) {
+//                    symbol.load(mv, compiler, null, false);
+                PythonCompiler.throwError(mv, "Unimplemented function call: atom=" + atom.getText() + ", primaryContext=" + primaryContext.getText() + ", arguments=" + arguments.getText());
+                return;
+            } else if (symbol instanceof JClass) {
+                setupCallArgs(mv, compiler);
+                mv.visitMethodInsn(INVOKESTATIC, owner.getInternalName(), name(), "(" + (arguments == null ? "" : argDesc(compiler, callArgs)) + ")V", false);
+            }
+        } else if (visit instanceof FuncCall func) {
+            FuncCall funcCall = (FuncCall) visit;
+            funcCall.write(mv, compiler);
+
+            Type type = func.type(compiler);
+            if (!compiler.classes.containsKey(type.getClassName())) {
+                try {
+                    Class<?> aClass = Class.forName(type.getClassName(), false, getClass().getClassLoader());
+                    Stack<Class<?>> stack = new Stack<>();
+                    stack.push(aClass);
+                    while (!stack.isEmpty()) {
+                        find_method:
+                        for (Method method : aClass.getMethods()) {
+                            if (!method.getName().equals(name())) continue;
+                            if (method.getParameterTypes().length != (callArgs == null ? 0 : ((List<Symbol>) callArgs).size()))
+                                continue;
+                            Class<?>[] parameterTypes = method.getParameterTypes();
+                            for (int i = 0; i < parameterTypes.length; i++) {
+                                if (!parameterTypes[i].isAssignableFrom(Class.forName(((List<Symbol>) callArgs).get(i).type(compiler).getClassName(), false, getClass().getClassLoader()))) {
+                                    continue find_method;
+                                }
+                            }
+                            if (method.getDeclaringClass().isInterface()) {
+                                mv.visitMethodInsn(INVOKEINTERFACE, type.getInternalName(), name(), Type.getType(method).getDescriptor(), true);
+                                return;
+                            }
+                            mv.visitMethodInsn(INVOKEVIRTUAL, type.getInternalName(), name(), Type.getType(method).getDescriptor(), false);
+                            return;
+                        }
+                        for (Class<?> aClass1 : aClass.getInterfaces()) {
+                            stack.push(aClass1);
+                        }
+                        aClass = stack.pop();
+                    }
+
+                    throw compiler.functionNotFound(type, name(), this);
+                } catch (ClassNotFoundException e) {
+                    throw compiler.jvmClassNotFound(type.getClassName(), this);
+                }
+            }
+
+            owner = type;
+
+            setupArgs(mv, compiler, arguments == null ? List.of() : (List<?>) compiler.visit(arguments));
+
+            if (atom.NAME() == null && atom.atom() != null && atom.atom().NAME() != null) {
+                // Constructor Call
+                mv.visitTypeInsn(NEW, owner.getInternalName());
+                mv.visitInsn(DUP);
+                setupCallArgs(mv, compiler);
+
+                mv.visitMethodInsn(INVOKESPECIAL, owner.getInternalName(), "<init>", "(" + argDesc(compiler, callArgs) + ")V", false);
+                return;
+            }
+            mv.visitMethodInsn(INVOKEVIRTUAL, owner(compiler).getInternalName(), name(), "(" + argDesc(compiler, callArgs) + ")" + type(compiler), false);
+            // Print the array
+            //                throw new RuntimeException("atom not supported for:\n" + atom.getText());
+            //                mv.visitMethodInsn(INVOKEDYNAMIC, type(compiler), name(), "(" + compiler.visit(arguments) + ")V", false);
+            // Throw exception with error message
+
+//                throwError(mv, "Unimplemented function call: atom=" + atom.getText() + ", primaryContext=" + primaryContext.getText() + ", arguments=" + arguments.getText());
+        } else {
+            throw new RuntimeException("No supported matching atom found for: " + visit.getClass().getName());
+        }
+
+        mv.visitLineNumber(atom.getStop().getLine(), new Label());
+    }
+
+    private boolean installArgs(MethodVisitor mv, PythonCompiler compiler, Type type) {
+        if (!compiler.classes.containsKey(type.getClassName())) {
+            if (name().equals("<init>")) {
+
+                Class<?> aClass;
+                try {
+                    aClass = Class.forName(type.getClassName(), false, getClass().getClassLoader());
+                } catch (ClassNotFoundException e) {
+                    throw compiler.jvmClassNotFound(type.getClassName(), this);
+                }
+                Stack<Class<?>> stack = new Stack<>();
+                stack.push(aClass);
+                List<PyExpr> args = (List<PyExpr>) callArgs;
+                while (!stack.isEmpty()) {
+                    find_constructor:
+                    for (Constructor<?> constructor : aClass.getDeclaredConstructors()) {
+                        if (constructor.getParameterTypes().length != (((List<PyExpr>) callArgs).size()))
+                            continue;
+                        Class<?>[] parameterTypes = constructor.getParameterTypes();
+                        BitSet boxing = new BitSet(parameterTypes.length);
+                        for (int i = 0; i < parameterTypes.length; i++) {
+                            Type type1 = ((List<PyExpr>) callArgs).get(i).type(compiler);
+                            try {
+                                if (!parameterTypes[i].isPrimitive()) {
+                                    boxing.set(i);
+                                    if (type1.equals(Type.BYTE_TYPE) && !parameterTypes[i].isAssignableFrom(byte.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.SHORT_TYPE) && !parameterTypes[i].isAssignableFrom(short.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.CHAR_TYPE) && !parameterTypes[i].isAssignableFrom(char.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.INT_TYPE) && !parameterTypes[i].isAssignableFrom(int.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.LONG_TYPE) && !parameterTypes[i].isAssignableFrom(long.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.FLOAT_TYPE) && !parameterTypes[i].isAssignableFrom(float.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.DOUBLE_TYPE) && !parameterTypes[i].isAssignableFrom(double.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.BOOLEAN_TYPE) && !parameterTypes[i].isAssignableFrom(boolean.class)) {
+                                        continue find_constructor;
+                                    } else if (!parameterTypes[i].isAssignableFrom(Class.forName(type1.getClassName().replace('/', '.'), false, getClass().getClassLoader()))) {
+                                        continue find_constructor;
+                                    }
+                                } else {
+                                    boxing.clear(i);
+                                    if (type1.equals(Type.BYTE_TYPE) && !parameterTypes[i].isAssignableFrom(byte.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.SHORT_TYPE) && !parameterTypes[i].isAssignableFrom(short.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.CHAR_TYPE) && !parameterTypes[i].isAssignableFrom(char.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.INT_TYPE) && !parameterTypes[i].isAssignableFrom(int.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.LONG_TYPE) && !parameterTypes[i].isAssignableFrom(long.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.FLOAT_TYPE) && !parameterTypes[i].isAssignableFrom(float.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.DOUBLE_TYPE) && !parameterTypes[i].isAssignableFrom(double.class)) {
+                                        continue find_constructor;
+                                    } else if (type1.equals(Type.BOOLEAN_TYPE) && !parameterTypes[i].isAssignableFrom(boolean.class)) {
+                                        continue find_constructor;
+                                    }
+                                }
+                            } catch (ClassNotFoundException e) {
+                                throw compiler.jvmClassNotFound(type1.getClassName(), this);
+                            }
+                        }
+
+                        for (int i = 0, argsSize = args.size(); i < argsSize; i++) {
+                            PyExpr expr = args.get(i);
+                            boolean shouldBeBoxed = boxing.get(i);
+                            Object preloaded = expr.preload(mv, compiler, false);
+                            expr.load(mv, compiler, preloaded, false);
+
+                            Type type1 = expr.type(compiler);
+                            if (type1 == null) {
+                                throw new RuntimeException("Type not found for at " + compiler.getLocation(expr));
+                            }
+                            if (shouldBeBoxed) {
+                                if (type1 == Type.INT_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                                } else if (type1 == Type.LONG_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                                } else if (type1 == Type.FLOAT_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+                                } else if (type1 == Type.DOUBLE_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                                } else if (type1 == Type.CHAR_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+                                } else if (type1 == Type.BOOLEAN_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+                                } else if (type1 == Type.SHORT_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+                                } else if (type1 == Type.BYTE_TYPE) {
+                                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                                }
+                            }
+                        }
+
+                        this.paramTypes = Arrays.stream(parameterTypes).map(Type::getType).toList().toArray(Type[]::new);
+                        return true;
+                    }
+                    if (aClass.getSuperclass() != null) stack.push(aClass.getSuperclass());
+                    for (Class<?> aClass1 : aClass.getInterfaces()) {
+                        stack.push(aClass1);
+                    }
+                    aClass = stack.pop();
+                }
+
+                throw compiler.functionNotFound(type, "<<INIT>>", args.stream().map(v -> v.type(compiler)).toList().toArray(Type[]::new), this);
+            }
+
+            Class<?> aClass;
+            try {
+                aClass = Class.forName(type.getClassName(), false, getClass().getClassLoader());
+            } catch (ClassNotFoundException e) {
+                throw compiler.jvmClassNotFound(type.getClassName(), this);
+            }
+            Stack<Class<?>> stack = new Stack<>();
+            stack.push(aClass);
+            List<PyExpr> args = (List<PyExpr>) callArgs;
+            while (!stack.isEmpty()) {
+                find_method:
+                for (Method method : aClass.getDeclaredMethods()) {
+                    if (!method.getName().equals(name())) continue;
+                    if (method.getParameterTypes().length != (((List<Symbol>) callArgs).size())) {
+                        continue;
+                    }
+                    Class<?>[] parameterTypes = method.getParameterTypes();
+                    BitSet boxing = new BitSet(parameterTypes.length);
+                    for (int i = 0; i < parameterTypes.length; i++) {
+                        Type type1 = ((List<PyExpr>) callArgs).get(i).type(compiler);
+                        try {
+                            if (!parameterTypes[i].isPrimitive()) {
+                                boxing.set(i);
+                                if (type1.equals(Type.BYTE_TYPE) && !parameterTypes[i].isAssignableFrom(byte.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.SHORT_TYPE) && !parameterTypes[i].isAssignableFrom(short.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.CHAR_TYPE) && !parameterTypes[i].isAssignableFrom(char.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.INT_TYPE) && !parameterTypes[i].isAssignableFrom(int.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.LONG_TYPE) && !parameterTypes[i].isAssignableFrom(long.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.FLOAT_TYPE) && !parameterTypes[i].isAssignableFrom(float.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.DOUBLE_TYPE) && !parameterTypes[i].isAssignableFrom(double.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.BOOLEAN_TYPE) && !parameterTypes[i].isAssignableFrom(boolean.class)) {
+                                    continue find_method;
+                                } else if (!parameterTypes[i].isAssignableFrom(Class.forName(type1.getClassName().replace('/', '.'), false, getClass().getClassLoader()))) {
+                                    continue find_method;
+                                }
+                            } else {
+                                boxing.clear(i);
+                                if (type1.equals(Type.BYTE_TYPE) && !parameterTypes[i].isAssignableFrom(byte.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.SHORT_TYPE) && !parameterTypes[i].isAssignableFrom(short.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.CHAR_TYPE) && !parameterTypes[i].isAssignableFrom(char.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.INT_TYPE) && !parameterTypes[i].isAssignableFrom(int.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.LONG_TYPE) && !parameterTypes[i].isAssignableFrom(long.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.FLOAT_TYPE) && !parameterTypes[i].isAssignableFrom(float.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.DOUBLE_TYPE) && !parameterTypes[i].isAssignableFrom(double.class)) {
+                                    continue find_method;
+                                } else if (type1.equals(Type.BOOLEAN_TYPE) && !parameterTypes[i].isAssignableFrom(boolean.class)) {
+                                    continue find_method;
+                                }
+                            }
+                        } catch (ClassNotFoundException e) {
+                            throw compiler.jvmClassNotFound(type1.getClassName(), this);
+                        }
+                    }
+
+                    for (int i = 0, argsSize = args.size(); i < argsSize; i++) {
+                        PyExpr expr = args.get(i);
+                        boolean shouldBeBoxed = boxing.get(i);
+                        Object preloaded = expr.preload(mv, compiler, false);
+                        expr.load(mv, compiler, preloaded, false);
+
+                        Type type1 = expr.type(compiler);
+                        if (type1 == null) {
+                            throw new RuntimeException("Type not found for at " + compiler.getLocation(expr));
+                        }
+                        if (shouldBeBoxed) {
+                            if (type1 == Type.INT_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                            } else if (type1 == Type.LONG_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                            } else if (type1 == Type.FLOAT_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+                            } else if (type1 == Type.DOUBLE_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                            } else if (type1 == Type.CHAR_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+                            } else if (type1 == Type.BOOLEAN_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+                            } else if (type1 == Type.SHORT_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+                            } else if (type1 == Type.BYTE_TYPE) {
+                                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                            }
+                        }
+                    }
+
+                    this.paramTypes = Arrays.stream(parameterTypes).map(Type::getType).toList().toArray(Type[]::new);
+                    return true;
+                }
+                if (aClass.getSuperclass() != null) stack.push(aClass.getSuperclass());
+                for (Class<?> aClass1 : aClass.getInterfaces()) {
+                    stack.push(aClass1);
+                }
+                aClass = stack.pop();
+            }
+
+            throw compiler.functionNotFound(type,
+
+                    name(), args.
+
+                            stream().
+
+                            map(v -> v.type(compiler)).
+
+                            toList().
+
+                            toArray(Type[]::new), this);
+        }
+        return false;
+    }
+
+    private void setupCallArgs(MethodVisitor mv, PythonCompiler compiler) {
+        callArgs = List.of();
+        if (arguments != null) {
+            callArgs = compiler.visit(arguments);
+        }
+        if (!(callArgs instanceof List)) {
+            throw new RuntimeException("arguments not supported for:\n" + arguments.getText());
+        }
+        setupArgs(mv, compiler, (List<?>) callArgs);
+    }
+
+    private String argDesc(PythonCompiler compiler, Object callArgs) {
+        if (arguments == null) return "";
+        if (callArgs == null) throw new RuntimeException("Call args not found for:\n" + arguments.getText());
+        if (paramTypes != null) return Arrays.stream(paramTypes).map(Type::getDescriptor).collect(Collectors.joining(""));
+        return switch (callArgs) {
+            case List<?> list -> {
+                StringJoiner joiner = new StringJoiner("");
+                int listSize = list.size();
+                if (varArgs) listSize--;
+                if (kwargs) listSize--;
+                for (int j = 0; j < listSize; j++) {
+                    Object o = list.get(j);
+                    String string = switch (o) {
+                        case String s -> "Ljava/lang/String;";
+                        case Integer i -> "I";
+                        case Long i -> "J";
+                        case Float i -> "F";
+                        case Double i -> "D";
+                        case Boolean i -> "Z";
+                        case PyVariable pyVar -> owner(compiler).getDescriptor();
+                        case PyObjectRef objectRef -> owner(compiler).getDescriptor();
+                        case FuncCall funcCallWithArgs -> funcCallWithArgs.type(compiler).getDescriptor();
+                        case PyConstant pyConstant -> pyConstant.type.type.getDescriptor();
+                        case null, default -> {
+                            if (o != null) {
+                                throw new RuntimeException("argument not supported with type " + o.getClass().getSimpleName() + " for:\n" + arguments.getText());
+                            } else {
+                                throw new RuntimeException("argument not supported with type <NULL> for:\n" + arguments.getText());
+                            }
+                        }
+                    };
+                    joiner.add(string);
+                }
+                if (varArgs) joiner.add("[Ljava/lang/Object;");
+                if (kwargs) joiner.add("Ljava/util/Map;");
+                yield joiner.toString();
+            }
+            default -> throw new RuntimeException("argument not supported for:\n" + arguments.getText());
+        };
+    }
+
+    @Override
+    public Type type(PythonCompiler compiler) {
+        if (callArgs == null) {
+            compiler.flags.set(PythonCompiler.F_DYN_CALL);
+            try {
+                setupCallArgs(compiler.mv, compiler);
+            } finally {
+                compiler.flags.clear(PythonCompiler.F_DYN_CALL);
+            }
+        }
+
+        Type owner = owner(compiler);
+        if (owner.getSort() == Type.ARRAY) owner = componentTypeR(owner);
+        String substring = owner.getClassName();
+        String name = name();
+        String desc = argDesc(compiler, callArgs);
+        ImmutableList<Type> parse = Descriptor.parse(desc);
+        Class<?> aClass;
+        try {
+            aClass = Class.forName(substring, false, getClass().getClassLoader());
+        } catch (ClassNotFoundException e) {
+            PyClass symbol = compiler.classes.get(substring);
+            if (symbol != null) {
+                PyFunction pyFunction = symbol.methods.get(name());
+                if (name.equals("<init>")) {
+                    return owner;
+                }
+                if (pyFunction == null) {
+                    throw compiler.functionNotFound(owner, name, this);
+                }
+                return pyFunction.type(compiler);
+            }
+            throw compiler.typeNotFound(substring, this);
+        }
+        if (name.equals("<init>")) {
+            for (Constructor<?> constructor : aClass.getDeclaredConstructors()) {
+                @Nullable Type owner1 = determineConstructor(compiler, constructor, parse, null);
+                if (owner1 != null) return owner1;
+            }
+
+            for (Constructor<?> constructor : aClass.getConstructors()) {
+                @Nullable Type owner1 = determineConstructor(compiler, constructor, parse, owner);
+                if (owner1 != null) return owner1;
+            }
+
+            throw new CompilerException("Java constructor not found in " + substring + " (" + compiler.getLocation(this) + ")");
+        }
+        Stack<Class<?>> stack = new Stack<>();
+        stack.push(aClass);
+
+        while (!stack.isEmpty()) {
+            if (aClass != Object.class && aClass.getSuperclass() != null) stack.push(aClass.getSuperclass());
+            for (Class<?> anInterface : aClass.getInterfaces()) {
+                stack.push(anInterface);
+            }
+
+            for (Method method : aClass.getDeclaredMethods()) {
+                @Nullable Type method1 = determineMethod(compiler, method, name, parse, null);
+                if (method1 != null) {
+                    this.method = method;
+                    return method1;
+                }
+            }
+            for (Method method : aClass.getMethods()) {
+                @Nullable Type method1 = determineMethod(compiler, method, name, parse, owner);
+                if (method1 != null) {
+                    this.method = method;
+                    return method1;
+                }
+            }
+            aClass = stack.pop();
+        }
+        throw new CompilerException("Java function '" + name + "' not found with arguments '" + parse.stream().map(Type::getClassName).collect(Collectors.joining(", ")) + "' in " + substring + " (" + compiler.getLocation(this) + ")");
+    }
+
+    private @Nullable Type determineConstructor(PythonCompiler compiler, Constructor<?> constructor, ImmutableList<Type> parse, Type owner) {
+        StringBuilder stringBuilder = new StringBuilder();
+        if (constructor.getParameterCount() != parse.size()) return null;
+        @NotNull Class<?>[] parameterTypes = constructor.getParameterTypes();
+        boolean passed = true;
+        for (int i = 0, parameterTypesLength = parameterTypes.length; i < parameterTypesLength; i++) {
+            try {
+                passed = doesConstructorPass(compiler, parameterTypes, i, parse, passed, stringBuilder);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException("Failed to load class: ", e);
+            }
+        }
+        if (passed) {
+            this.constructor = constructor;
+            return owner;
+        }
+        return null;
+    }
+
+    private @Nullable Type determineMethod(PythonCompiler compiler, Method method, String name, ImmutableList<Type> parse, Type owner) {
+        if (!method.getName().equals(name)) return null;
+        StringBuilder sb = new StringBuilder();
+        @NotNull Class<?>[] parameterTypes = method.getParameterTypes();
+        boolean passed = true;
+        for (int i = 0, parameterTypesLength = parameterTypes.length; i < parameterTypesLength; i++) {
+            try {
+                passed = doesMethodPass(compiler, parameterTypes, i, parse, passed, sb);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException("Failed to load class: ", e);
+            }
+        }
+
+        if (passed) {
+            this.method = method;
+            return Type.getReturnType(method);
+        }
+        return null;
+    }
+
+    private boolean doesMethodPass(PythonCompiler compiler, @NotNull Class<?> @NotNull [] parameterTypes, int i, ImmutableList<Type> parse, boolean passed, StringBuilder sb) throws ClassNotFoundException {
+        if (i >= parse.size()) return false;
+
+        Class<?> paramType = parameterTypes[i];
+        if (!paramType.isPrimitive() && compiler.classes.containsKey(paramType.getName())) {
+            PyClass pyClass = compiler.classes.get(parse.get(i).getClassName());
+            if (!pyClass.doesInherit(paramType)) {
+                passed = false;
+            }
+        } else if (paramType.isPrimitive()) {
+            if (!Type.getType(paramType).equals(parse.get(i))) {
+                return false;
+            }
+        } else {
+            try {
+                var checkAgainst = Class.forName(parse.get(i).getClassName(), false, getClass().getClassLoader());
+                if (!paramType.isAssignableFrom(checkAgainst)) {
+                    passed = false;
+                    return passed;
+                }
+                sb.append(paramType.descriptorString());
+            } catch (ClassNotFoundException e) {
+                compiler.undefinedClasses.add(paramType.getName());
+            }
+        }
+        return passed;
+    }
+
+    private boolean doesConstructorPass(PythonCompiler compiler, @NotNull Class<?> @NotNull [] parameterTypes, int i, ImmutableList<Type> parse, boolean passed, StringBuilder sb) throws ClassNotFoundException {
+        Class<?> paramType = parameterTypes[i];
+        String className = parse.get(i).getClassName();
+        if (!paramType.isPrimitive() && compiler.classes.containsKey(className)) {
+            PyClass pyClass = compiler.classes.get(paramType.getName());
+            if (!pyClass.doesInherit(paramType)) {
+                passed = false;
+            }
+        } else if (paramType.isPrimitive()) {
+            var checkAgainst = Class.forName(parse.get(i).getClassName(), false, getClass().getClassLoader());
+            if (!Type.getType(paramType).equals(parse.get(i))) {
+                return false;
+            }
+            sb.append(paramType.descriptorString());
+        } else {
+            try {
+                var checkAgainst = Class.forName(parse.get(i).getClassName(), false, getClass().getClassLoader());
+                if (!paramType.isAssignableFrom(checkAgainst)) {
+                    passed = false;
+                    return passed;
+                }
+                sb.append(paramType.descriptorString());
+            } catch (ClassNotFoundException e) {
+                throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(className, compiler.getLocation(this)));
+            }
+        }
+        return passed;
+    }
+
+    private Type componentTypeR(Type owner) {
+        owner = owner.getElementType();
+        if (owner.getSort() == Type.ARRAY) owner = componentTypeR(owner);
+        return owner;
+    }
+
+    private void setupArgs(MethodVisitor mv, PythonCompiler compiler, List<?> visit1) {
+        List<PyExpr> exprs = new ArrayList<>();
+        for (int j = 0, objectsSize = visit1.size(); j < objectsSize; j++) {
+            Object o = visit1.get(j);
+            @Nullable PythonParser.ExpressionContext expression = arguments.args().expression(j);
+            final int line = expression != null ? expression.getStart().getLine() : arguments.getStart().getLine();
+            switch (o) {
+                case String s -> exprs.add(new PyConstant(s, line));
+                case Boolean b -> exprs.add(new PyConstant(b, line));
+                case Float f -> exprs.add(new PyConstant(f, line));
+                case Double d -> exprs.add(new PyConstant(d, line));
+                case Character c -> exprs.add(new PyConstant(c, line));
+                case Byte b -> exprs.add(new PyConstant(b, line));
+                case Short s -> exprs.add(new PyConstant(s, line));
+                case Integer i -> exprs.add(new PyConstant(i, line));
+                case Long l -> exprs.add(new PyConstant(l, line));
+                case PyExpr ref -> exprs.add(ref);
+                case null, default -> {
+                    if (o != null) {
+                        throw new RuntimeException("argument not supported with type " + o.getClass().getName() + " for:\n" + arguments.getText());
+                    }
+                    throw new RuntimeException("argument not supported with type <NULL> for:\n" + arguments.getText());
+                }
+            }
+        }
+
+        Object[] preloaded = new Object[exprs.size()];
+        for (PyExpr expr : exprs) {
+//                expr.load(mv, compiler, null, false);
+        }
+
+//            createArray(mv, compiler, exprs, preloaded);
+    }
+
+    private void createArray(MethodVisitor mv, PythonCompiler compiler, List<PyExpr> exprs, Object[] preloaded) {
+        mv.visitIntInsn(BIPUSH, exprs.size());
+        mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
+
+        // Create an array of objects
+        for (int i = 0; i < exprs.size(); i++) {
+            PyExpr expr = exprs.get(i);
+
+            mv.visitLineNumber(arguments.args().expression(i).getStart().getLine(), new Label());
+            mv.visitInsn(DUP);
+            mv.visitIntInsn(BIPUSH, i); // Push the index onto the stack
+            preloaded[i] = expr.preload(mv, compiler, false);
+            expr.load(mv, compiler, preloaded[i], false);
+
+            Type type1 = expr.type(compiler);
+            if (type1 == null) {
+                throw new RuntimeException("Type not found for at " + compiler.getLocation(expr));
+            }
+            if (type1 == Type.INT_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+            } else if (type1 == Type.LONG_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+            } else if (type1 == Type.FLOAT_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+            } else if (type1 == Type.DOUBLE_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+            } else if (type1 == Type.CHAR_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+            } else if (type1 == Type.BOOLEAN_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+            } else if (type1 == Type.SHORT_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+            } else if (type1 == Type.BYTE_TYPE) {
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+            }
+            mv.visitInsn(AASTORE);
+        }
+    }
+
+    @Override
+    public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
+        return null;
+    }
+
+    @Override
+    public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
+        write(mv, compiler);
+    }
+
+    @Override
+    public String name() {
+        if (atom.NAME() != null) {
+            return atom.NAME().getText();
+        }
+
+        if (atom.atom() != null) {
+            if (atom.children.size() == 1) {
+                return "<init>";
+            }
+            return atom.atom().NAME().getText();
+        }
+
+        throw new RuntimeException("No NAME found for:\n" + atom.getText());
+    }
+
+    public Type owner(PythonCompiler compiler) {
+        Object visit = compiler.visit(atom);
+        switch (visit) {
+            case PyObjectRef(String name, int lineNo) -> {
+                Symbol symbol = compiler.symbols.get(name);
+                if (symbol instanceof PyBuiltinFunction func) {
+                    return func.owner(compiler);
+                }
+
+                if (symbol == null) {
+                    throw new CompilerException("Unknown symbol: " + name + " at " + compiler.getLocation(atom));
+                }
+
+                return symbol.type(compiler);
+            }
+            case PyBuiltinFunction func -> {
+                return ((PyBuiltinFunction) visit).type(compiler);
+            }
+            case FuncCall func -> {
+                return func.type(compiler);
+            }
+            case null, default -> {
+                if (visit != null) {
+                    throw new RuntimeException("Unknown atom: " + visit.getClass().getSimpleName());
+                } else {
+                    throw new RuntimeException("Unknown atom: " + atom.getText());
+                }
+            }
+        }
+    }
+
+    @Override
+    public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
+        throw new CompilerException("Cannot set a function " + compiler.getLocation(atom));
+    }
+
+    @Override
+    public int lineNo() {
+        return atom.getStart().getLine();
+    }
+
+    public PythonParser.PrimaryContext atom() {
+        return atom;
+    }
+
+    public PythonParser.PrimaryContext primaryContext() {
+        return primaryContext;
+    }
+
+    public PythonParser.ArgumentsContext arguments() {
+        return arguments;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == this) return true;
+        if (obj == null || obj.getClass() != this.getClass()) return false;
+        var that = (FuncCall) obj;
+        return Objects.equals(this.atom, that.atom) &&
+               Objects.equals(this.primaryContext, that.primaryContext) &&
+               Objects.equals(this.arguments, that.arguments);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(atom, primaryContext, arguments);
+    }
+
+    @Override
+    public String toString() {
+        return "FuncCallWithArgs[" +
+               "atom=" + atom + ", " +
+               "primaryContext=" + primaryContext + ", " +
+               "arguments=" + arguments + ']';
+    }
+
+}

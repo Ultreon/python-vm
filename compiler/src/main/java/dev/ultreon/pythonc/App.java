@@ -44,7 +44,7 @@ public class App {
             System.exit(1);
         }
 
-        String outputDir = "build/pythonc";
+        String outputDir = "build/tmp/compilePython";
         PythonCompiler pythonCompiler = new PythonCompiler();
         for (String source : sources) {
             if (!new File(source).exists()) {

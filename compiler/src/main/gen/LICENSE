@@ -1,4 +1,4 @@
-package dev.ultreon.pythonc;/*
+Python grammar
 The MIT License (MIT)
 Copyright (c) 2021 Robert Einhorn
 
@@ -17,22 +17,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
- */
-
-
-import org.antlr.v4.runtime.*;
-
-public abstract class PythonParserBase extends Parser {
-    protected PythonParserBase(TokenStream input) {
-        super(input);
-    }
-
-    // https://docs.python.org/3/reference/lexical_analysis.html#soft-keywords
-    public boolean isEqualToCurrentTokenText(String tokenText) {
-        return this.getCurrentToken().getText().equals(tokenText);
-    }
-
-    public boolean isnotEqualToCurrentTokenText(String tokenText) {
-        return !this.isEqualToCurrentTokenText(tokenText); // for compatibility with the Python 'not' logical operator
-    }
-}

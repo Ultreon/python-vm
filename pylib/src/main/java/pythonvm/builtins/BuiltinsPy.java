@@ -2,7 +2,7 @@ package pythonvm.builtins;
 
 import java.util.Map;
 
-public class _Builtins {
+public class BuiltinsPy {
     public static void print(Object[] args, Map<String, Object> kwargs) {
         Object o = kwargs.get("file");
         if (o != null) throw new UnsupportedOperationException("Not implemented!");
