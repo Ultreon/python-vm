@@ -13,7 +13,7 @@ record ImportedField(String name, Type type, String owner, int lineNo) implement
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        mv.visitFieldInsn(GETSTATIC, owner, name, type.getDescriptor());
+        compiler.writer.getStatic(owner, name, type.getDescriptor());
     }
 
     @Override

@@ -53,6 +53,8 @@ final class PyConstant implements PyExpr {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         mv.visitLdcInsn(value);
+        Context context = compiler.getContext(Context.class);
+        context.push(type.type);
     }
 
     public Object value() {

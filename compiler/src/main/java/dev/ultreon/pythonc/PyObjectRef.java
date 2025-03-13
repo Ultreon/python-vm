@@ -3,14 +3,15 @@ package dev.ultreon.pythonc;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-import static org.objectweb.asm.Opcodes.INVOKESTATIC;
-import static org.objectweb.asm.Opcodes.ISTORE;
-
 record PyObjectRef(String name, int lineNo) implements Symbol {
 
     @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
-        switch (compiler.symbols.get(name)) {
+        Symbol symbol1 = compiler.symbols.get(name);
+        if (symbol1 == null) {
+            throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
+        }
+        switch (symbol1) {
             case PyVariable variable -> {
                 // Set variable to "<name>.class"
                 Symbol symbol = compiler.symbols.get(name);
@@ -59,15 +60,13 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
             }
             case PyObjectRef objectRef -> {
                 // Set variable to "<name>.class"
-                mv.visitLdcInsn(name);
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;", false);
+                compiler.writer.loadConstant(name);
+                compiler.writer.invokeStatic("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;", false);
 
                 // Set variable
-                mv.visitVarInsn(ISTORE, compiler.currentVariableIndex++);
+                compiler.writer.storeInt(compiler.currentVariableIndex++);
             }
-            case ImportedField importedField -> {
-                importedField.load(mv, compiler, importedField.preload(mv, compiler, false), false);
-            }
+            case ImportedField importedField -> importedField.load(mv, compiler, importedField.preload(mv, compiler, false), false);
             default ->
                     throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
         }

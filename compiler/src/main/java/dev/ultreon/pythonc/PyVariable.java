@@ -36,48 +36,57 @@ final class PyVariable implements Symbol {
         int opcode;
         if (type.equals(Type.getType(String.class))) {
             opcode = ALOAD;
+            compiler.writer.loadObject(index, Type.getType(String.class));
         } else if (type.equals(Type.LONG_TYPE)) {
             opcode = LLOAD;
+            compiler.writer.loadLong(index);
         } else if (type.equals(Type.DOUBLE_TYPE)) {
             opcode = DLOAD;
+            compiler.writer.loadDouble(index);
         } else if (type.equals(Type.FLOAT_TYPE)) {
             opcode = FLOAD;
+            compiler.writer.loadFloat(index);
         } else if (type.equals(Type.INT_TYPE)) {
             opcode = ILOAD;
+            compiler.writer.loadInt(index);
         } else if (type.equals(Type.BOOLEAN_TYPE)) {
             opcode = ILOAD;
+            compiler.writer.loadBoolean(index);
         } else if (type.equals(Type.CHAR_TYPE)) {
             opcode = ILOAD;
+            compiler.writer.loadChar(index);
         } else if (type.equals(Type.BYTE_TYPE)) {
             opcode = ILOAD;
+            compiler.writer.loadByte(index);
         } else if (type.equals(Type.SHORT_TYPE)) {
             opcode = ILOAD;
+            compiler.writer.loadShort(index);
         } else {
             if (compiler.imports.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
                 throw compiler.typeNotFound(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1), this);
             }
 
             opcode = ALOAD;
+            compiler.writer.loadObject(index, type);
         }
-        mv.visitVarInsn(opcode, index);
 
         if (boxed) {
             if (type.equals(Type.LONG_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                compiler.writer.invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
             } else if (type.equals(Type.DOUBLE_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                compiler.writer.invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
             } else if (type.equals(Type.INT_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                compiler.writer.invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
             } else if (type.equals(Type.FLOAT_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+                compiler.writer.invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
             } else if (type.equals(Type.BOOLEAN_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+                compiler.writer.invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
             } else if (type.equals(Type.BYTE_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                compiler.writer.invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
             } else if (type.equals(Type.SHORT_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+                compiler.writer.invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
             } else if (type.equals(Type.CHAR_TYPE)) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+                compiler.writer.invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
             }
         }
     }
@@ -126,7 +135,7 @@ final class PyVariable implements Symbol {
 
     @Override
     public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
-        mv.visitVarInsn(ISTORE, index);
+        compiler.writer.storeInt(index);
     }
 
     @Override

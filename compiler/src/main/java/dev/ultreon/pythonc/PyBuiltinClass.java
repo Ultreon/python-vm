@@ -36,7 +36,7 @@ class PyBuiltinClass implements Symbol {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         if (jvmName.getSort() == Type.OBJECT) {
-            mv.visitLdcInsn(jvmName);
+            compiler.writer.loadClass(jvmName);
             return;
         }
         throw new RuntimeException("Unknown JVM name: " + jvmName.getClassName());

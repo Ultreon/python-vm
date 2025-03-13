@@ -29,7 +29,7 @@ final class JClass implements JvmClass {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         // Do <name>.class
-        mv.visitLdcInsn(Type.getType("L" + className + ";"));
+        compiler.writer.loadClass(Type.getType("L" + className + ";"));
     }
 
     public Type asmType() {

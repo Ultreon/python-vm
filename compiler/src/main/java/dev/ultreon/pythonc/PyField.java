@@ -3,8 +3,6 @@ package dev.ultreon.pythonc;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-import static org.objectweb.asm.Opcodes.GETFIELD;
-
 record PyField(Type owner, String name, Type type, int lineNo) implements JvmField, Symbol, Ownable {
     public String toString() {
         return name + ": '" + type + "'";
@@ -17,7 +15,7 @@ record PyField(Type owner, String name, Type type, int lineNo) implements JvmFie
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        mv.visitFieldInsn(GETFIELD, owner(compiler).getInternalName(), name, type.getDescriptor());
+        compiler.writer.getField(owner(compiler).getInternalName(), name, type.getDescriptor());
     }
 
     @Override
