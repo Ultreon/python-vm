@@ -1,6 +1,6 @@
 package dev.ultreon.pythonc;
 
-interface JvmClass extends Symbol {
+public interface JvmClass extends Symbol {
     String className();
 
     boolean isInterface();

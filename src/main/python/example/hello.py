@@ -10,27 +10,30 @@ FLOAT = 3.14
 
 
 def init():
-    print(Objects.hashCode("Hello, world!"))
+  print(Objects.hashCode("Hello, world!"))
 
-    print(HASHCODE)
-    print(INTEGER)
-    print(FLOAT)
-    print(STRING)
+  print(HASHCODE)
+  print(INTEGER)
+  print(FLOAT)
+  print(STRING)
 
-    number = 3.141592653589793
+  number = 3.141592653589793
 
-    frame = Frame()
-    frame.setVisible(True)
+  frame = Frame()
+  frame.setVisible(True)
 
-    button = Button("Click me!")
-    button.setLabel("Click me!")
-    frame.add(button)
+  button = Button("Click me!")
+  button.setLabel("Click me!")
+  frame.add(button)
 
-    print("Hey there!", number)
+  print("Hey there!", number)
 
-    Exception("Hello, world!").printStackTrace()
+  Exception("Hello, world!").printStackTrace()
 
-    if True:
-        print("3 + 5 == 8")
-    else:
-        print("3 + 5 != 8")
+  if True:
+    print("3 + 5 == 8")
+  else:
+    print("3 + 5 != 8")
+
+  for i in range(10):
+    print(i)

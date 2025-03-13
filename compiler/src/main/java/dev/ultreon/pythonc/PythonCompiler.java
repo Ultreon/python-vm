@@ -312,7 +312,47 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             return visit(ifStmtContext);
         }
 
+        PythonParser.For_stmtContext forStmtContext = ctx.for_stmt();
+        if (forStmtContext != null) {
+            return visit(forStmtContext);
+        }
+
         throw new RuntimeException("No supported matching compound_stmt found for:\n" + ctx.getText());
+    }
+
+    @Override
+    public Object visitFor_stmt(PythonParser.For_stmtContext ctx) {
+        PythonParser.Star_targetsContext starTargetsContext = ctx.star_targets();
+        PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions();
+        PythonParser.BlockContext block = ctx.block();
+
+        if (starTargetsContext == null || starExpressionsContext == null || block == null) {
+            throw new RuntimeException("No supported matching for_stmt found for:\n" + ctx.getText());
+        }
+
+        Object targets = visit(starTargetsContext);
+        Object expressions = visit(starExpressionsContext);
+
+        if (targets == null || expressions == null) {
+            throw new RuntimeException("No supported matching for_stmt found for:\n" + ctx.getText());
+        }
+
+        if (expressions instanceof List<?> expressionList) {
+            if (targets instanceof List<?> targetList) {
+                if (targetList.size() != expressionList.size()) {
+                    throw new RuntimeException("No supported matching for_stmt found for:\n" + ctx.getText());
+                }
+            }
+            // Generate bytecode for the loop
+            writer.forLoop(targets, expressionList, block);
+            return Unit.Instance;
+        } else if (expressions instanceof PyExpr expr) {
+            // Generate bytecode for the loop
+            writer.forLoop(targets, List.of(expr), block);
+            return Unit.Instance;
+        }
+
+        throw new RuntimeException("No supported matching for_stmt found for:\n" + ctx.getText());
     }
 
     @Override
@@ -540,6 +580,8 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             writer.returnVoid();
             writer.end();
 
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         } finally {
             flags.clear(F_CPL_STATIC_FUNC);
             flags.clear(F_CPL_CLASS_FUNC);
@@ -1127,6 +1169,46 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitStar_targets(PythonParser.Star_targetsContext ctx) {
+        if (ctx.star_target().size() == 1) {
+            return visit(ctx.star_target(0));
+        } else {
+            throw new RuntimeException("star_targets not supported for:\n" + ctx.getText());
+        }
+    }
+
+    @Override
+    public Object visitStar_target(PythonParser.Star_targetContext ctx) {
+        PythonParser.Star_targetContext starTargetContext = ctx.star_target();
+        if (starTargetContext != null) {
+            throw new RuntimeException("star_target not supported for:\n" + ctx.getText());
+        }
+        PythonParser.Target_with_star_atomContext targetWithStarAtomContext = ctx.target_with_star_atom();
+        if (targetWithStarAtomContext != null) {
+            return visit(targetWithStarAtomContext);
+        }
+
+        throw new RuntimeException("No supported matching star_target found for:\n" + ctx.getText());
+    }
+
+    @Override
+    public Object visitTarget_with_star_atom(PythonParser.Target_with_star_atomContext ctx) {
+        PythonParser.Star_atomContext starAtomContext = ctx.star_atom();
+        if (ctx.LSQB() != null) {
+            throw new RuntimeException("target_with_star_atom not supported for a '[':\n" + ctx.getText());
+        }
+        TerminalNode name = ctx.NAME();
+        if (name != null) {
+            throw new RuntimeException("target_with_star_atom not supported for a NAME:\n" + ctx.getText());
+        }
+        if (starAtomContext != null) {
+            return visit(starAtomContext);
+        }
+
+        throw new RuntimeException("No supported matching target_with_star_atom found for:\n" + ctx.getText());
+    }
+
+    @Override
     public Object visitStar_expression(PythonParser.Star_expressionContext ctx) {
         PythonParser.Bitwise_orContext bitwiseOrContext = ctx.bitwise_or();
         if (ctx.STAR() != null) {
@@ -1140,6 +1222,16 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             return visit(expression);
         }
         throw new RuntimeException("No supported matching star_expression found for:\n" + ctx.getText());
+    }
+
+    @Override
+    public Object visitStar_atom(PythonParser.Star_atomContext ctx) {
+        TerminalNode name = ctx.NAME();
+        if (name != null) {
+            return new PyObjectRef(name.getText(), name.getSymbol().getLine());
+        }
+
+        throw new RuntimeException("No supported matching star_atom found for:\n" + ctx.getText());
     }
 
     @Override
@@ -1769,6 +1861,20 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }, currentVariableIndex);
 
         return currentVariableIndex += computationalType;
+    }
+
+    int computationalType(String type) {
+        return switch (Type.getType(type).getSort()) {
+            case Type.LONG, Type.DOUBLE -> 2;
+            default -> 1;
+        };
+    }
+
+    int computationalType(Type type) {
+        return switch (type.getSort()) {
+            case Type.LONG, Type.DOUBLE -> 2;
+            default -> 1;
+        };
     }
 
     int createVariable(String name, Type type, PyExpr expr, boolean boxed) {

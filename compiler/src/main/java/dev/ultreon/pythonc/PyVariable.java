@@ -62,9 +62,9 @@ final class PyVariable implements Symbol {
             opcode = ILOAD;
             compiler.writer.loadShort(index);
         } else {
-            if (compiler.imports.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
-                throw compiler.typeNotFound(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1), this);
-            }
+//            if (compiler.imports.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
+//                throw compiler.typeNotFound(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1), this);
+//            }
 
             opcode = ALOAD;
             compiler.writer.loadObject(index, type);

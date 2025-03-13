@@ -3,7 +3,9 @@ package dev.ultreon.pythonc;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-class PyBuiltinClass implements Symbol {
+import java.util.List;
+
+class PyBuiltinClass implements Symbol, JvmClass {
     public final Type jvmName;
     public final Type jvmUnboxed;
     public final String extName;
@@ -60,5 +62,34 @@ class PyBuiltinClass implements Symbol {
     @Override
     public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
         throw new CompilerException("Can't set class: " + pyName);
+    }
+
+    @Override
+    public String className() {
+        return pyName;
+    }
+
+    @Override
+    public boolean isInterface() {
+        return false;
+    }
+
+    @Override
+    public boolean isAbstract() {
+        return false;
+    }
+
+    @Override
+    public boolean isEnum() {
+        return false;
+    }
+
+    @Override
+    public boolean doesInherit(Class<?> type) {
+        try {
+            return Class.forName(jvmName.getClassName(), false, getClass().getClassLoader()).isAssignableFrom(type);
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
     }
 }

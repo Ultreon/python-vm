@@ -20,7 +20,7 @@ final class FuncCall implements Symbol {
     final PythonParser.PrimaryContext primaryContext;
     final PythonParser.ArgumentsContext arguments;
     private Method method;
-    private Constructor<?> constructor;
+    Constructor<?> constructor;
     private boolean kwargs;
     private boolean varArgs;
     private boolean dynCtor;
@@ -174,8 +174,20 @@ final class FuncCall implements Symbol {
                     }
                     case PyClass pyClass -> {
                         Type owner1 = owner(compiler);
-                        compiler.writer.newInstance(owner1.getInternalName(), "<init>", "(" + argDesc(compiler, callArgs) + ")V", false, () -> setupCallArgs(mv, compiler));
+                        setupCallArgs(mv, compiler);
+                        compiler.writer.newInstance(owner1.getInternalName(), "<init>", "(" + argDesc(compiler, callArgs) + ")V", false, () -> {
+                            installArgs(mv, compiler, owner1);
+                        });
                         return;
+                    }
+                    case PyBuiltinClass pyBuiltinClass -> {
+                        setupCallArgs(mv, compiler);
+                        String internalName = pyBuiltinClass.extName;
+                        Type type = type(compiler);
+                        setupCallArgs(mv, compiler);
+                        compiler.writer.newInstance(internalName, name(), "(" + argDesc(compiler, callArgs) + ")" + type, false, () -> {
+                            installArgs(mv, compiler, type);
+                        });
                     }
                     case null, default ->
                             throw new UnsupportedOperationException("Not implemented: " + symbol.getClass().getSimpleName());
@@ -651,7 +663,7 @@ final class FuncCall implements Symbol {
                 if (owner1 != null) return owner1;
             }
 
-            throw new CompilerException("Java constructor not found in " + substring + " (" + compiler.getLocation(this) + ")");
+            throw new CompilerException("Java constructor not found in " + substring + " for " + name + " and arguments " + parse + " (" + compiler.getLocation(this) + ")");
         }
         Stack<Class<?>> stack = new Stack<>();
         stack.push(aClass);
@@ -767,18 +779,48 @@ final class FuncCall implements Symbol {
 
     private boolean doesConstructorPass(PythonCompiler compiler, @NotNull Class<?> @NotNull [] parameterTypes, int i, ImmutableList<Type> parse, boolean passed, StringBuilder sb) throws ClassNotFoundException {
         Class<?> paramType = parameterTypes[i];
-        String className = parse.get(i).getClassName();
+        Type type = parse.get(i);
+        String className = type.getClassName();
         if (!paramType.isPrimitive() && compiler.classes.containsKey(className)) {
             PyClass pyClass = compiler.classes.get(paramType.getName());
             if (!pyClass.doesInherit(paramType)) {
                 passed = false;
             }
         } else if (paramType.isPrimitive()) {
-            var checkAgainst = Class.forName(parse.get(i).getClassName(), false, getClass().getClassLoader());
-            if (!Type.getType(paramType).equals(parse.get(i))) {
-                return false;
+            switch (type.getSort()) {
+                case Type.INT -> {
+                    if (!paramType.equals(Integer.TYPE)) passed = false;
+                }
+                case Type.LONG -> {
+                    if (!paramType.equals(Long.TYPE)) passed = false;
+                }
+                case Type.FLOAT -> {
+                    if (!paramType.equals(Float.TYPE)) passed = false;
+                }
+                case Type.DOUBLE -> {
+                    if (!paramType.equals(Double.TYPE)) passed = false;
+                }
+                case Type.BOOLEAN -> {
+                    if (!paramType.equals(Boolean.TYPE)) passed = false;
+                }
+                case Type.CHAR -> {
+                    if (!paramType.equals(Character.TYPE)) passed = false;
+                }
+                case Type.BYTE -> {
+                    if (!paramType.equals(Byte.TYPE)) passed = false;
+                }
+                case Type.SHORT -> {
+                    if (!paramType.equals(Short.TYPE)) passed = false;
+                }
+                default -> {
+                    var checkAgainst = Class.forName(type.getClassName(), false, getClass().getClassLoader());
+                    if (!paramType.isAssignableFrom(checkAgainst)) {
+                        passed = false;
+                        return passed;
+                    }
+                    sb.append(paramType.descriptorString());
+                }
             }
-            sb.append(paramType.descriptorString());
         } else {
             try {
                 var checkAgainst = Class.forName(parse.get(i).getClassName(), false, getClass().getClassLoader());
@@ -904,6 +946,9 @@ final class FuncCall implements Symbol {
                 Symbol symbol = compiler.symbols.get(name);
                 if (symbol instanceof PyBuiltinFunction func) {
                     return func.mapOwner;
+                }
+                if (symbol instanceof PyBuiltinClass cls) {
+                    return Type.getType(cls.extName);
                 }
 
                 if (symbol == null) {

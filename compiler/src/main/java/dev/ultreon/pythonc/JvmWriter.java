@@ -1,8 +1,12 @@
 package dev.ultreon.pythonc;
 
 import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+
+import java.lang.reflect.Constructor;
+import java.util.List;
 
 import static org.objectweb.asm.Opcodes.*;
 
@@ -849,7 +853,8 @@ public class JvmWriter {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         Context context = getContext();
         Type pop = context.pop();
-        if (pop != Type.INT_TYPE && pop != Type.SHORT_TYPE && pop != Type.BYTE_TYPE) throw new RuntimeException("Expected stack int, got " + pop);
+        if (pop != Type.INT_TYPE && pop != Type.SHORT_TYPE && pop != Type.BYTE_TYPE)
+            throw new RuntimeException("Expected stack int, got " + pop);
         mv.visitTypeInsn(ANEWARRAY, type.getInternalName());
 
         context.push(Type.getType("[" + type.getDescriptor()));
@@ -898,5 +903,102 @@ public class JvmWriter {
 
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitInsn(FRETURN);
+    }
+
+    public void forLoop(Object targets, List<?> expressions, PythonParser.BlockContext block) {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+
+        Object expr;
+        if (expressions.size() == 1) {
+            expr = expressions.getFirst();
+        } else {
+            throw new UnsupportedOperationException("Multiple expressions in for loops are not supported yet");
+        }
+
+        Type type;
+        if (expr instanceof PyExpr pyExpr) {
+            mv.visitLineNumber(pyExpr.lineNo(), new Label());
+            type = pyExpr.type(pc);
+            forExprDetect(pyExpr, mv, type);
+        } else {
+            throw new RuntimeException("Can't iterate over " + expr);
+        }
+
+        int iteratorIndex = pc.currentVariableIndex;
+        pc.currentVariableIndex += pc.computationalType(type);
+        storeObject(iteratorIndex, type);
+
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterable", "iterator", "()Ljava/util/Iterator;", true); // Call iterator()
+
+        // Start the iteration: while (it.hasNext())
+        Label startLoop = new Label();
+        Label endLoop = new Label();
+        mv.visitLabel(startLoop);
+
+        // Inside the loop: if (!it.hasNext()) break;
+        mv.visitVarInsn(ALOAD, 2); // Load the Iterator reference
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "hasNext", "()Z", true); // Call hasNext() on the iterator
+        mv.visitJumpInsn(IFEQ, endLoop); // If true (i.e., there is a next element), continue; otherwise, exit the loop
+
+        // Inside the loop: System.out.println(it.next());
+        mv.visitVarInsn(ALOAD, 2); // Load the Iterator reference
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true); // Call next()
+        mv.visitVarInsn(ASTORE, pc.currentVariableIndex += pc.computationalType(Type.getType(Object.class)));
+
+        mv.visitFrame(F_APPEND, 1, new Object[]{Type.getType("Ljava/util/Iterator;")}, 0, null);
+
+        // Call it.hasNext(): it.hasNext()
+        String targetName = null;
+        if (targets instanceof PyObjectRef ref) {
+            int v = pc.currentVariableIndex += pc.computationalType(Type.getType(Object.class));
+            Type type1 = Type.getType(Object.class);
+            mv.visitLocalVariable(ref.name(), type1.getDescriptor(), null, startLoop, endLoop, v);
+            targetName = ref.name();
+            pc.symbols.put(ref.name(), new PyVariable(ref.name(), type1, v, ref.lineNo(), startLoop));
+            Object preload = ref.preload(mv, pc, false);
+            ref.load(mv, pc, preload, false);
+        } else if (!(targets instanceof List<?>)) {
+            throw new RuntimeException("Can't iterate to " + targets);
+        } else for (Object target : (List<?>) targets) {
+            if (target instanceof PyExpr pyExpr1) {
+                invokeInterface("java/util/Iterator", "hasNext", "()Z", true); // Call hasNext() on the iterator
+            } else {
+                throw new RuntimeException("Can't iterate to a " + target);
+            }
+        }
+        if (targetName == null) {
+            throw new RuntimeException("Can't iterate to " + targets);
+        }
+
+
+        pc.visit(block);
+
+        mv.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+
+        mv.visitLabel(endLoop);
+
+        mv.visitFrame(F_CHOP, 1, new Object[]{targetName}, 0, new Object[0]);
+        pc.symbols.remove(targetName);
+
+        // Go back to the start of the loop
+        mv.visitJumpInsn(GOTO, startLoop);
+
+        // End of loop
+        mv.visitLabel(endLoop);
+    }
+
+    private void forExprDetect(PyExpr pyExpr, MethodVisitor mv, Type type) {
+        if (pyExpr instanceof FuncCall funcCall) {
+            Constructor<?> constructor = funcCall.constructor;
+            if (constructor != null) {
+                if (Iterable.class.isAssignableFrom(constructor.getDeclaringClass())) {
+                    pyExpr.load(mv, pc, pyExpr.preload(mv, pc, false), false);
+                    return;
+                }
+            }
+        }
+        if (!type.getInternalName().equals("java/lang/Iterable"))
+            throw new RuntimeException("Can't iterate over " + type.getClassName());
+        pyExpr.load(mv, pc, pyExpr.preload(mv, pc, false), false);
     }
 }
