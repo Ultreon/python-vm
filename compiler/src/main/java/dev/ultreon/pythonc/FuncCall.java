@@ -570,6 +570,7 @@ final class FuncCall implements Symbol {
                         case PyObjectRef objectRef -> owner(compiler).getDescriptor();
                         case FuncCall funcCallWithArgs -> funcCallWithArgs.type(compiler).getDescriptor();
                         case PyConstant pyConstant -> pyConstant.type.type.getDescriptor();
+                        case PyExpr expr -> expr.type(compiler).getDescriptor();
                         case null, default -> {
                             if (o != null) {
                                 throw new RuntimeException("argument not supported with type " + o.getClass().getSimpleName() + " for:\n" + arguments.getText());

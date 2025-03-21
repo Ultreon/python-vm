@@ -1,6 +1,7 @@
 from java.awt import Button, Frame
 from java.lang import Runnable, System, Long, Exception
 from java.util import Objects
+from java.util import Random
 
 STRING = "Hello, world!"
 
@@ -30,7 +31,43 @@ def init():
 
     Exception("Hello, world!").printStackTrace()
 
-    if True:
-        print("3 + 5 == 8")
+    if number != 3.14:
+        print("Lucky!")
     else:
-        print("3 + 5 != 8")
+        print("Unlucky!")
+
+    if number == 3.141592653589793:
+        print("Lucky!")
+    else:
+        print("Unlucky!")
+
+    if number > 3.14:
+        print("Lucky!")
+    else:
+        print("Unlucky!")
+
+    if number < 4.0:
+        print("Lucky!")
+    else:
+        print("Unlucky!")
+
+    if number >= 3.14:
+        print("Lucky!")
+    else:
+        print("Unlucky!")
+
+    if number >= 3.141592653589793:
+        print("Lucky!")
+    else:
+        print("Unlucky!")
+
+    if number <= 4.0:
+        print("Lucky!")
+    else:
+        print("Unlucky!")
+
+    if number <= 3.141592653589793:
+        print("Lucky!")
+    else:
+        print("Unlucky!")
+

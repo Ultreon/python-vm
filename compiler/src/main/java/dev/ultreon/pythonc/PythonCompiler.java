@@ -61,9 +61,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     Label curLabel;
     Map<String, PyClass> classes = new HashMap<>();
     private PyClass curPyClass = null;
-    private List<CompilerException> compileErrors = new ArrayList<>();
+    private final List<CompilerException> compileErrors = new ArrayList<>();
     private Label elifLabel;
-    private Stack<Context> contextStack = new Stack<>();
+    private final Stack<Context> contextStack = new Stack<>();
 
     public final JvmWriter writer = new JvmWriter(this);
 
@@ -210,13 +210,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             Object visit = visit(ctx.statement(i));
             switch (visit) {
-                case null -> throw new RuntimeException("statement not supported for:\n" + ctx.getText());
                 case Unit unit -> {
 
                 }
-                case Decorators decorators1 ->
-                        throw new RuntimeException("statement not supported for:\n" + ctx.getText());
-                case FuncCall funcCall -> throw new RuntimeException("statement not supported for:\n" + ctx.getText());
                 case List<?> list -> {
                     for (Object o : list) {
                         switch (o) {
@@ -273,12 +269,18 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                                     throw new RuntimeException("statement not supported for double:\n" + ctx.getText());
                             case Unit unit -> {
                             }
+                            case PyExpr pyExpr -> {
+                                pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
+                                if (pyExpr.type(this) != Type.VOID_TYPE) {
+                                    writer.pop();
+                                }
+                            }
                             case null, default ->
-                                    throw new RuntimeException("statement not supported for: " + o.getClass().getSimpleName());
+                                    throw new RuntimeException("statement not supported for: " + ctx.getText());
                         }
                     }
                 }
-                default -> throw new RuntimeException("statement not supported for:\n" + ctx.getText());
+                case null, default -> throw new RuntimeException("statement not supported for:\n" + ctx.getText());
             }
 
         }
@@ -334,9 +336,50 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
         if (namedExpressionContext != null) {
             Object visit = visit(namedExpressionContext);// Generates bytecode for the condition
-            loadConstant(ctx, visit, mv);
+            switch (visit) {
+                case PyExpr pyExpr -> {
+                    if (mv == null) {
+                        throw new RuntimeException("Not writing a method:\n" + ctx.getText());
+                    }
 
-            // Jump to elif or else block if condition is false
+                    Type type = pyExpr.type(this);
+                    if (type != Type.BOOLEAN_TYPE) {
+                        throw new RuntimeException("Expected boolean, got " + type.getClassName());
+                    }
+                    pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
+                }
+                case Boolean b -> {
+                    if (mv == null) {
+                        throw new RuntimeException("Not writing a method:\n" + ctx.getText());
+                    }
+                    writer.loadConstant(b);
+                }
+                case Integer i -> {
+                    if (mv == null) {
+                        throw new RuntimeException("Not writing a method:\n" + ctx.getText());
+                    }
+                    writer.loadConstant(i);
+                }
+                case String s -> {
+                    throw new RuntimeException("String is not a condition:\n" + ctx.getText());
+                }
+                case Float f -> {
+                    throw new RuntimeException("Float is not a condition:\n" + ctx.getText());
+                }
+                case Long l -> {
+                    throw new RuntimeException("Long is not a condition:\n" + ctx.getText());
+                }
+                case Double d -> {
+                    throw new RuntimeException("Double is not a condition:\n" + ctx.getText());
+                }
+                case Unit unit -> {
+                    throw new RuntimeException("Unit is not a condition:\n" + ctx.getText());
+                }
+                case null, default ->
+                        throw new RuntimeException("statement not supported for: " + visit.getClass().getSimpleName());
+            }
+
+            // Jump to elif or else block if the condition is false
             writer.jumpIfEqual(elifLabel != null ? elifLabel : elseLabel);
         }
 
@@ -1005,6 +1048,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         case Double doubleValue -> Type.DOUBLE_TYPE;
                         case Character charValue -> Type.CHAR_TYPE;
                         case PyConstant pyConstant -> pyConstant.type(this);
+                        case PyExpr pyExpr -> pyExpr.type(this);
                         default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
                     }, switch (visit1) {
                         case PyConstant pyConstant -> pyConstant;
@@ -1018,6 +1062,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         case Character charValue -> new PyConstant(charValue, ctx.start.getLine());
                         case Byte byteValue -> new PyConstant(byteValue, ctx.start.getLine());
                         case Short shortValue -> new PyConstant(shortValue, ctx.start.getLine());
+                        case PyExpr pyExpr -> pyExpr;
                         default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
                     }, false);
                 }
@@ -1220,13 +1265,61 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     @Override
     public Object visitComparison(PythonParser.ComparisonContext ctx) {
         PythonParser.Bitwise_orContext bitwiseOrContext = ctx.bitwise_or();
+        List<PythonParser.Compare_op_bitwise_or_pairContext> compareOpBitwiseOrPairContexts = ctx.compare_op_bitwise_or_pair();
         if (bitwiseOrContext != null) {
-            return visit(bitwiseOrContext);
+            Object visit = visit(bitwiseOrContext);
+            if (!compareOpBitwiseOrPairContexts.isEmpty()) {
+                loadExpr(ctx, visit);
+                for (PythonParser.Compare_op_bitwise_or_pairContext compareOpBitwiseOrPairContext : compareOpBitwiseOrPairContexts) {
+                    Object visit1 = visit(compareOpBitwiseOrPairContext);
+                    if (visit1 instanceof PyExpr) {
+                        return visit1;
+                    }
+                    throw new RuntimeException("compare_op_bitwise_or_pair not supported for:\n" + ctx.getText());
+                }
+            }
+            return visit;
         }
 
         throw new RuntimeException("No supported matching comparison found for:\n" + ctx.getText());
     }
 
+    @Override
+    public Object visitCompare_op_bitwise_or_pair(PythonParser.Compare_op_bitwise_or_pairContext ctx) {
+        PythonParser.Eq_bitwise_orContext eqBitwiseOrContext = ctx.eq_bitwise_or();
+        if (eqBitwiseOrContext != null) {
+            return new PyComparison(eqBitwiseOrContext, PyComparison.Comparison.EQ, ctx);
+        }
+        PythonParser.Noteq_bitwise_orContext noteqBitwiseOrContext = ctx.noteq_bitwise_or();
+        if (noteqBitwiseOrContext != null) {
+            return new PyComparison(noteqBitwiseOrContext, PyComparison.Comparison.NE, ctx);
+        }
+        PythonParser.Gt_bitwise_orContext gtBitwiseOrContext = ctx.gt_bitwise_or();
+        if (gtBitwiseOrContext != null) {
+            return new PyComparison(gtBitwiseOrContext, PyComparison.Comparison.GT, ctx);
+        }
+        PythonParser.Gte_bitwise_orContext gteBitwiseOrContext = ctx.gte_bitwise_or();
+        if (gteBitwiseOrContext != null) {
+            return new PyComparison(gteBitwiseOrContext, PyComparison.Comparison.GTE, ctx);
+        }
+        PythonParser.Lt_bitwise_orContext ltBitwiseOrContext = ctx.lt_bitwise_or();
+        if (ltBitwiseOrContext != null) {
+            return new PyComparison(ltBitwiseOrContext, PyComparison.Comparison.LT, ctx);
+        }
+        PythonParser.Lte_bitwise_orContext lteBitwiseOrContext = ctx.lte_bitwise_or();
+        if (lteBitwiseOrContext != null) {
+            return new PyComparison(lteBitwiseOrContext, PyComparison.Comparison.LTE, ctx);
+        }
+        PythonParser.Notin_bitwise_orContext notinBitwiseOrContext = ctx.notin_bitwise_or();
+        if (notinBitwiseOrContext != null) {
+            throw new RuntimeException("compare_op_bitwise_or_pair not supported for:\n" + ctx.getText());
+        }
+        PythonParser.In_bitwise_orContext inBitwiseOrContext = ctx.in_bitwise_or();
+        if (inBitwiseOrContext != null) {
+            throw new RuntimeException("compare_op_bitwise_or_pair not supported for:\n" + ctx.getText());
+        }
+        throw new RuntimeException("No supported matching compare_op_bitwise_or_pair found for:\n" + ctx.getText());
+    }
 
     @Override
     public Object visitBitwise_and(PythonParser.Bitwise_andContext ctx) {
@@ -1266,30 +1359,132 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     @Override
     public Object visitSum(PythonParser.SumContext ctx) {
         PythonParser.SumContext sumContext = ctx.sum();
-        if (ctx.PLUS() != null) {
-            visit(ctx.term());
-            writer.addValues();
-            if (sumContext != null) {
-                visit(sumContext);
-            }
-            return Unit.Instance;
-        }
-        if (ctx.MINUS() != null) {
-            visit(ctx.term());
-            writer.subtractValues();
-            if (sumContext != null) {
-                visit(sumContext);
-            }
-            return Unit.Instance;
-        }
+
+        Object value;
+        Object addition = null;
         if (sumContext != null) {
-            throw new RuntimeException("sum not supported for:\n" + ctx.getText());
+            value = visit(sumContext);
+            addition = visit(ctx.term());
+        } else {
+            value = visit(ctx.term());
         }
-        PythonParser.TermContext termContext = ctx.term();
-        if (termContext != null) {
-            return visit(termContext);
+        Object finalValue = value;
+        Object finalAddition = addition;
+        return new PyExpr() {
+            @Override
+            public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
+                return null;
+            }
+
+            @Override
+            public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
+                loadExpr(ctx, finalValue);
+                if (finalAddition != null) {
+                    loadExpr(ctx, finalAddition);
+                    if (ctx.PLUS() != null) {
+                        writer.addValues();
+                    } else if (ctx.MINUS() != null) {
+                        writer.subtractValues();
+                    } else {
+                        throw new RuntimeException("No supported matching operator found for:\n" + ctx.getText());
+                    }
+                }
+            }
+
+            @Override
+            public int lineNo() {
+                return ctx.getStop().getLine();
+            }
+
+            @Override
+            public Type type(PythonCompiler compiler) {
+                if (finalAddition != null) {
+                    if (finalAddition instanceof PyExpr expr) {
+                        Type type = expr.type(compiler);
+                        if (finalValue instanceof PyExpr expr2) {
+                            Type type2 = expr2.type(compiler);
+                            if (type.equals(Type.LONG_TYPE) && type2.equals(Type.LONG_TYPE)) {
+                                return Type.LONG_TYPE;
+                            }
+                            if (type.equals(Type.DOUBLE_TYPE) && type2.equals(Type.DOUBLE_TYPE)) {
+                                return Type.DOUBLE_TYPE;
+                            }
+                        } else if (finalValue instanceof Integer integer) {
+                            Type longType = castInt(type);
+                            if (longType != null) return longType;
+                        } else if (finalValue instanceof Long l) {
+                            if (type.equals(Type.DOUBLE_TYPE)) {
+                                return Type.DOUBLE_TYPE;
+                            }
+                            return Type.LONG_TYPE;
+                        } else if (finalValue instanceof Float f) {
+                            if (type.equals(Type.DOUBLE_TYPE)) {
+                                return Type.DOUBLE_TYPE;
+                            } else if (type.equals(Type.LONG_TYPE)) {
+                                return Type.LONG_TYPE;
+                            }
+                            return Type.FLOAT_TYPE;
+                        } else if (finalValue instanceof Double d) {
+                            return Type.DOUBLE_TYPE;
+                        }
+                        return Type.DOUBLE_TYPE;
+                    }
+                }
+
+                if (finalValue instanceof PyExpr expr) {
+                    return expr.type(compiler);
+                } else if (finalValue instanceof Integer integer) {
+                    return Type.INT_TYPE;
+                } else if (finalValue instanceof Long l) {
+                    return Type.LONG_TYPE;
+                } else if (finalValue instanceof Float f) {
+                    return Type.FLOAT_TYPE;
+                } else if (finalValue instanceof Double d) {
+                    return Type.DOUBLE_TYPE;
+                } else if (finalValue instanceof Boolean b) {
+                    return Type.BOOLEAN_TYPE;
+                } else if (finalValue instanceof Byte b) {
+                    return Type.BYTE_TYPE;
+                } else if (finalValue instanceof Short s) {
+                    return Type.SHORT_TYPE;
+                } else if (finalValue instanceof Character c) {
+                    return Type.CHAR_TYPE;
+                } else if (finalValue instanceof String s) {
+                    return Type.getType(String.class);
+                }
+
+                throw new RuntimeException("No supported matching sum type found for:\n" + ctx.getText());
+            }
+
+            private static @Nullable Type castInt(Type type) {
+                if (type.equals(Type.LONG_TYPE)) {
+                    return Type.LONG_TYPE;
+                } else if (type.equals(Type.DOUBLE_TYPE)) {
+                    return Type.DOUBLE_TYPE;
+                } else if (type.equals(Type.INT_TYPE)) {
+                    return Type.INT_TYPE;
+                } else if (type.equals(Type.FLOAT_TYPE)) {
+                    return Type.FLOAT_TYPE;
+                }
+                return null;
+            }
+        };
+    }
+
+    private void loadExpr(ParserRuleContext ctx, Object visit) {
+        MethodVisitor mv = this.mv == null ? this.rootInitMv : this.mv;
+        switch (visit) {
+            case PyExpr pyExpr -> pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
+            case Integer integer -> loadConstant(ctx, integer, mv);
+            case Long aLong -> loadConstant(ctx, aLong, mv);
+            case Float aFloat -> loadConstant(ctx, aFloat, mv);
+            case Double aDouble -> loadConstant(ctx, aDouble, mv);
+            case String s -> loadConstant(ctx, s, mv);
+            case Boolean aBoolean -> loadConstant(ctx, aBoolean, mv);
+            case Character aChar -> loadConstant(ctx, aChar, mv);
+            case Unit unit -> throw new RuntimeException("unit not supported for:\n" + ctx.getText());
+            default -> throw new RuntimeException("No supported matching loadExpr found for:\n" + ctx.getText());
         }
-        throw new RuntimeException("No supported matching sum found for:\n" + ctx.getText());
     }
 
     @Override
@@ -1895,15 +2090,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     case Byte s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
                     case Short s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
                     case Boolean s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
-                    case Symbol symbol -> {
-                        if (mv == null) {
-                            args.add(symbol.type(this));
-                            continue;
-                        }
-
-                        args.add(symbol);
+                    case PyExpr expr -> {
+                        args.add(expr);
                     }
-                    case PyExpr expr -> args.add(expr.type(this));
                     default ->
                             throw new UnsupportedOperationException("Not implemented: " + visit.getClass().getName());
                 }
@@ -1911,5 +2100,417 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
 
         return args;
+    }
+
+    private static class PyComparison implements PyExpr {
+        private final ParserRuleContext context;
+        private final Comparison comparator;
+        private final PythonParser.Compare_op_bitwise_or_pairContext ctx;
+
+        public enum Comparison {
+            EQ, NE, LT, LTE, GT, GTE
+        }
+
+        public PyComparison(ParserRuleContext context, Comparison comparator, PythonParser.Compare_op_bitwise_or_pairContext ctx) {
+            this.context = context;
+            this.comparator = comparator;
+            this.ctx = ctx;
+        }
+
+        @Override
+        public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
+            return null;
+        }
+
+        @Override
+        public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
+            PythonParser.Bitwise_orContext bitwiseOrContext = switch (context) {
+                case PythonParser.Eq_bitwise_orContext ctx -> ctx.bitwise_or();
+                case PythonParser.Noteq_bitwise_orContext ctx -> ctx.bitwise_or();
+                case PythonParser.Lt_bitwise_orContext ctx -> ctx.bitwise_or();
+                case PythonParser.Lte_bitwise_orContext ctx -> ctx.bitwise_or();
+                case PythonParser.Gt_bitwise_orContext ctx -> ctx.bitwise_or();
+                case PythonParser.Gte_bitwise_orContext ctx -> ctx.bitwise_or();
+                default -> throw new RuntimeException("Unknown comparison context: " + context.getText());
+            };
+            if (bitwiseOrContext != null) {
+                Object visit = compiler.visit(bitwiseOrContext);
+
+                if (visit == null) {
+                    throw new RuntimeException("Unknown visitArgs for expression context: " + bitwiseOrContext.getText());
+                }
+
+                switch (visit) {
+                    case String s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpString(mv);
+                    }
+                    case Integer s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpInt(mv, compiler);
+                    }
+                    case Float s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpFloat(mv, compiler);
+                    }
+                    case Long s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpLong(mv, compiler);
+                    }
+                    case Double s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpDouble(mv, compiler);
+                    }
+                    case Character s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpInt(mv, compiler);
+                    }
+                    case Byte s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpInt(mv, compiler);
+                    }
+                    case Short s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpInt(mv, compiler);
+                    }
+                    case Boolean s -> {
+                        compiler.writer.loadConstant(s);
+
+                        cmpInt(mv, compiler);
+                    }
+                    case Symbol symbol -> {
+                        symbol.load(mv, compiler, symbol.preload(mv, compiler, false), false);
+
+                        cmpExpr(mv, compiler, symbol);
+                    }
+                    case PyExpr expr -> {
+                        expr.load(mv, compiler, expr.preload(mv, compiler, false), false);
+
+                        cmpExpr(mv, compiler, expr);
+                    }
+                    case null, default ->
+                            throw new UnsupportedOperationException("Not implemented: " + visit.getClass());
+                }
+
+                Context context = compiler.getContext(Context.class);
+                context.push(Type.BOOLEAN_TYPE);
+
+                return;
+            }
+            throw new RuntimeException("compare_op_bitwise_or_pair not supported for:\n" + ctx.getText());
+        }
+
+        private void cmpExpr(MethodVisitor mv, PythonCompiler compiler, PyExpr expr) {
+            if (expr.type(compiler).equals(Type.LONG_TYPE)) {
+                cmpLong(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.DOUBLE_TYPE)) {
+                cmpDouble(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.INT_TYPE)) {
+                cmpInt(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.FLOAT_TYPE)) {
+                cmpFloat(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.CHAR_TYPE)) {
+                cmpInt(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.BYTE_TYPE)) {
+                cmpInt(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.SHORT_TYPE)) {
+                cmpInt(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.BOOLEAN_TYPE)) {
+                cmpInt(mv, compiler);
+            } else if (expr.type(compiler).equals(Type.getType(String.class))) {
+                cmpString(mv);
+            } else {
+                cmpObject(mv);
+            }
+        }
+
+        private void cmpString(MethodVisitor mv) {
+            mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/String", "equals", "(Ljava/lang/Object;)Z", false);
+            if (comparator == Comparison.NE) {
+                Label isFalse = new Label();
+                Label end = new Label();
+
+                // If value == 0 (false), jump to isFalse
+                mv.visitJumpInsn(IFEQ, isFalse);
+
+                // If we reach here, the value was 1 (true), so push 0 (false)
+                mv.visitInsn(ICONST_0);
+                mv.visitJumpInsn(GOTO, end);
+
+                // If value was 0 (false), we push 1 (true)
+                mv.visitLabel(isFalse);
+                mv.visitInsn(ICONST_1);
+
+                mv.visitLabel(end);
+            }
+        }
+
+        private void cmpFloat(MethodVisitor mv, PythonCompiler compiler) {
+            Context context = compiler.getContext(Context.class);
+            Type pop1 = context.pop();
+            Type pop2 = context.pop();
+
+            if (!pop1.equals(pop2)) {
+                if (pop2 == Type.LONG_TYPE) {
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(L2D);
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(F2D);
+                } else if (pop2 == Type.DOUBLE_TYPE) {
+                    mv.visitInsn(F2D);
+                } else if (pop2 == Type.INT_TYPE) {
+                    mv.visitInsn(I2F);
+                }
+            }
+
+            Label labelTrue = new Label();
+            Label labelEnd = new Label();
+
+            mv.visitInsn(FCMPG);
+            if (comparator == Comparison.EQ) {
+                mv.visitJumpInsn(IFEQ, labelTrue);
+            } else if (comparator == Comparison.NE) {
+                mv.visitJumpInsn(IFNE, labelTrue);
+            } else if (comparator == Comparison.LT) {
+                mv.visitJumpInsn(IFLT, labelTrue);
+            } else if (comparator == Comparison.LTE) {
+                mv.visitJumpInsn(IFLE, labelTrue);
+            } else if (comparator == Comparison.GT) {
+                mv.visitJumpInsn(IFGT, labelTrue);
+            } else if (comparator == Comparison.GTE) {
+                mv.visitJumpInsn(IFGE, labelTrue);
+            }
+
+            mv.visitInsn(ICONST_0); // Push false
+            mv.visitJumpInsn(GOTO, labelEnd);
+
+            mv.visitLabel(labelTrue);
+            mv.visitInsn(ICONST_1); // Push true
+
+            mv.visitLabel(labelEnd);
+        }
+
+        private void cmpLong(MethodVisitor mv, PythonCompiler compiler) {
+            Context context = compiler.getContext(Context.class);
+            Type pop1 = context.pop();
+            Type pop2 = context.pop();
+
+            if (!pop1.equals(pop2)) {
+                if (pop2 == Type.INT_TYPE) {
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(I2L);
+                    mv.visitInsn(SWAP);
+                } else if (pop2 == Type.DOUBLE_TYPE) {
+                    mv.visitInsn(L2D);
+                } else if (pop2 == Type.FLOAT_TYPE) {
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(L2D);
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(F2D);
+                }
+            }
+
+            Label labelTrue = new Label();
+            Label labelEnd = new Label();
+
+            if (pop2 == Type.LONG_TYPE) mv.visitInsn(LCMP);
+            else if (pop2 == Type.FLOAT_TYPE) mv.visitInsn(FCMPG);
+            else if (pop2 == Type.DOUBLE_TYPE) mv.visitInsn(DCMPG);
+            if (comparator == Comparison.EQ) {
+                mv.visitJumpInsn(IFEQ, labelTrue);
+            } else if (comparator == Comparison.NE) {
+                mv.visitJumpInsn(IFNE, labelTrue);
+            } else if (comparator == Comparison.LT) {
+                mv.visitJumpInsn(IFLT, labelTrue);
+            } else if (comparator == Comparison.LTE) {
+                mv.visitJumpInsn(IFLE, labelTrue);
+            } else if (comparator == Comparison.GT) {
+                mv.visitJumpInsn(IFGT, labelTrue);
+            } else if (comparator == Comparison.GTE) {
+                mv.visitJumpInsn(IFGE, labelTrue);
+            }
+
+            mv.visitInsn(ICONST_0); // Push false
+            mv.visitJumpInsn(GOTO, labelEnd);
+
+            mv.visitLabel(labelTrue);
+            mv.visitInsn(ICONST_1); // Push true
+
+            mv.visitLabel(labelEnd);
+        }
+
+        private void cmpObject(MethodVisitor mv) {
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/util/Objects", "equals", "(Ljava/lang/Object;)Z", false);
+            if (comparator == Comparison.NE) {
+                Label isFalse = new Label();
+                Label end = new Label();
+
+                // If value == 0 (false), jump to isFalse
+                mv.visitJumpInsn(IFEQ, isFalse);
+
+                // If we reach here, the value was 1 (true), so push 0 (false)
+                mv.visitInsn(ICONST_0);
+                mv.visitJumpInsn(GOTO, end);
+
+                // If value was 0 (false), we push 1 (true)
+                mv.visitLabel(isFalse);
+                mv.visitInsn(ICONST_1);
+
+                mv.visitLabel(end);
+            }
+        }
+
+        private void cmpInt(MethodVisitor mv, PythonCompiler compiler) {
+            Context context = compiler.getContext(Context.class);
+            Type pop1 = context.pop();
+            Type pop2 = context.pop();
+
+            if (!pop1.equals(pop2)) {
+                if (pop2 == Type.LONG_TYPE) {
+                    mv.visitInsn(I2L);
+                } else if (pop2 == Type.DOUBLE_TYPE) {
+                    mv.visitInsn(I2D);
+                } else if (pop2 == Type.FLOAT_TYPE) {
+                    mv.visitInsn(I2F);
+                }
+
+                Label labelTrue = new Label();
+                Label labelEnd = new Label();
+
+                if (pop2 == Type.LONG_TYPE) {
+                    mv.visitInsn(LCMP);
+                    if (comparator == Comparison.EQ) {
+                        mv.visitJumpInsn(IFEQ, labelTrue);
+                    } else if (comparator == Comparison.NE) {
+                        mv.visitJumpInsn(IFNE, labelTrue);
+                    } else if (comparator == Comparison.LT) {
+                        mv.visitJumpInsn(IFLT, labelTrue);
+                    } else if (comparator == Comparison.LTE) {
+                        mv.visitJumpInsn(IFLE, labelTrue);
+                    } else if (comparator == Comparison.GT) {
+                        mv.visitJumpInsn(IFGT, labelTrue);
+                    } else if (comparator == Comparison.GTE) {
+                        mv.visitJumpInsn(IFGE, labelTrue);
+                    }
+                } else if (pop2 == Type.DOUBLE_TYPE) {
+                    mv.visitInsn(DCMPG);
+                    if (comparator == Comparison.EQ) {
+                        mv.visitJumpInsn(IFEQ, labelTrue);
+                    } else if (comparator == Comparison.NE) {
+                        mv.visitJumpInsn(IFNE, labelTrue);
+                    } else if (comparator == Comparison.LT) {
+                        mv.visitJumpInsn(IFLT, labelTrue);
+                    } else if (comparator == Comparison.LTE) {
+                        mv.visitJumpInsn(IFLE, labelTrue);
+                    } else if (comparator == Comparison.GT) {
+                        mv.visitJumpInsn(IFGT, labelTrue);
+                    } else if (comparator == Comparison.GTE) {
+                        mv.visitJumpInsn(IFGE, labelTrue);
+                    }
+                } else if (pop2 == Type.FLOAT_TYPE) {
+                    mv.visitInsn(FCMPG);
+                    if (comparator == Comparison.EQ) {
+                        mv.visitJumpInsn(IFEQ, labelTrue);
+                    } else if (comparator == Comparison.NE) {
+                        mv.visitJumpInsn(IFNE, labelTrue);
+                    } else if (comparator == Comparison.LT) {
+                        mv.visitJumpInsn(IFLT, labelTrue);
+                    } else if (comparator == Comparison.LTE) {
+                        mv.visitJumpInsn(IFLE, labelTrue);
+                    } else if (comparator == Comparison.GT) {
+                        mv.visitJumpInsn(IFGT, labelTrue);
+                    } else if (comparator == Comparison.GTE) {
+                        mv.visitJumpInsn(IFGE, labelTrue);
+                    }
+
+                } else {
+                    mv.visitInsn(ICONST_0); // Push false
+                    mv.visitJumpInsn(GOTO, labelEnd);
+
+                    mv.visitLabel(labelTrue);
+                    mv.visitInsn(ICONST_1); // Push true
+
+                    mv.visitLabel(labelEnd);
+                }
+            } else if (comparator == Comparison.EQ) {
+                mv.visitInsn(Opcodes.IF_ICMPEQ);
+            } else if (comparator == Comparison.NE) {
+                mv.visitInsn(Opcodes.IF_ICMPNE);
+            } else if (comparator == Comparison.LT) {
+                mv.visitInsn(Opcodes.IF_ICMPLT);
+            } else if (comparator == Comparison.LTE) {
+                mv.visitInsn(Opcodes.IF_ICMPLE);
+            } else if (comparator == Comparison.GT) {
+                mv.visitInsn(Opcodes.IF_ICMPGT);
+            } else if (comparator == Comparison.GTE) {
+                mv.visitInsn(Opcodes.IF_ICMPGE);
+            }
+        }
+
+        private void cmpDouble(MethodVisitor mv, PythonCompiler compiler) {
+            Context context = compiler.getContext(Context.class);
+            Type pop1 = context.pop();
+            Type pop2 = context.pop();
+
+            if (!pop1.equals(pop2)) {
+                if (pop2 == Type.LONG_TYPE) {
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(L2D);
+                    mv.visitInsn(SWAP);
+                } else if (pop2 == Type.FLOAT_TYPE) {
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(F2D);
+                    mv.visitInsn(SWAP);
+                } else if (pop2 == Type.INT_TYPE) {
+                    mv.visitInsn(SWAP);
+                    mv.visitInsn(I2D);
+                    mv.visitInsn(SWAP);
+                }
+            }
+
+            Label labelTrue = new Label();
+            Label labelEnd = new Label();
+
+            mv.visitInsn(DCMPG);
+            if (comparator == Comparison.EQ) {
+                mv.visitJumpInsn(IFEQ, labelTrue);
+            } else if (comparator == Comparison.NE) {
+                mv.visitJumpInsn(IFNE, labelTrue);
+            } else if (comparator == Comparison.LT) {
+                mv.visitJumpInsn(IFLT, labelTrue);
+            } else if (comparator == Comparison.LTE) {
+                mv.visitJumpInsn(IFLE, labelTrue);
+            } else if (comparator == Comparison.GT) {
+                mv.visitJumpInsn(IFGT, labelTrue);
+            } else if (comparator == Comparison.GTE) {
+                mv.visitJumpInsn(IFGE, labelTrue);
+            }
+
+            mv.visitInsn(ICONST_0); // Push false
+            mv.visitJumpInsn(GOTO, labelEnd);
+
+            mv.visitLabel(labelTrue);
+            mv.visitInsn(ICONST_1); // Push true
+
+            mv.visitLabel(labelEnd);
+        }
+
+        @Override
+        public int lineNo() {
+            return 0;
+        }
+
+        @Override
+        public Type type(PythonCompiler compiler) {
+            return Type.BOOLEAN_TYPE;
+        }
     }
 }
