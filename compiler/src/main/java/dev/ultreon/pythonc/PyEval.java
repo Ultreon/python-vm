@@ -35,7 +35,7 @@ class PyEval implements PyExpr {
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         switch (finalValue) {
             case PyExpr pyExpr -> {
-                pyExpr.load(mv, compiler, pyExpr.preload(mv, compiler, false), false);
+                loadValue(mv, compiler, pyExpr);
                 if (finalAddition != null) {
                     if (pyExpr.type(compiler) == Type.INT_TYPE) {
                         Type type = typeOf(finalAddition, compiler);
@@ -50,7 +50,7 @@ class PyEval implements PyExpr {
                         Type type = typeOf(finalAddition, compiler);
                         if (type == Type.FLOAT_TYPE) {
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            compiler.loadExpr(ctx, finalAddition);
+                            loadAddition(compiler);
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
                             doOperation(mv);
                             return;
@@ -63,12 +63,12 @@ class PyEval implements PyExpr {
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
                         } else if (type == Type.LONG_TYPE) {
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            compiler.loadExpr(ctx, finalAddition);
+                            loadAddition(compiler);
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
                             doOperation(mv);
                             return;
                         } else if (type == Type.INT_TYPE) {
-                            compiler.loadExpr(ctx, finalAddition);
+                            loadAddition(compiler);
                             compiler.writer.smartCast(Type.FLOAT_TYPE);
                             doOperation(mv);
                             return;
@@ -78,12 +78,12 @@ class PyEval implements PyExpr {
                         if (type == Type.LONG_TYPE) {
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
                         } else if (type == Type.INT_TYPE) {
-                            compiler.loadExpr(ctx, finalAddition);
+                            loadAddition(compiler);
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
                             doOperation(mv);
                             return;
                         } else if (type == Type.FLOAT_TYPE) {
-                            compiler.loadExpr(ctx, finalAddition);
+                            loadAddition(compiler);
                             compiler.writer.smartCast(Type.DOUBLE_TYPE);
                             doOperation(mv);
                             return;
@@ -94,7 +94,7 @@ class PyEval implements PyExpr {
                 }
             }
             case Integer integer -> {
-                compiler.loadConstant(ctx, integer, mv);
+                loadConst(mv, compiler, integer);
                 if (finalAddition != null) {
                     Type type = typeOf(finalAddition, compiler);
                     if (type == Type.LONG_TYPE) {
@@ -107,12 +107,12 @@ class PyEval implements PyExpr {
                 }
             }
             case Long aLong -> {
-                compiler.loadConstant(ctx, aLong, mv);
+                loadConst(mv, compiler, aLong);
                 if (finalAddition != null) {
                     Type type = typeOf(finalAddition, compiler);
                     if (type == Type.FLOAT_TYPE) {
                         mv.visitInsn(L2D);
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(F2D);
                         doOperation(mv);
                         return;
@@ -122,7 +122,7 @@ class PyEval implements PyExpr {
                 }
             }
             case Float aFloat -> {
-                compiler.loadConstant(ctx, aFloat, mv);
+                loadConst(mv, compiler, aFloat);
 
                 if (finalAddition != null) {
                     Type type = typeOf(finalAddition, compiler);
@@ -130,12 +130,12 @@ class PyEval implements PyExpr {
                         mv.visitInsn(F2D);
                     } else if (type == Type.LONG_TYPE) {
                         mv.visitInsn(F2D);
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(L2D);
                         doOperation(mv);
                         return;
                     } else if (type == Type.INT_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(I2F);
                         doOperation(mv);
                         return;
@@ -143,46 +143,46 @@ class PyEval implements PyExpr {
                 }
             }
             case Double aDouble -> {
-                compiler.loadConstant(ctx, aDouble, mv);
+                loadConst(mv, compiler, aDouble);
 
                 if (finalAddition != null) {
                     Type type = typeOf(finalAddition, compiler);
                     if (type == Type.LONG_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         compiler.writer.smartCast(Type.DOUBLE_TYPE);
                         doOperation(mv);
                         return;
                     } else if (type == Type.INT_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         compiler.writer.smartCast(Type.DOUBLE_TYPE);
                         doOperation(mv);
                         return;
                     } else if (type == Type.FLOAT_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         compiler.writer.smartCast(Type.DOUBLE_TYPE);
                         doOperation(mv);
                         return;
                     }
                 }
             }
-            case String s -> compiler.loadConstant(ctx, s, mv);
+            case String s -> loadConst(mv, compiler, s);
             case Boolean aBoolean -> {
-                compiler.loadConstant(ctx, aBoolean, mv);
+                loadConst(mv, compiler, aBoolean);
 
                 if (finalAddition != null) {
                     Type type = typeOf(finalAddition, compiler);
                     if (type == Type.INT_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(I2F);
                         doOperation(mv);
                         return;
                     } else if (type == Type.LONG_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(L2D);
                         doOperation(mv);
                         return;
                     } else if (type == Type.FLOAT_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(F2D);
                         doOperation(mv);
                         return;
@@ -190,22 +190,22 @@ class PyEval implements PyExpr {
                 }
             }
             case Character aChar -> {
-                compiler.loadConstant(ctx, aChar, mv);
+                loadConst(mv, compiler, aChar);
 
                 if (finalAddition != null) {
                     Type type = typeOf(finalAddition, compiler);
                     if (type == Type.INT_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(I2F);
                         doOperation(mv);
                         return;
                     } else if (type == Type.LONG_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(L2D);
                         doOperation(mv);
                         return;
                     } else if (type == Type.FLOAT_TYPE) {
-                        compiler.loadExpr(ctx, finalAddition);
+                        loadAddition(compiler);
                         mv.visitInsn(F2D);
                         doOperation(mv);
                         return;
@@ -216,8 +216,29 @@ class PyEval implements PyExpr {
             default -> throw new RuntimeException("No supported matching loadExpr found for:\n" + ctx.getText());
         }
         if (finalAddition != null) {
-            compiler.loadExpr(ctx, finalAddition);
+            loadAddition(compiler);
             doOperation(mv);
+        }
+    }
+
+    private void loadConst(MethodVisitor mv, PythonCompiler compiler, Object aChar) {
+        compiler.loadConstant(ctx, aChar, mv);
+        if (this.operator == Operator.POW) {
+            compiler.writer.smartCast(Type.DOUBLE_TYPE);
+        }
+    }
+
+    private void loadValue(MethodVisitor mv, PythonCompiler compiler, PyExpr pyExpr) {
+        pyExpr.load(mv, compiler, pyExpr.preload(mv, compiler, false), false);
+        if (this.operator == Operator.POW) {
+            compiler.writer.smartCast(Type.DOUBLE_TYPE);
+        }
+    }
+
+    private void loadAddition(PythonCompiler compiler) {
+        compiler.loadExpr(ctx, finalAddition);
+        if (this.operator == Operator.POW) {
+            compiler.writer.smartCast(Type.DOUBLE_TYPE);
         }
     }
 

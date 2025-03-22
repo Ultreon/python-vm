@@ -720,17 +720,8 @@ public class JvmWriter {
         Type right = context.pop();
 
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "pow", "(II)D", false);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "pow", "(JI)D", false);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "pow", "(JI)D", false);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "pow", "(JJ)D", false);
+        if (left == Type.DOUBLE_TYPE && right == Type.DOUBLE_TYPE) {
+            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "pow", "(DD)D", false);
             context.push(Type.DOUBLE_TYPE);
         } else {
             throw new RuntimeException("Unsupported pow between " + left + " and " + right);
