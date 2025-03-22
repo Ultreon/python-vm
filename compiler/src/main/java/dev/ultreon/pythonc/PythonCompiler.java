@@ -62,7 +62,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     private PyClass curPyClass = null;
     private final List<CompilerException> compileErrors = new ArrayList<>();
     private Label elifLabel;
-    private final Stack<Context> contextStack = new Stack<>();
+    final Stack<Context> contextStack = new Stack<>();
 
     public final JvmWriter writer = new JvmWriter(this);
 
@@ -318,19 +318,41 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             return visit(whileStmtContext);
         }
 
+        PythonParser.For_stmtContext forStmtContext = ctx.for_stmt();
+        if (forStmtContext != null) {
+            return visit(forStmtContext);
+        }
+
         throw new RuntimeException("No supported matching compound_stmt found for:\n" + ctx.getText());
+    }
+
+    @Override
+    public Object visitFor_stmt(PythonParser.For_stmtContext ctx) {
+//        PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
+//        if (namedExpressionContext != null) {
+//            Object visit = visit(namedExpressionContext);
+//            loadExpr(ctx, visit);
+//        } else {
+//            throw new RuntimeException("No supported matching named_expression found for:\n" + ctx.getText());
+//        }
+
+        throw new RuntimeException("No supported matching for_stmt found for:\n" + ctx.getText());
     }
 
     @Override
     public Object visitWhile_stmt(PythonParser.While_stmtContext ctx) {
         Label loopStart = new Label();
         Label loopEnd = new Label();
+        Label elseBlock = null;
+        if (ctx.else_block() != null) {
+            elseBlock = new Label();
+        }
 
         // Loop start:
         mv.visitLabel(loopStart);
 
         // region Comparison(named_expression)
-        pushContext(new WhileConditionContext(loopEnd));
+        pushContext(new WhileConditionContext(loopEnd, elseBlock));
         PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
         if (namedExpressionContext != null) {
             Object visit = visit(namedExpressionContext);
@@ -343,6 +365,8 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         // endregion Comparison
 
         // region Loop(block)
+        Context loopContext = new WhileLoopContext(loopStart, loopEnd);
+        pushContext(loopContext);
         PythonParser.BlockContext block = ctx.block();
         if (block != null) {
             visit(block);
@@ -350,10 +374,25 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         if (context.needsPop()) {
             throw new RuntimeException("Still values on stack for:\n" + ctx.getText());
         }
+        popContext();
         // endregion Loop
 
         // Jump to loop start
         mv.visitJumpInsn(GOTO, loopStart);
+
+        if (elseBlock != null) {
+            mv.visitLabel(elseBlock);
+
+            // region Else(block)
+            PythonParser.BlockContext elseBlockContext = ctx.else_block().block();
+            if (elseBlockContext != null) {
+                visit(elseBlockContext);
+            }
+            if (context.needsPop()) {
+                throw new RuntimeException("Still values on stack for:\n" + ctx.getText());
+            }
+            // endregion Else
+        }
 
         // Loop end:
         mv.visitLabel(loopEnd);
@@ -979,6 +1018,21 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
             writer.pop();
             return visit;
+        }
+
+        TerminalNode aBreak = ctx.BREAK();
+        if (aBreak != null) {
+            Context context = writer.getLoopContext();
+            if (context instanceof WhileLoopContext whileConditionContext) {
+                mv.visitJumpInsn(GOTO, whileConditionContext.endLabel);
+                return Unit.Instance;
+//            } else if (writer.getContext() instanceof ForConditionContext) {
+//                ForConditionContext forConditionContext = (ForConditionContext) writer.getContext();
+//                mv.visitJumpInsn(GOTO, forConditionContext.loopEnd);
+//                return Unit.Instance;
+            } else {
+                throw new RuntimeException("Not in a loop:\n" + ctx.getText());
+            }
         }
         throw new RuntimeException("No supported matching simple_stmt found of type " + ctx.getClass().getSimpleName() + " for:\n" + ctx.getText());
     }

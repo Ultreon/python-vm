@@ -127,5 +127,18 @@ def init():
         print(i)
         print("Hello, world!")
         i = i + 1
+    else:
+        print("Done!")
+
+    i = 0
+    while i < 10:
+        print(i)
+        print("Hello, world!")
+        i = i + 1
+        if i == 5:
+            print("Break!")
+            break
+    else:
+        print("Done!")
 
 

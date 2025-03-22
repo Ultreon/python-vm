@@ -22,6 +22,19 @@ public class JvmWriter {
         return context;
     }
 
+    public LoopContext getLoopContext() {
+        for (int i = pc.contextStack.size() - 1; i >= 0; i--) {
+            Context context = pc.contextStack.get(i);
+            if (context instanceof FunctionContext) {
+                throw new CompilerException("Not inside a loop or loop is outside of function.");
+            }
+            if (context instanceof LoopContext) {
+                return (LoopContext) context;
+            }
+        }
+        throw new RuntimeException("No loop context found");
+    }
+
     public JvmClass getClassSymbol(String className) {
         return pc.getClassSymbol(className);
     }
