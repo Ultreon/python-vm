@@ -2,6 +2,7 @@ package dev.ultreon.pythonc;
 
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
 import java.util.List;
@@ -9,20 +10,20 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import static org.objectweb.asm.Opcodes.*;
-
 final class PyVariable implements Symbol {
     private final String name;
-    private final Type type;
+    private Type type;
     private final int index;
     private final int lineNo;
+    private final boolean typeConstant;
     private final Label label;
 
-    PyVariable(String name, Type type, int index, int lineNo, Label label) {
+    PyVariable(String name, Type type, int index, int lineNo, boolean typeConstant, Label label) {
         this.name = name;
         this.type = type;
         this.index = index;
         this.lineNo = lineNo;
+        this.typeConstant = typeConstant;
         this.label = label;
     }
 
@@ -34,60 +35,20 @@ final class PyVariable implements Symbol {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         int opcode;
-        if (type.equals(Type.getType(String.class))) {
-            opcode = ALOAD;
-            compiler.writer.loadObject(index, Type.getType(String.class));
-        } else if (type.equals(Type.LONG_TYPE)) {
-            opcode = LLOAD;
-            compiler.writer.loadLong(index);
-        } else if (type.equals(Type.DOUBLE_TYPE)) {
-            opcode = DLOAD;
-            compiler.writer.loadDouble(index);
-        } else if (type.equals(Type.FLOAT_TYPE)) {
-            opcode = FLOAD;
-            compiler.writer.loadFloat(index);
-        } else if (type.equals(Type.INT_TYPE)) {
-            opcode = ILOAD;
-            compiler.writer.loadInt(index);
-        } else if (type.equals(Type.BOOLEAN_TYPE)) {
-            opcode = ILOAD;
-            compiler.writer.loadBoolean(index);
-        } else if (type.equals(Type.CHAR_TYPE)) {
-            opcode = ILOAD;
-            compiler.writer.loadChar(index);
-        } else if (type.equals(Type.BYTE_TYPE)) {
-            opcode = ILOAD;
-            compiler.writer.loadByte(index);
-        } else if (type.equals(Type.SHORT_TYPE)) {
-            opcode = ILOAD;
-            compiler.writer.loadShort(index);
-        } else {
-            if (compiler.imports.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
-                throw compiler.typeNotFound(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1), this);
-            }
+        if (type.getSort() == Type.OBJECT) {
+            if (type.equals(Type.getType(String.class)) || type.equals(Type.BYTE_TYPE) || type.equals(Type.CHAR_TYPE) || type.equals(Type.SHORT_TYPE) || type.equals(Type.INT_TYPE) || type.equals(Type.LONG_TYPE) || type.equals(Type.FLOAT_TYPE) || type.equals(Type.DOUBLE_TYPE) || type.equals(Type.BOOLEAN_TYPE)
+            || type.equals(Type.getType(byte[].class)) || type.equals(Type.getType(Object[].class)) || type.equals(Type.getType(Object.class)) || type.equals(Type.getType(Class.class))
+            || type.equals(Type.getType(Byte.class)) || type.equals(Type.getType(Character.class)) || type.equals(Type.getType(Short.class)) || type.equals(Type.getType(Integer.class)) || type.equals(Type.getType(Long.class)) || type.equals(Type.getType(Float.class)) || type.equals(Type.getType(Double.class)) || type.equals(Type.getType(Boolean.class))) {
 
-            opcode = ALOAD;
-            compiler.writer.loadObject(index, type);
+            } else if (compiler.imports.get(compiler.writer.boxType(type).getClassName().substring(compiler.writer.boxType(type).getClassName().lastIndexOf('.') + 1)) == null) {
+                throw compiler.typeNotFound(compiler.writer.boxType(type).getClassName().substring(compiler.writer.boxType(type).getClassName().lastIndexOf('.') + 1), this);
+            }
         }
 
-        if (boxed) {
-            if (type.equals(Type.LONG_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-            } else if (type.equals(Type.DOUBLE_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-            } else if (type.equals(Type.INT_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-            } else if (type.equals(Type.FLOAT_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-            } else if (type.equals(Type.BOOLEAN_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
-            } else if (type.equals(Type.BYTE_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-            } else if (type.equals(Type.SHORT_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-            } else if (type.equals(Type.CHAR_TYPE)) {
-                compiler.writer.invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-            }
+        compiler.writer.loadObject(index, compiler.writer.boxType(type));
+
+        if (!boxed) {
+            compiler.writer.unbox(type);
         }
     }
 
@@ -135,7 +96,41 @@ final class PyVariable implements Symbol {
 
     @Override
     public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
-        compiler.writer.storeInt(index);
+        if (type.getSort() == Type.OBJECT) {
+            visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
+            Type newType = visit.type(compiler);
+            compiler.writer.getContext().pop();
+            if (!type.equals(newType)) {
+                if (typeConstant) {
+                    throw new RuntimeException("Cannot assign " + newType + " to " + type);
+                }
+                type = newType;
+            }
+            mv.visitVarInsn(Opcodes.ASTORE, index);
+        } else if (type.getSort() == Type.ARRAY) {
+            visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
+            Type newType = visit.type(compiler);
+            compiler.writer.getContext().pop();
+            if (!type.equals(newType)) {
+                if (typeConstant) {
+                    throw new RuntimeException("Cannot assign " + newType + " to " + type);
+                }
+                type = newType;
+            }
+            mv.visitVarInsn(Opcodes.ASTORE, index);
+        } else {
+            visit.load(mv, compiler, visit.preload(mv, compiler, false), false);
+            Type newType = visit.type(compiler);
+            if (!type.equals(newType)) {
+                if (typeConstant) {
+                    throw new RuntimeException("Cannot assign " + newType + " to " + type);
+                }
+                type = newType;
+            }
+            compiler.writer.box(type);
+            compiler.writer.getContext().pop();
+            mv.visitVarInsn(Opcodes.ASTORE, index);
+        }
     }
 
     @Override
@@ -162,14 +157,18 @@ final class PyVariable implements Symbol {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj == this) return true;
-        if (obj == null || obj.getClass() != this.getClass()) return false;
+        if (obj == this) {
+            return true;
+        }
+        if (obj == null || obj.getClass() != this.getClass()) {
+            return false;
+        }
         var that = (PyVariable) obj;
         return Objects.equals(this.name, that.name) &&
-               Objects.equals(this.type, that.type) &&
-               this.index == that.index &&
-               this.lineNo == that.lineNo &&
-               Objects.equals(this.label, that.label);
+                Objects.equals(this.type, that.type) &&
+                this.index == that.index &&
+                this.lineNo == that.lineNo &&
+                Objects.equals(this.label, that.label);
     }
 
     @Override
@@ -180,11 +179,11 @@ final class PyVariable implements Symbol {
     @Override
     public String toString() {
         return "PyVariable[" +
-               "name=" + name + ", " +
-               "type=" + type + ", " +
-               "index=" + index + ", " +
-               "lineNo=" + lineNo + ", " +
-               "label=" + label + ']';
+                "name=" + name + ", " +
+                "type=" + type + ", " +
+                "index=" + index + ", " +
+                "lineNo=" + lineNo + ", " +
+                "label=" + label + ']';
     }
 
 }

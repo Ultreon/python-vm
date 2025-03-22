@@ -71,7 +71,19 @@ def init():
     else:
         print("Unlucky!")
 
-    value = 10 * number
+    value = 10 * 3.14
+    print(value)
+
+    value = 10 + 3.14
+    print(value)
+
+    value = 10 - number
+    print(value)
+
+    value = 10 / number
+    print(value)
+
+    value = 104
     print(value)
 
     # Floor division
@@ -83,8 +95,8 @@ def init():
     print(value)
 
     # Exponentiation
-    # value = 10 ** 3
-    # print(value)
+    value = 10 ** 3
+    print(value)
 
     # Bitwise AND
     value = 10 & 3
@@ -109,4 +121,10 @@ def init():
     # Bitwise right shift
     value = 10 >> 3
     print(value)
+
+    i = 0
+    # while i < 10:
+    #     print(i)
+    #     print("Hello, world!")
+
 
