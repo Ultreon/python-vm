@@ -6,7 +6,6 @@ import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
-import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.jetbrains.annotations.NotNull;
 import org.objectweb.asm.*;
@@ -171,7 +170,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visit(@NonNull ParseTree tree) {
+    public Object visit(@org.jetbrains.annotations.Nullable ParseTree tree) {
         if (tree == null) {
             throw new RuntimeException("Tree is null");
         }
@@ -1189,30 +1188,44 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
     @Override
     public Object visitBitwise_or(PythonParser.Bitwise_orContext ctx) {
-        PythonParser.Bitwise_xorContext bitwiseXorContext = ctx.bitwise_xor();
+        PythonParser.Bitwise_orContext otherContext = ctx.bitwise_or();
+
+        Object value;
+        Object addition = null;
+        if (otherContext != null) {
+            value = visit(otherContext);
+            addition = visit(ctx.bitwise_xor());
+        } else {
+            value = visit(ctx.bitwise_xor());
+        }
+        Object finalValue = value;
+        Object finalAddition = addition;
+        PyEval.Operator operator = null;
         if (ctx.VBAR() != null) {
-            throw new RuntimeException("bitwise_or not supported for:\n" + ctx.getText());
+            operator = PyEval.Operator.OR;
         }
-        if (bitwiseXorContext != null) {
-            return visit(bitwiseXorContext);
-        }
-        throw new RuntimeException("No supported matching bitwise_or found for:\n" + ctx.getText());
+        return new PyEval(ctx, operator, finalValue, finalAddition);
     }
 
     @Override
     public Object visitBitwise_xor(PythonParser.Bitwise_xorContext ctx) {
-        PythonParser.Bitwise_andContext andExprContext = ctx.bitwise_and();
+        PythonParser.Bitwise_xorContext otherContext = ctx.bitwise_xor();
+
+        Object value;
+        Object addition = null;
+        if (otherContext != null) {
+            value = visit(otherContext);
+            addition = visit(ctx.bitwise_and());
+        } else {
+            value = visit(ctx.bitwise_and());
+        }
+        Object finalValue = value;
+        Object finalAddition = addition;
+        PyEval.Operator operator = null;
         if (ctx.CIRCUMFLEX() != null) {
-            throw new RuntimeException("bitwise_xor not supported for:\n" + ctx.getText());
+            operator = PyEval.Operator.XOR;
         }
-        PythonParser.Bitwise_xorContext bitwiseXorContext = ctx.bitwise_xor();
-        if (ctx.bitwise_xor() != null) {
-            throw new RuntimeException("bitwise_xor not supported for:\n" + ctx.getText());
-        }
-        if (andExprContext != null) {
-            return visit(andExprContext);
-        }
-        throw new RuntimeException("No supported matching bitwise_xor found for:\n" + ctx.getText());
+        return new PyEval(ctx, operator, finalValue, finalAddition);
     }
 
     @Override
@@ -1323,152 +1336,72 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
     @Override
     public Object visitBitwise_and(PythonParser.Bitwise_andContext ctx) {
-        PythonParser.Bitwise_andContext bitwiseAndContext = ctx.bitwise_and();
+        PythonParser.Bitwise_andContext otherContext = ctx.bitwise_and();
+
+        Object value;
+        Object addition = null;
+        if (otherContext != null) {
+            value = visit(otherContext);
+            addition = visit(ctx.shift_expr());
+        } else {
+            value = visit(ctx.shift_expr());
+        }
+        Object finalValue = value;
+        Object finalAddition = addition;
+        PyEval.Operator operator = null;
         if (ctx.AMPER() != null) {
-            throw new RuntimeException("bitwise_and not supported for:\n" + ctx.getText());
+            operator = PyEval.Operator.AND;
         }
-        if (bitwiseAndContext != null) {
-            throw new RuntimeException("bitwise_and not supported for:\n" + ctx.getText());
-        }
-        PythonParser.Shift_exprContext shiftExprContext = ctx.shift_expr();
-        if (shiftExprContext != null) {
-            return visit(shiftExprContext);
-        }
-        throw new RuntimeException("No supported matching bitwise_and found for:\n" + ctx.getText());
+        return new PyEval(ctx, operator, finalValue, finalAddition);
     }
 
     @Override
     public Object visitShift_expr(PythonParser.Shift_exprContext ctx) {
-        PythonParser.Shift_exprContext shiftExprContext = ctx.shift_expr();
-        if (ctx.LEFTSHIFT() != null || ctx.RIGHTSHIFT() != null) {
-            throw new RuntimeException("shift_expr not supported for:\n" + ctx.getText());
+        PythonParser.Shift_exprContext otherContext = ctx.shift_expr();
+
+        Object value;
+        Object addition = null;
+        if (otherContext != null) {
+            value = visit(otherContext);
+            addition = visit(ctx.sum());
+        } else {
+            value = visit(ctx.sum());
         }
-        if (ctx.RIGHTSHIFT() != null) {
-            throw new RuntimeException("shift_expr not supported for:\n" + ctx.getText());
+        Object finalValue = value;
+        Object finalAddition = addition;
+        PyEval.Operator operator = null;
+        if (ctx.LEFTSHIFT() != null) {
+            operator = PyEval.Operator.LSHIFT;
+        } else if (ctx.RIGHTSHIFT() != null) {
+            operator = PyEval.Operator.RSHIFT;
         }
-        if (shiftExprContext != null) {
-            throw new RuntimeException("shift_expr not supported for:\n" + ctx.getText());
-        }
-        PythonParser.SumContext sum = ctx.sum();
-        if (sum != null) {
-            return visit(sum);
-        }
-        throw new RuntimeException("No supported matching shift_expr found for:\n" + ctx.getText());
+        return new PyEval(ctx, operator, finalValue, finalAddition);
     }
 
     @Override
     public Object visitSum(PythonParser.SumContext ctx) {
-        PythonParser.SumContext sumContext = ctx.sum();
+        PythonParser.SumContext otherContext = ctx.sum();
 
         Object value;
         Object addition = null;
-        if (sumContext != null) {
-            value = visit(sumContext);
+        if (otherContext != null) {
+            value = visit(otherContext);
             addition = visit(ctx.term());
         } else {
             value = visit(ctx.term());
         }
         Object finalValue = value;
         Object finalAddition = addition;
-        return new PyExpr() {
-            @Override
-            public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
-                return null;
-            }
-
-            @Override
-            public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-                loadExpr(ctx, finalValue);
-                if (finalAddition != null) {
-                    loadExpr(ctx, finalAddition);
-                    if (ctx.PLUS() != null) {
-                        writer.addValues();
-                    } else if (ctx.MINUS() != null) {
-                        writer.subtractValues();
-                    } else {
-                        throw new RuntimeException("No supported matching operator found for:\n" + ctx.getText());
-                    }
-                }
-            }
-
-            @Override
-            public int lineNo() {
-                return ctx.getStop().getLine();
-            }
-
-            @Override
-            public Type type(PythonCompiler compiler) {
-                if (finalAddition != null) {
-                    if (finalAddition instanceof PyExpr expr) {
-                        Type type = expr.type(compiler);
-                        if (finalValue instanceof PyExpr expr2) {
-                            Type type2 = expr2.type(compiler);
-                            if (type.equals(Type.LONG_TYPE) && type2.equals(Type.LONG_TYPE)) {
-                                return Type.LONG_TYPE;
-                            }
-                            if (type.equals(Type.DOUBLE_TYPE) && type2.equals(Type.DOUBLE_TYPE)) {
-                                return Type.DOUBLE_TYPE;
-                            }
-                        } else if (finalValue instanceof Integer integer) {
-                            Type longType = castInt(type);
-                            if (longType != null) return longType;
-                        } else if (finalValue instanceof Long l) {
-                            if (type.equals(Type.DOUBLE_TYPE)) {
-                                return Type.DOUBLE_TYPE;
-                            }
-                            return Type.LONG_TYPE;
-                        } else if (finalValue instanceof Float f) {
-                            if (type.equals(Type.DOUBLE_TYPE)) {
-                                return Type.DOUBLE_TYPE;
-                            } else if (type.equals(Type.LONG_TYPE)) {
-                                return Type.LONG_TYPE;
-                            }
-                            return Type.FLOAT_TYPE;
-                        } else if (finalValue instanceof Double d) {
-                            return Type.DOUBLE_TYPE;
-                        }
-                        return Type.DOUBLE_TYPE;
-                    }
-                }
-
-                if (finalValue instanceof PyExpr expr) {
-                    return expr.type(compiler);
-                } else if (finalValue instanceof Integer integer) {
-                    return Type.INT_TYPE;
-                } else if (finalValue instanceof Long l) {
-                    return Type.LONG_TYPE;
-                } else if (finalValue instanceof Float f) {
-                    return Type.FLOAT_TYPE;
-                } else if (finalValue instanceof Double d) {
-                    return Type.DOUBLE_TYPE;
-                } else if (finalValue instanceof Boolean b) {
-                    return Type.BOOLEAN_TYPE;
-                } else if (finalValue instanceof Byte b) {
-                    return Type.BYTE_TYPE;
-                } else if (finalValue instanceof Short s) {
-                    return Type.SHORT_TYPE;
-                } else if (finalValue instanceof Character c) {
-                    return Type.CHAR_TYPE;
-                } else if (finalValue instanceof String s) {
-                    return Type.getType(String.class);
-                }
-
-                throw new RuntimeException("No supported matching sum type found for:\n" + ctx.getText());
-            }
-
-            private static @Nullable Type castInt(Type type) {
-                if (type.equals(Type.LONG_TYPE)) {
-                    return Type.LONG_TYPE;
-                } else if (type.equals(Type.DOUBLE_TYPE)) {
-                    return Type.DOUBLE_TYPE;
-                } else if (type.equals(Type.INT_TYPE)) {
-                    return Type.INT_TYPE;
-                } else if (type.equals(Type.FLOAT_TYPE)) {
-                    return Type.FLOAT_TYPE;
-                }
-                return null;
-            }
-        };
+        PyEval.Operator operator = null;
+        if (ctx.PLUS() != null) {
+            operator = PyEval.Operator.ADD;
+        } else if (ctx.MINUS() != null) {
+            operator = PyEval.Operator.SUB;
+        }
+        if (operator != null) {
+            return new PyEval(ctx, operator, finalValue, finalAddition);
+        }
+        return value;
     }
 
     private void loadExpr(ParserRuleContext ctx, Object visit) {
@@ -1489,36 +1422,74 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
     @Override
     public Object visitTerm(PythonParser.TermContext ctx) {
-        PythonParser.TermContext termContext = ctx.term();
+        PythonParser.TermContext otherContext = ctx.term();
+
+        Object value;
+        Object addition = null;
+        if (otherContext != null) {
+            value = visit(otherContext);
+            addition = visit(ctx.factor());
+        } else {
+            value = visit(ctx.factor());
+        }
+        Object finalValue = value;
+        Object finalAddition = addition;
+        PyEval.Operator operator = null;
         if (ctx.STAR() != null) {
-            throw new RuntimeException("term not supported for:\n" + ctx.getText());
+            operator = PyEval.Operator.MUL;
+        } else if (ctx.SLASH() != null) {
+            operator = PyEval.Operator.DIV;
+        } else if (ctx.PERCENT() != null) {
+            operator = PyEval.Operator.MOD;
+        } else if (ctx.DOUBLESLASH() != null) {
+            operator = PyEval.Operator.FLOORDIV;
         }
-        if (ctx.SLASH() != null) {
-            throw new RuntimeException("term not supported for:\n" + ctx.getText());
-        }
-        if (termContext != null) {
-            throw new RuntimeException("term not supported for:\n" + ctx.getText());
-        }
-        PythonParser.FactorContext factorContext = ctx.factor();
-        if (factorContext != null) {
-            return visit(factorContext);
-        }
-        throw new RuntimeException("No supported matching term found for:\n" + ctx.getText());
+        return new PyEval(ctx, operator, finalValue, finalAddition);
     }
 
     @Override
     public Object visitFactor(PythonParser.FactorContext ctx) {
         PythonParser.FactorContext factor = ctx.factor();
         if (ctx.MINUS() != null) {
-            throw new RuntimeException("factor not supported for:\n" + ctx.getText());
+            PythonParser.FactorContext otherContext = ctx.factor();
+
+            Object value;
+            if (otherContext != null) {
+                value = visit(otherContext);
+            } else {
+                value = visit(ctx.power());
+            }
+            Object finalValue = value;
+            PyEval.Operator operator = PyEval.Operator.UNARY_MINUS;
+            return new PyEval(ctx, operator, finalValue, null);
         }
 
         if (ctx.PLUS() != null) {
-            throw new RuntimeException("factor not supported for:\n" + ctx.getText());
+            PythonParser.FactorContext otherContext = ctx.factor();
+
+            Object value;
+            if (otherContext != null) {
+                value = visit(otherContext);
+            } else {
+                value = visit(ctx.power());
+            }
+            Object finalValue = value;
+            PyEval.Operator operator = PyEval.Operator.UNARY_PLUS;
+            return new PyEval(ctx, operator, finalValue, null);
         }
 
         if (ctx.TILDE() != null) {
-            throw new RuntimeException("factor not supported for:\n" + ctx.getText());
+            PythonParser.FactorContext otherContext = ctx.factor();
+
+            Object value;
+            if (otherContext != null) {
+                value = visit(otherContext);
+            } else {
+                value = visit(ctx.power());
+            }
+            Object finalValue = value;
+            PyEval.Operator operator = PyEval.Operator.UNARY_NOT;
+            return new PyEval(ctx, operator, finalValue, null);
         }
         PythonParser.PowerContext powerContext = ctx.power();
         if (powerContext != null) {
@@ -1530,17 +1501,21 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     @Override
     public Object visitPower(PythonParser.PowerContext ctx) {
         if (ctx.DOUBLESTAR() != null) {
-            Context context = getContext(Context.class);
-            writer.invokeStatic("java/lang/Double", "valueOf", "(" + context.pop().getDescriptor() + ")Ljava/lang/Double;", false);
-            PythonParser.FactorContext factor = ctx.factor();
-            if (factor != null) {
-                visit(factor);
+            PythonParser.FactorContext otherContext = ctx.factor();
+
+            Object value;
+            Object addition = null;
+            if (otherContext != null) {
+                value = visit(otherContext);
+                addition = visit(ctx.await_primary());
+            } else {
+                value = visit(ctx.await_primary());
             }
-            PythonParser.Await_primaryContext awaitPrimary = ctx.await_primary();
-            if (awaitPrimary != null) {
-                visit(awaitPrimary);
-            }
-            writer.invokeStatic("java/lang/Math", "pow", "(" + context.pop().getDescriptor() + context.pop().getDescriptor() + ")Ljava/lang/Double;", false);
+            Object finalValue = value;
+            Object finalAddition = addition;
+            PyEval.Operator operator = PyEval.Operator.POW;
+            return new PyEval(ctx, operator, finalValue, finalAddition);
+
         }
         PythonParser.FactorContext factorContext = ctx.factor();
         if (factorContext != null) {
@@ -2511,6 +2486,362 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         @Override
         public Type type(PythonCompiler compiler) {
             return Type.BOOLEAN_TYPE;
+        }
+    }
+
+    private class PyEval implements PyExpr {
+        private final ParserRuleContext ctx;
+        private final Operator operator;
+        private final Object finalValue;
+        private final Object finalAddition;
+
+        public enum Operator {
+            ADD, SUB, MUL, DIV, MOD, FLOORDIV, AND, LSHIFT, RSHIFT, OR, XOR, UNARY_NOT, UNARY_PLUS, UNARY_MINUS, POW
+        }
+
+        public PyEval(ParserRuleContext ctx, Operator operator, Object finalValue, Object finalAddition) {
+            this.ctx = ctx;
+            this.operator = operator;
+            this.finalValue = finalValue;
+            this.finalAddition = finalAddition;
+        }
+
+        @Override
+        public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
+            return null;
+        }
+
+        @Override
+        public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
+            switch (finalValue) {
+                case PyExpr pyExpr -> {
+                    pyExpr.load(mv, compiler, pyExpr.preload(mv, compiler, false), false);
+                    if (finalAddition != null) {
+                        if (pyExpr.type(compiler) == Type.INT_TYPE) {
+                            Type type = typeOf(finalAddition, compiler);
+                            if (type == Type.LONG_TYPE) {
+                                mv.visitInsn(I2L);
+                            } else if (type == Type.FLOAT_TYPE) {
+                                mv.visitInsn(I2F);
+                            } else if (type == Type.DOUBLE_TYPE) {
+                                mv.visitInsn(I2D);
+                            }
+                        } else if (pyExpr.type(compiler) == Type.LONG_TYPE) {
+                            Type type = typeOf(finalAddition, compiler);
+                            if (type == Type.FLOAT_TYPE) {
+                                mv.visitInsn(L2D);
+                                loadExpr(ctx, finalAddition);
+                                mv.visitInsn(F2D);
+                                doOperation(mv);
+                                return;
+                            } else if (type == Type.DOUBLE_TYPE) {
+                                mv.visitInsn(L2D);
+                            }
+                        } else if (pyExpr.type(compiler) == Type.FLOAT_TYPE) {
+                            Type type = typeOf(finalAddition, compiler);
+                            if (type == Type.DOUBLE_TYPE) {
+                                mv.visitInsn(F2D);
+                            } else if (type == Type.LONG_TYPE) {
+                                mv.visitInsn(F2D);
+                                loadExpr(ctx, finalAddition);
+                                mv.visitInsn(L2D);
+                                doOperation(mv);
+                                return;
+                            } else if (type == Type.INT_TYPE) {
+                                loadExpr(ctx, finalAddition);
+                                mv.visitInsn(I2F);
+                                doOperation(mv);
+                                return;
+                            }
+                        } else if (pyExpr.type(compiler) == Type.DOUBLE_TYPE) {
+                            Type type = typeOf(finalAddition, compiler);
+                            if (type == Type.LONG_TYPE) {
+                                mv.visitInsn(L2D);
+                            } else if (type == Type.INT_TYPE) {
+                                loadExpr(ctx, finalAddition);
+                                mv.visitInsn(I2D);
+                                doOperation(mv);
+                                return;
+                            } else if (type == Type.FLOAT_TYPE) {
+                                loadExpr(ctx, finalAddition);
+                                mv.visitInsn(F2D);
+                                doOperation(mv);
+                                return;
+                            }
+                        } else {
+                            throw new RuntimeException("Unknown type: " + pyExpr.type(compiler));
+                        }
+                    }
+                }
+                case Integer integer -> {
+                    loadConstant(ctx, integer, mv);
+                    if (finalAddition != null) {
+                        Type type = typeOf(finalAddition, compiler);
+                        if (type == Type.LONG_TYPE) {
+                            mv.visitInsn(I2L);
+                        } else if (type == Type.FLOAT_TYPE) {
+                            mv.visitInsn(I2F);
+                        } else if (type == Type.DOUBLE_TYPE) {
+                            mv.visitInsn(I2D);
+                        }
+                    }
+                }
+                case Long aLong -> {
+                    loadConstant(ctx, aLong, mv);
+                    if (finalAddition != null) {
+                        Type type = typeOf(finalAddition, compiler);
+                        if (type == Type.FLOAT_TYPE) {
+                            mv.visitInsn(L2D);
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(F2D);
+                            doOperation(mv);
+                            return;
+                        } else if (type == Type.DOUBLE_TYPE) {
+                            mv.visitInsn(L2D);
+                        }
+                    }
+                }
+                case Float aFloat -> {
+                    loadConstant(ctx, aFloat, mv);
+
+                    if (finalAddition != null) {
+                        Type type = typeOf(finalAddition, compiler);
+                        if (type == Type.DOUBLE_TYPE) {
+                            mv.visitInsn(F2D);
+                        } else if (type == Type.LONG_TYPE) {
+                            mv.visitInsn(F2D);
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(L2D);
+                            doOperation(mv);
+                            return;
+                        } else if (type == Type.INT_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(I2F);
+                            doOperation(mv);
+                            return;
+                        }
+                    }
+                }
+                case Double aDouble -> {
+                    loadConstant(ctx, aDouble, mv);
+
+                    if (finalAddition != null) {
+                        Type type = typeOf(finalAddition, compiler);
+                        if (type == Type.LONG_TYPE) {
+                            mv.visitInsn(L2D);
+                        } else if (type == Type.INT_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(I2D);
+                            doOperation(mv);
+                            return;
+                        } else if (type == Type.FLOAT_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(F2D);
+                            doOperation(mv);
+                            return;
+                        }
+                    }
+                }
+                case String s -> {
+                    loadConstant(ctx, s, mv);
+                }
+                case Boolean aBoolean -> {
+                    loadConstant(ctx, aBoolean, mv);
+
+                    if (finalAddition != null) {
+                        Type type = typeOf(finalAddition, compiler);
+                        if (type == Type.INT_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(I2F);
+                            doOperation(mv);
+                            return;
+                        } else if (type == Type.LONG_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(L2D);
+                            doOperation(mv);
+                            return;
+                        } else if (type == Type.FLOAT_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(F2D);
+                            doOperation(mv);
+                            return;
+                        }
+                    }
+                }
+                case Character aChar -> {
+                    loadConstant(ctx, aChar, mv);
+
+                    if (finalAddition != null) {
+                        Type type = typeOf(finalAddition, compiler);
+                        if (type == Type.INT_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(I2F);
+                            doOperation(mv);
+                            return;
+                        } else if (type == Type.LONG_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(L2D);
+                            doOperation(mv);
+                            return;
+                        } else if (type == Type.FLOAT_TYPE) {
+                            loadExpr(ctx, finalAddition);
+                            mv.visitInsn(F2D);
+                            doOperation(mv);
+                            return;
+                        }
+                    }
+                }
+                case Unit unit -> throw new RuntimeException("unit not supported for:\n" + ctx.getText());
+                default -> throw new RuntimeException("No supported matching loadExpr found for:\n" + ctx.getText());
+            }
+            if (finalAddition != null) {
+                loadExpr(ctx, finalAddition);
+                doOperation(mv);
+            }
+        }
+
+        private void doOperation(MethodVisitor mv) {
+            if (operator == Operator.ADD) {
+                writer.addValues();
+            } else if (operator == Operator.SUB) {
+                writer.subtractValues();
+            } else if (operator == Operator.MUL) {
+                writer.multiplyValues();
+            } else if (operator == Operator.DIV) {
+                writer.divideValues();
+            } else if (operator == Operator.MOD) {
+                writer.modValues();
+            } else if (operator == Operator.AND) {
+                writer.andValues();
+            } else if (operator == Operator.OR) {
+                writer.orValues();
+            } else if (operator == Operator.XOR) {
+                writer.xorValues();
+            } else if (operator == Operator.LSHIFT) {
+                writer.leftShiftValues();
+            } else if (operator == Operator.RSHIFT) {
+                writer.rightShiftValues();
+            } else if (operator == Operator.FLOORDIV) {
+                writer.floorDivideValues();
+            } else if (operator == Operator.POW) {
+                writer.powValues();
+            } else if (operator == Operator.UNARY_NOT) {
+                writer.notValue();
+            } else if (operator == Operator.UNARY_MINUS) {
+                writer.negateValue();
+            } else if (operator == Operator.UNARY_PLUS) {
+                writer.positiveValue();
+            } else {
+                throw new RuntimeException("No supported matching operator found for:\n" + ctx.getText());
+            }
+        }
+
+        private Type typeOf(Object finalAddition, PythonCompiler compiler) {
+            if (finalAddition instanceof PyExpr expr) {
+                return expr.type(compiler);
+            } else if (finalAddition instanceof Integer) {
+                return Type.INT_TYPE;
+            } else if (finalAddition instanceof Long) {
+                return Type.LONG_TYPE;
+            } else if (finalAddition instanceof Float) {
+                return Type.FLOAT_TYPE;
+            } else if (finalAddition instanceof Double) {
+                return Type.DOUBLE_TYPE;
+            } else if (finalAddition instanceof String) {
+                return Type.getType(String.class);
+            } else if (finalAddition instanceof Boolean) {
+                return Type.BOOLEAN_TYPE;
+            } else if (finalAddition instanceof Character) {
+                return Type.CHAR_TYPE;
+            } else if (finalAddition instanceof Unit) {
+                return Type.VOID_TYPE;
+            } else if (finalAddition instanceof Byte) {
+                return Type.BYTE_TYPE;
+            } else if (finalAddition instanceof Short) {
+                return Type.SHORT_TYPE;
+            }
+            throw new RuntimeException("No supported matching typeOf found for:\n" + ctx.getText());
+        }
+
+        @Override
+        public int lineNo() {
+            return ctx.getStop().getLine();
+        }
+
+        @Override
+        public Type type(PythonCompiler compiler) {
+            if (finalAddition != null) {
+                if (finalAddition instanceof PyExpr expr) {
+                    Type type = expr.type(compiler);
+                    if (finalValue instanceof PyExpr expr2) {
+                        Type type2 = expr2.type(compiler);
+                        if (type.equals(Type.LONG_TYPE) && type2.equals(Type.LONG_TYPE)) {
+                            return Type.LONG_TYPE;
+                        }
+                        if (type.equals(Type.DOUBLE_TYPE) && type2.equals(Type.DOUBLE_TYPE)) {
+                            return Type.DOUBLE_TYPE;
+                        }
+                    } else if (finalValue instanceof Integer integer) {
+                        Type longType = castInt(type);
+                        if (longType != null) return longType;
+                    } else if (finalValue instanceof Long l) {
+                        if (type.equals(Type.DOUBLE_TYPE)) {
+                            return Type.DOUBLE_TYPE;
+                        }
+                        if (type.equals(Type.FLOAT_TYPE)) {
+                            return Type.DOUBLE_TYPE;
+                        }
+                        return Type.LONG_TYPE;
+                    } else if (finalValue instanceof Float f) {
+                        if (type.equals(Type.DOUBLE_TYPE)) {
+                            return Type.DOUBLE_TYPE;
+                        } else if (type.equals(Type.LONG_TYPE)) {
+                            return Type.DOUBLE_TYPE;
+                        }
+                        return Type.FLOAT_TYPE;
+                    } else if (finalValue instanceof Double d) {
+                        return Type.DOUBLE_TYPE;
+                    }
+                    return Type.DOUBLE_TYPE;
+                }
+            }
+
+            if (finalValue instanceof PyExpr expr) {
+                return expr.type(compiler);
+            } else if (finalValue instanceof Integer integer) {
+                return Type.INT_TYPE;
+            } else if (finalValue instanceof Long l) {
+                return Type.LONG_TYPE;
+            } else if (finalValue instanceof Float f) {
+                return Type.FLOAT_TYPE;
+            } else if (finalValue instanceof Double d) {
+                return Type.DOUBLE_TYPE;
+            } else if (finalValue instanceof Boolean b) {
+                return Type.BOOLEAN_TYPE;
+            } else if (finalValue instanceof Byte b) {
+                return Type.BYTE_TYPE;
+            } else if (finalValue instanceof Short s) {
+                return Type.SHORT_TYPE;
+            } else if (finalValue instanceof Character c) {
+                return Type.CHAR_TYPE;
+            } else if (finalValue instanceof String s) {
+                return Type.getType(String.class);
+            }
+
+            throw new RuntimeException("No supported matching sum type found for:\n" + ctx.getText());
+        }
+
+        private static @Nullable Type castInt(Type type) {
+            if (type.equals(Type.LONG_TYPE)) {
+                return Type.LONG_TYPE;
+            } else if (type.equals(Type.DOUBLE_TYPE)) {
+                return Type.DOUBLE_TYPE;
+            } else if (type.equals(Type.INT_TYPE)) {
+                return Type.INT_TYPE;
+            } else if (type.equals(Type.FLOAT_TYPE)) {
+                return Type.FLOAT_TYPE;
+            }
+            return null;
         }
     }
 }

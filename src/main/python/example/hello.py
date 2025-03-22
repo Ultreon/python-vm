@@ -71,3 +71,42 @@ def init():
     else:
         print("Unlucky!")
 
+    value = 10 * number
+    print(value)
+
+    # Floor division
+    value = 10 // 3
+    print(value)
+
+    # Modulo
+    value = 10 % 3
+    print(value)
+
+    # Exponentiation
+    # value = 10 ** 3
+    # print(value)
+
+    # Bitwise AND
+    value = 10 & 3
+    print(value)
+
+    # Bitwise OR
+    value = 10 | 3
+    print(value)
+
+    # Bitwise XOR
+    value = 10 ^ 3
+    print(value)
+
+    # Bitwise NOT
+    value = ~10
+    print(value)
+
+    # Bitwise left shift
+    value = 10 << 3
+    print(value)
+
+    # Bitwise right shift
+    value = 10 >> 3
+    print(value)
+
