@@ -196,7 +196,59 @@ class PyComparison implements PyExpr {
         Label labelEnd = new Label();
 
         mv.visitInsn(FCMPG);
-        if (comparator == Comparison.EQ) {
+        if (context instanceof ConditionContext conditionContext) {
+            if (comparator == Comparison.EQ) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.NE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
+                return;
+            } else {
+                throw new IllegalStateException("Unknown comparator: " + comparator);
+            }
+        } else if (comparator == Comparison.EQ) {
             compiler.writer.jumpIfEqual(labelTrue);
         } else if (comparator == Comparison.NE) {
             compiler.writer.jumpIfNotEqual(labelTrue);
@@ -243,61 +295,65 @@ class PyComparison implements PyExpr {
             }
         }
 
-        if (context instanceof ConditionContext conditionContext) {
-            if (comparator == Comparison.NE) {
-                Label labelIfFalse = conditionContext.ifFalse();
-                Label labelIfTrue = conditionContext.ifTrue();
-
-                if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
-                if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
-                return;
-            } else if (comparator == Comparison.EQ) {
-                Label labelIfFalse = conditionContext.ifFalse();
-                Label labelIfTrue = conditionContext.ifTrue();
-
-                if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
-                if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
-                return;
-            } else if (comparator == Comparison.LT) {
-                Label labelIfFalse = conditionContext.ifFalse();
-                Label labelIfTrue = conditionContext.ifTrue();
-
-                if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
-                if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
-                return;
-            } else if (comparator == Comparison.LTE) {
-                Label labelIfFalse = conditionContext.ifFalse();
-                Label labelIfTrue = conditionContext.ifTrue();
-
-                if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
-                if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
-                return;
-            } else if (comparator == Comparison.GT) {
-                Label labelIfFalse = conditionContext.ifFalse();
-                Label labelIfTrue = conditionContext.ifTrue();
-
-                if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
-                if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
-                return;
-            } else if (comparator == Comparison.GTE) {
-                Label labelIfFalse = conditionContext.ifFalse();
-                Label labelIfTrue = conditionContext.ifTrue();
-
-                if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
-                if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
-                return;
-            } else {
-                throw new IllegalStateException("Unknown comparator: " + comparator);
-            }
-        }
-
         Label labelTrue = new Label();
         Label labelEnd = new Label();
 
         if (pop2 == Type.LONG_TYPE) mv.visitInsn(LCMP);
         else if (pop2 == Type.FLOAT_TYPE) mv.visitInsn(FCMPG);
         else if (pop2 == Type.DOUBLE_TYPE) mv.visitInsn(DCMPG);
-        if (comparator == Comparison.EQ) {
+        if (context instanceof ConditionContext conditionContext) {
+            if (comparator == Comparison.EQ) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.NE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
+                return;
+            } else {
+                throw new RuntimeException("Unsupported comparator: " + comparator);
+            }
+        } else if (comparator == Comparison.EQ) {
             compiler.writer.jumpIfEqual(labelTrue);
         } else if (comparator == Comparison.NE) {
             compiler.writer.jumpIfNotEqual(labelTrue);
@@ -369,7 +425,59 @@ class PyComparison implements PyExpr {
 
             if (pop2 == Type.LONG_TYPE) {
                 mv.visitInsn(LCMP);
-                if (comparator == Comparison.EQ) {
+                if (context instanceof ConditionContext conditionContext) {
+                    if (comparator == Comparison.EQ) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.NE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.LT) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.LTE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.GT) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.GTE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
+                        return;
+                    } else {
+                        throw new IllegalStateException("Unknown comparator: " + comparator);
+                    }
+                } else if (comparator == Comparison.EQ) {
                     compiler.writer.jumpIfEqual(labelTrue);
                 } else if (comparator == Comparison.NE) {
                     compiler.writer.jumpIfNotEqual(labelTrue);
@@ -384,7 +492,53 @@ class PyComparison implements PyExpr {
                 }
             } else if (pop2 == Type.DOUBLE_TYPE) {
                 mv.visitInsn(DCMPG);
-                if (comparator == Comparison.EQ) {
+                if (context instanceof ConditionContext conditionContext) {
+                    if (comparator == Comparison.EQ) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.NE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.LT) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.LTE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.GT) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.GTE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
+                        return;
+                    } else {
+                        throw new IllegalStateException("Unknown comparator: " + comparator);
+                    }
+                } else if (comparator == Comparison.EQ) {
                     compiler.writer.jumpIfEqual(labelTrue);
                 } else if (comparator == Comparison.NE) {
                     compiler.writer.jumpIfNotEqual(labelTrue);
@@ -399,7 +553,59 @@ class PyComparison implements PyExpr {
                 }
             } else if (pop2 == Type.FLOAT_TYPE) {
                 mv.visitInsn(FCMPG);
-                if (comparator == Comparison.EQ) {
+                if (context instanceof ConditionContext conditionContext) {
+                    if (comparator == Comparison.EQ) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.NE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.LT) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.LTE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.GT) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
+                        return;
+                    } else if (comparator == Comparison.GTE) {
+                        Label labelIfFalse = conditionContext.ifFalse();
+                        Label labelIfTrue = conditionContext.ifTrue();
+                        context.pop();
+                        context.pop();
+                        if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
+                        if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
+                        return;
+                    } else {
+                        throw new IllegalStateException("Unknown comparator: " + comparator);
+                    }
+                } else if (comparator == Comparison.EQ) {
                     compiler.writer.jumpIfEqual(labelTrue);
                 } else if (comparator == Comparison.NE) {
                     compiler.writer.jumpIfNotEqual(labelTrue);
@@ -414,13 +620,59 @@ class PyComparison implements PyExpr {
                 }
 
             } else {
-                mv.visitInsn(ICONST_0);
-                compiler.writer.jump(labelEnd);
-
-                compiler.writer.label(labelTrue);
-                mv.visitInsn(ICONST_1);
-
-                compiler.writer.label(labelEnd);
+                throw new IllegalStateException("Unknown type: " + pop2);
+            }
+        } else if (context instanceof ConditionContext conditionContext) {
+            if (comparator == Comparison.EQ) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.NE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
+                return;
+            } else {
+                throw new IllegalStateException("Unknown comparator: " + comparator);
             }
         } else if (comparator == Comparison.EQ) {
             mv.visitInsn(Opcodes.IF_ICMPEQ);
@@ -451,7 +703,59 @@ class PyComparison implements PyExpr {
 
         mv.visitInsn(DCMPG);
 
-        if (comparator == Comparison.EQ) {
+        if (context instanceof ConditionContext conditionContext) {
+            if (comparator == Comparison.EQ) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFEQ, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFNE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.NE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFNE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFEQ, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.LTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFGT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFLE, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GT) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLE, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGT, labelIfTrue);
+                return;
+            } else if (comparator == Comparison.GTE) {
+                Label labelIfFalse = conditionContext.ifFalse();
+                Label labelIfTrue = conditionContext.ifTrue();
+                context.pop();
+                context.pop();
+                if (labelIfFalse != null) mv.visitJumpInsn(IFLT, labelIfFalse);
+                if (labelIfTrue != null) mv.visitJumpInsn(IFGE, labelIfTrue);
+                return;
+            } else {
+                throw new IllegalStateException("Unknown comparator: " + comparator);
+            }
+        } else if (comparator == Comparison.EQ) {
             compiler.writer.jumpIfEqual(labelTrue);
         } else if (comparator == Comparison.NE) {
             compiler.writer.jumpIfNotEqual(labelTrue);

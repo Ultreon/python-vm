@@ -123,8 +123,9 @@ def init():
     print(value)
 
     i = 0
-    # while i < 10:
-    #     print(i)
-    #     print("Hello, world!")
+    while i < 10:
+        print(i)
+        print("Hello, world!")
+        i = i + 1
 
 

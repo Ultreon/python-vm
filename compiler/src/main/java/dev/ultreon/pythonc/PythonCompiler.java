@@ -329,22 +329,28 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         // Loop start:
         mv.visitLabel(loopStart);
 
-        // Comparison
+        // region Comparison(named_expression)
         pushContext(new WhileConditionContext(loopEnd));
         PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
         if (namedExpressionContext != null) {
-            loadExpr(ctx, visit(namedExpressionContext));
+            Object visit = visit(namedExpressionContext);
+            loadExpr(ctx, visit);
         } else {
             throw new RuntimeException("No supported matching named_expression found for:\n" + ctx.getText());
         }
         Context context = writer.getContext();
         popContext();
+        // endregion Comparison
 
-        // Inside loop: x++
+        // region Loop(block)
         PythonParser.BlockContext block = ctx.block();
         if (block != null) {
             visit(block);
         }
+        if (context.needsPop()) {
+            throw new RuntimeException("Still values on stack for:\n" + ctx.getText());
+        }
+        // endregion Loop
 
         // Jump to loop start
         mv.visitJumpInsn(GOTO, loopStart);
@@ -625,7 +631,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
             popContext();
             while (functionContext.needsPop()) {
-                mv.visitInsn(POP);
+                writer.pop();
                 functionContext.pop();
             }
 
