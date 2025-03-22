@@ -1,5 +1,5 @@
 package dev.ultreon.pythonc;
 
-interface JvmCallable {
+interface JvmCallable extends Symbol {
     JvmClass owner(PythonCompiler compiler);
 }

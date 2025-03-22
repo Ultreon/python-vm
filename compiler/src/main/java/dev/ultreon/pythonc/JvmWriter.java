@@ -66,9 +66,6 @@ public class JvmWriter {
         }
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitMethodInsn(INVOKESPECIAL, owner, name, signature, isInterface);
-        Type returnType = methodType.getReturnType();
-        if (returnType.equals(Type.VOID_TYPE)) return;
-        context.push(returnType);
     }
 
     public void newInstance(String owner, String name, String signature, boolean isInterface, Runnable paramInit) {
@@ -80,9 +77,6 @@ public class JvmWriter {
         dup();
         paramInit.run();
         invokeSpecial(owner, "<init>", signature, isInterface);
-        Type returnType = methodType.getReturnType();
-        if (returnType.equals(Type.VOID_TYPE)) return;
-        context.push(returnType);
     }
 
     public void newObject(Type objectType) {

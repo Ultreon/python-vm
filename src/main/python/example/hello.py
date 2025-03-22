@@ -9,6 +9,14 @@ HASHCODE = Objects.hashCode("Hello, world!")
 INTEGER = 42
 FLOAT = 3.14
 
+class TestClass(Runnable):
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+
+    def run(self):
+        print(self.a + self.b)
+
 
 def init():
     print(Objects.hashCode("Hello, world!"))

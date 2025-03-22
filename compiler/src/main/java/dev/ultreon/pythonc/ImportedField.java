@@ -4,9 +4,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
-import static org.objectweb.asm.Opcodes.GETSTATIC;
-
-record ImportedField(String name, Type type, String owner, int lineNo) implements Symbol {
+record ImportedField(String name, Type type, String owner, int lineNo) implements JvmClassMember {
     @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
         return null;
@@ -78,5 +76,22 @@ record ImportedField(String name, Type type, String owner, int lineNo) implement
 
             mv.visitFieldInsn(Opcodes.PUTFIELD, owner, name, type.getDescriptor());
         }
+    }
+
+    @Override
+    public JvmClass ownerClass(PythonCompiler compiler) {
+        boolean load = PythonCompiler.classCache.load(compiler, Type.getObjectType(owner));
+        if (!load) {
+            throw new RuntimeException("Inherited class from " + owner + " not found: " + owner);
+        }
+        return PythonCompiler.classCache.get(Type.getObjectType(owner));
+    }
+
+    public JvmClass typeClass(PythonCompiler compiler) {
+        boolean load = PythonCompiler.classCache.load(compiler, type);
+        if (!load) {
+            throw new RuntimeException("Inherited class from " + type + " not found: " + type);
+        }
+        return PythonCompiler.classCache.get(type);
     }
 }

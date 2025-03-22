@@ -5,6 +5,8 @@ import org.objectweb.asm.Type;
 
 import java.util.Objects;
 
+import static org.objectweb.asm.Opcodes.ALOAD;
+
 final class Self implements PyExpr {
     private final int lineNo;
     private Type type;
@@ -22,8 +24,7 @@ final class Self implements PyExpr {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         // Use "this"
-//            mv.visitVarInsn(ALOAD, 0);
-        throw new RuntimeException("No supported matching Self found for:\n" + this.lineNo);
+        mv.visitVarInsn(ALOAD, 0);
     }
 
     @Override
@@ -34,6 +35,10 @@ final class Self implements PyExpr {
     @Override
     public Type type(PythonCompiler compiler) {
         return type;
+    }
+
+    public PyClass typeClass(PythonCompiler compiler) {
+        return compiler.definingInstance;
     }
 
     @Override

@@ -12,8 +12,6 @@ import java.lang.reflect.Method;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static org.objectweb.asm.Opcodes.*;
-
 final class FuncCall implements Symbol {
     public static final String E_CLASS_NOT_IN_CP = "Class not found in classpath (yet), maybe the class isn't initialized yet: %s (%s)";
     final PythonParser.PrimaryContext atom;
@@ -27,6 +25,8 @@ final class FuncCall implements Symbol {
     private Object callArgs;
     private Type owner;
     private Type[] paramTypes;
+    private JvmFunction function;
+    private BitSet boxing;
 
     FuncCall(PythonParser.PrimaryContext atom, PythonParser.PrimaryContext primaryContext,
              PythonParser.ArgumentsContext arguments) {
@@ -164,6 +164,29 @@ final class FuncCall implements Symbol {
                                 }
                             } else if (symbol1 instanceof PyBuiltinFunction func) {
                                 owner = func.owner(compiler);
+                            } else if (symbol1 instanceof PyImport pyImport) {
+                                symbol1 = pyImport.symbol;
+                                if (symbol1 instanceof JClass jClass) {
+                                    owner = jClass.type(compiler);
+                                    if (owner.getSort() == Type.OBJECT) {
+                                        String internal = owner.getInternalName();
+                                        String qualified = internal.replace("/", ".");
+                                        Class<?> aClass = null;
+                                        try {
+                                            aClass = Class.forName(qualified, false, getClass().getClassLoader());
+                                            if (aClass.isInterface()) {
+                                                compiler.writer.invokeInterface(internal, name(), "(" + s + ")" + type(compiler), true);
+                                                return;
+                                            }
+                                        } catch (ClassNotFoundException e) {
+                                            throw new CompilerException("JVM Class '" + qualified + "' not found (" + compiler.getLocation(this) + ")");
+                                        }
+                                    }
+                                } else if (symbol1 instanceof PyBuiltinFunction func) {
+                                    owner = func.owner(compiler);
+                                } else {
+                                    throw new RuntimeException("Unknown symbol type: " + symbol1.getClass().getSimpleName());
+                                }
                             } else {
                                 throw new RuntimeException("Unknown symbol type: " + symbol1.getClass().getSimpleName());
                             }
@@ -174,8 +197,34 @@ final class FuncCall implements Symbol {
                     }
                     case PyClass pyClass -> {
                         Type owner1 = owner(compiler);
+                        installArgs(mv, compiler, owner1);
                         compiler.writer.newInstance(owner1.getInternalName(), "<init>", "(" + argDesc(compiler, callArgs) + ")V", false, () -> setupCallArgs(mv, compiler));
                         return;
+                    }
+                    case PyImport pyImport -> {
+                        Type type = pyImport.type(compiler);
+                        setupCallArgs(mv, compiler);
+                        String ourName = this.name();
+                        Symbol ourSymbol = compiler.symbols.get(ourName);
+                        if (ourSymbol instanceof JvmClass) {
+                            ourName = "<init>";
+                        } else if (ourSymbol instanceof PyImport pyImport1 && pyImport1.symbol instanceof JvmClass) {
+                            ourName = "<init>";
+                        }
+                        installArgs(mv, compiler, type, true);
+                        JvmFunction jvmFunction = pyImport.function(compiler, ourName, paramTypes, () -> {
+                            writeArgs(mv, compiler, (List<PyExpr>) callArgs, boxing);
+                        });
+                        if (jvmFunction == null) {
+                            throw new CompilerException("Field '" + name + "' not found (" + compiler.getLocation(this) + ")");
+                        }
+
+                        if (jvmFunction instanceof JvmConstructor constructor) {
+                            constructor.write(mv, compiler, () -> writeArgs(mv, compiler, (List<PyExpr>) callArgs, boxing));
+                        } else {
+                            jvmFunction.write(mv, compiler);
+                        }
+//                        return;
                     }
                     case null, default ->
                             throw new UnsupportedOperationException("Not implemented: " + symbol.getClass().getSimpleName());
@@ -183,7 +232,10 @@ final class FuncCall implements Symbol {
 
                 return;
             }
-            if (symbol instanceof PyBuiltinFunction) {
+            if (symbol instanceof PyImport pyImport) {
+                pyImport.invoke(mv, compiler, "(" + argDesc(compiler, callArgs) + ")" + pyImport.type(compiler).getDescriptor(), callArgs, () -> setupCallArgs(mv, compiler));
+                return;
+            } else if (symbol instanceof PyBuiltinFunction) {
 //                    symbol.load(mv, compiler, null, false);
                 PythonCompiler.throwError(mv, "Unimplemented function call: atom=" + atom.getText() + ", primaryContext=" + primaryContext.getText() + ", arguments=" + arguments.getText());
                 return;
@@ -237,7 +289,7 @@ final class FuncCall implements Symbol {
             funcCall.write(mv, compiler);
 
             Type type = func.type(compiler);
-            if (!compiler.classes.containsKey(type.getClassName())) {
+            if (!compiler.classes.has(type.getClassName())) {
                 try {
                     Class<?> aClass = Class.forName(type.getClassName(), false, getClass().getClassLoader());
                     Stack<Class<?>> stack = new Stack<>();
@@ -297,13 +349,16 @@ final class FuncCall implements Symbol {
     }
 
     private boolean installArgs(MethodVisitor mv, PythonCompiler compiler, Type type) {
-        if (!compiler.classes.containsKey(type.getClassName())) {
+        return installArgs(mv, compiler, type, false);
+    }
+
+    private boolean installArgs(MethodVisitor mv, PythonCompiler compiler, Type type, boolean simulate) {
+        if (!compiler.classes.has(type.getClassName())) {
             String name = name();
             if (compiler.getClassSymbol(name) != null) {
                 name = "<init>";
             }
             if (name.equals("<init>")) {
-
                 Class<?> aClass;
                 try {
                     aClass = Class.forName(type.getClassName(), false, getClass().getClassLoader());
@@ -368,37 +423,9 @@ final class FuncCall implements Symbol {
                                 throw compiler.jvmClassNotFound(type1.getClassName(), this);
                             }
                         }
+                        this.boxing = boxing;
 
-                        for (int i = 0, argsSize = args.size(); i < argsSize; i++) {
-                            PyExpr expr = args.get(i);
-                            boolean shouldBeBoxed = boxing.get(i);
-                            Object preloaded = expr.preload(mv, compiler, false);
-                            expr.load(mv, compiler, preloaded, false);
-
-                            Type type1 = expr.type(compiler);
-                            if (type1 == null) {
-                                throw new RuntimeException("Type not found for at " + compiler.getLocation(expr));
-                            }
-                            if (shouldBeBoxed) {
-                                if (type1 == Type.INT_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-                                } else if (type1 == Type.LONG_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-                                } else if (type1 == Type.FLOAT_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-                                } else if (type1 == Type.DOUBLE_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-                                } else if (type1 == Type.CHAR_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-                                } else if (type1 == Type.BOOLEAN_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
-                                } else if (type1 == Type.SHORT_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-                                } else if (type1 == Type.BYTE_TYPE) {
-                                    compiler.writer.invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-                                }
-                            }
-                        }
+                        if (!simulate) writeArgs(mv, compiler, args, boxing);
 
                         this.paramTypes = Arrays.stream(parameterTypes).map(Type::getType).toList().toArray(Type[]::new);
                         return true;
@@ -480,36 +507,9 @@ final class FuncCall implements Symbol {
                         }
                     }
 
-                    for (int i = 0, argsSize = args.size(); i < argsSize; i++) {
-                        PyExpr expr = args.get(i);
-                        boolean shouldBeBoxed = boxing.get(i);
-                        Object preloaded = expr.preload(mv, compiler, false);
-                        expr.load(mv, compiler, preloaded, false);
+                    this.boxing = boxing;
 
-                        Type type1 = expr.type(compiler);
-                        if (type1 == null) {
-                            throw new RuntimeException("Type not found for at " + compiler.getLocation(expr));
-                        }
-                        if (shouldBeBoxed) {
-                            if (type1 == Type.INT_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-                            } else if (type1 == Type.LONG_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-                            } else if (type1 == Type.FLOAT_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-                            } else if (type1 == Type.DOUBLE_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-                            } else if (type1 == Type.CHAR_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-                            } else if (type1 == Type.BOOLEAN_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
-                            } else if (type1 == Type.SHORT_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-                            } else if (type1 == Type.BYTE_TYPE) {
-                                compiler.writer.invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-                            }
-                        }
-                    }
+                    if (!simulate) writeArgs(mv, compiler, args, boxing);
 
                     this.paramTypes = Arrays.stream(parameterTypes).map(Type::getType).toList().toArray(Type[]::new);
                     return true;
@@ -533,6 +533,39 @@ final class FuncCall implements Symbol {
                             toArray(Type[]::new), this);
         }
         return false;
+    }
+
+    private static void writeArgs(MethodVisitor mv, PythonCompiler compiler, List<PyExpr> args, BitSet boxing) {
+        for (int i = 0, argsSize = args.size(); i < argsSize; i++) {
+            PyExpr expr = args.get(i);
+            boolean shouldBeBoxed = boxing.get(i);
+            Object preloaded = expr.preload(mv, compiler, false);
+            expr.load(mv, compiler, preloaded, false);
+
+            Type type1 = expr.type(compiler);
+            if (type1 == null) {
+                throw new RuntimeException("Type not found for at " + compiler.getLocation(expr));
+            }
+            if (shouldBeBoxed) {
+                if (type1 == Type.INT_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                } else if (type1 == Type.LONG_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                } else if (type1 == Type.FLOAT_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+                } else if (type1 == Type.DOUBLE_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                } else if (type1 == Type.CHAR_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+                } else if (type1 == Type.BOOLEAN_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+                } else if (type1 == Type.SHORT_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+                } else if (type1 == Type.BYTE_TYPE) {
+                    compiler.writer.invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                }
+            }
+        }
     }
 
     private void setupCallArgs(MethodVisitor mv, PythonCompiler compiler) {
@@ -630,14 +663,17 @@ final class FuncCall implements Symbol {
         } catch (ClassNotFoundException e) {
             PyClass symbol = compiler.classes.get(substring);
             if (symbol != null) {
-                PyFunction pyFunction = symbol.methods.get(name());
+                List<JvmFunction> functions = symbol.methods.get(name());
                 if (name.equals("<init>")) {
                     return owner;
                 }
-                if (pyFunction == null) {
-                    throw compiler.functionNotFound(owner, name, this);
+                for (JvmFunction function : functions) {
+                    Type type = determineFunction(compiler, function, name, parse, owner);
+                    if (type != null) {
+                        return type;
+                    }
                 }
-                return pyFunction.type(compiler);
+                throw compiler.functionNotFound(owner, name, this);
             }
             throw compiler.typeNotFound(substring, this);
         }
@@ -701,6 +737,26 @@ final class FuncCall implements Symbol {
         return null;
     }
 
+    private @Nullable Type determineFunction(PythonCompiler compiler, JvmFunction function, String name, ImmutableList<Type> parse, Type owner) {
+        if (!method.getName().equals(name)) return null;
+        StringBuilder sb = new StringBuilder();
+        JvmClass[] parameterTypes = function.parameterClasses(compiler);
+        boolean passed = true;
+        for (int i = 0, parameterTypesLength = parameterTypes.length; i < parameterTypesLength; i++) {
+            try {
+                passed = doesFunctionPass(compiler, parameterTypes, i, parse, passed, sb);
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException("Failed to load class: ", e);
+            }
+        }
+
+        if (passed) {
+            this.function = function;
+            return Type.getReturnType(method);
+        }
+        return null;
+    }
+
     private @Nullable Type determineMethod(PythonCompiler compiler, Method method, String name, ImmutableList<Type> parse, Type owner) {
         if (!method.getName().equals(name)) return null;
         StringBuilder sb = new StringBuilder();
@@ -721,11 +777,11 @@ final class FuncCall implements Symbol {
         return null;
     }
 
-    private boolean doesMethodPass(PythonCompiler compiler, @NotNull Class<?> @NotNull [] parameterTypes, int i, ImmutableList<Type> parse, boolean passed, StringBuilder sb) throws ClassNotFoundException {
+    private boolean doesFunctionPass(PythonCompiler compiler, @NotNull JvmClass @NotNull [] parameterTypes, int i, ImmutableList<Type> parse, boolean passed, StringBuilder sb) throws ClassNotFoundException {
         if (i >= parse.size()) return false;
 
-        Class<?> paramType = parameterTypes[i];
-        if (!paramType.isPrimitive() && compiler.classes.containsKey(paramType.getName())) {
+        @NotNull JvmClass paramType = parameterTypes[i];
+        if (!paramType.isPrimitive() && compiler.classes.has(paramType.name())) {
             Type type = parse.get(i);
             PyClass pyClass = compiler.classes.get(type.getClassName());
             if (type.getSort() != Type.ARRAY && type.getSort() != Type.OBJECT && type.getSort() != Type.VOID) {
@@ -744,7 +800,47 @@ final class FuncCall implements Symbol {
                 }
                 return passed;
             }
-            if (!pyClass.doesInherit(paramType)) {
+            if (!pyClass.doesInherit(compiler, paramType.type(compiler))) {
+                passed = false;
+            }
+        } else if (paramType.isPrimitive()) {
+            if (!paramType.type(compiler).equals(parse.get(i))) {
+                return false;
+            }
+        } else {
+            var checkAgainst = parse.get(i);
+            if (!paramType.doesInherit(compiler, checkAgainst)) {
+                return false;
+            }
+            sb.append(paramType.type(compiler).getDescriptor());
+        }
+        return passed;
+    }
+
+    private boolean doesMethodPass(PythonCompiler compiler, @NotNull Class<?> @NotNull [] parameterTypes, int i, ImmutableList<Type> parse, boolean passed, StringBuilder sb) throws ClassNotFoundException {
+        if (i >= parse.size()) return false;
+
+        Class<?> paramType = parameterTypes[i];
+        if (!paramType.isPrimitive() && compiler.classes.has(paramType.getName())) {
+            Type type = parse.get(i);
+            PyClass pyClass = compiler.classes.get(type.getClassName());
+            if (type.getSort() != Type.ARRAY && type.getSort() != Type.OBJECT && type.getSort() != Type.VOID) {
+                switch (type.getSort()) {
+                    case Type.INT -> sb.append("Ljava/lang/Integer;");
+                    case Type.LONG -> sb.append("Ljava/lang/Long;");
+                    case Type.FLOAT -> sb.append("Ljava/lang/Float;");
+                    case Type.DOUBLE -> sb.append("Ljava/lang/Double;");
+                    case Type.BOOLEAN -> sb.append("Ljava/lang/Boolean;");
+                    case Type.CHAR -> sb.append("Ljava/lang/Character;");
+                    case Type.BYTE -> sb.append("Ljava/lang/Byte;");
+                    case Type.SHORT -> sb.append("Ljava/lang/Short;");
+                    default -> {
+                        return false;
+                    }
+                }
+                return passed;
+            }
+            if (!pyClass.doesInherit(compiler, Type.getType(paramType))) {
                 passed = false;
             }
         } else if (paramType.isPrimitive()) {
@@ -769,9 +865,9 @@ final class FuncCall implements Symbol {
     private boolean doesConstructorPass(PythonCompiler compiler, @NotNull Class<?> @NotNull [] parameterTypes, int i, ImmutableList<Type> parse, boolean passed, StringBuilder sb) throws ClassNotFoundException {
         Class<?> paramType = parameterTypes[i];
         String className = parse.get(i).getClassName();
-        if (!paramType.isPrimitive() && compiler.classes.containsKey(className)) {
+        if (!paramType.isPrimitive() && compiler.classes.has(className)) {
             PyClass pyClass = compiler.classes.get(paramType.getName());
-            if (!pyClass.doesInherit(paramType)) {
+            if (!pyClass.doesInherit(compiler, Type.getType(paramType))) {
                 passed = false;
             }
         } else if (paramType.isPrimitive()) {
@@ -829,6 +925,7 @@ final class FuncCall implements Symbol {
 
         Object[] preloaded = new Object[exprs.size()];
         for (PyExpr expr : exprs) {
+            // What? TODO
 //                expr.load(mv, compiler, null, false);
         }
 

@@ -4,7 +4,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
-record PyField(Type owner, String name, Type type, int lineNo) implements JvmField, Symbol, Ownable {
+public record PyField(Type owner, String name, Type type, int lineNo) implements JvmField, Symbol, JvmOwnable {
     public String toString() {
         return name + ": '" + type + "'";
     }
@@ -32,6 +32,22 @@ record PyField(Type owner, String name, Type type, int lineNo) implements JvmFie
     @Override
     public Type type(PythonCompiler compiler) {
         return type;
+    }
+
+    public JvmClass ownerClass(PythonCompiler compiler) {
+        Symbol symbol = compiler.symbols.get(owner.getClassName());
+        if (symbol instanceof JvmClass jvmClass) {
+            return jvmClass;
+        }
+        throw new IllegalStateException("Invalid owner: " + owner);
+    }
+
+    public JvmClass typeClass(PythonCompiler compiler) {
+        Symbol symbol = compiler.symbols.get(type.getClassName());
+        if (symbol instanceof JvmClass jvmClass) {
+            return jvmClass;
+        }
+        throw new IllegalStateException("Invalid type: " + type);
     }
 
     @Override

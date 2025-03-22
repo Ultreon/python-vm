@@ -1,5 +1,7 @@
 package dev.ultreon.pythonc;
 
-record TypedName(String name, String type) {
+import org.objectweb.asm.Type;
+
+record TypedName(String name, Type type) {
 
 }

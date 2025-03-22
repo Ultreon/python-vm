@@ -20,7 +20,8 @@ public abstract class AbstractContext implements Context {
 
     @Override
     public Type pop() {
-        if (stack.isEmpty()) throw new RuntimeException("Stack is empty");
+        if (stack.isEmpty())
+            throw new RuntimeException("Stack is empty");
         Type pop = stack.pop();
         if (pop.equals(Type.LONG_TYPE) || pop.equals(Type.DOUBLE_TYPE)) stack.pop();
         return pop;

@@ -1,4 +1,4 @@
 package dev.ultreon.pythonc;
 
-public interface JvmField extends Ownable {
+public interface JvmField extends JvmOwnable, JvmClassMember {
 }

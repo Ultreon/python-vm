@@ -1,6 +1,13 @@
 package dev.ultreon.pythonc;
 
-interface JvmClass extends Symbol {
+import org.jetbrains.annotations.Nullable;
+import org.objectweb.asm.Type;
+
+public interface JvmClass extends Symbol {
+    @Nullable JvmField field(PythonCompiler compiler, String name);
+
+    @Nullable JvmFunction function(PythonCompiler compiler, String name, Type[] paramTypes);
+
     String className();
 
     boolean isInterface();
@@ -9,5 +16,9 @@ interface JvmClass extends Symbol {
 
     boolean isEnum();
 
-    boolean doesInherit(Class<?> type);
+    boolean doesInherit(PythonCompiler compiler, Type type);
+
+    boolean isPrimitive();
+
+    JvmFunction constructor(PythonCompiler compiler, Type[] paramTypes);
 }

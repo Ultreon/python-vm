@@ -6,8 +6,8 @@ import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.*;
 
 import java.io.File;
@@ -44,27 +44,32 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     Set<String> undefinedClasses = new LinkedHashSet<>();
     private ClassWriter cw = rootCw;
     private String rootDir;
+    private Path pathOfFile;
     private String path = "";
     private String fileName = "Main";
-    final Map<String, Symbol> imports = new HashMap<>();
+    final Set<String> implementing = new HashSet<>();
+    final Map<String, Symbol> symbols = new HashMap<>();
+    final PyImports imports = new PyImports(this);
     private State state = State.File;
     final BitSet flags = new BitSet();
     final Decorators decorators = new Decorators();
     MethodVisitor mv;
     MethodVisitor rootInitMv;
     int currentVariableIndex = 1;
-    final Set<String> implementing = new HashSet<>();
-    final Map<String, Symbol> symbols = new HashMap<>();
     Label endLabel;
     Label startLabel;
     Label curLabel;
-    Map<String, PyClass> classes = new HashMap<>();
+    PyClasses classes = new PyClasses(this);
+    static JvmClassCache classCache = new JvmClassCache();
     private PyClass curPyClass = null;
     private final List<CompilerException> compileErrors = new ArrayList<>();
     private Label elifLabel;
     final Stack<Context> contextStack = new Stack<>();
 
     public final JvmWriter writer = new JvmWriter(this);
+    private @Nullable PyClass definingClass;
+    @Nullable PyClass definingInstance;
+    private PyModule definingModule;
 
     public void compileSources(String sourceDir) {
         // Walk the directory
@@ -124,6 +129,8 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Symbol symbol = symbols.get(name);
         if (symbol instanceof JvmClass) {
             return (JvmClass) symbol;
+        } else if (symbol instanceof PyImport pyImport && pyImport.symbol instanceof JvmClass jvmClass) {
+            return jvmClass;
         }
 
         undefinedClasses.add(className);
@@ -170,7 +177,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visit(@org.jetbrains.annotations.Nullable ParseTree tree) {
+    public Object visit(@Nullable ParseTree tree) {
         if (tree == null) {
             throw new RuntimeException("Tree is null");
         }
@@ -456,21 +463,11 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     writer.pushBoolean(i != 0);
                     writer.pushTrue();
                 }
-                case String s -> {
-                    throw new RuntimeException("String is not a condition:\n" + ctx.getText());
-                }
-                case Float f -> {
-                    throw new RuntimeException("Float is not a condition:\n" + ctx.getText());
-                }
-                case Long l -> {
-                    throw new RuntimeException("Long is not a condition:\n" + ctx.getText());
-                }
-                case Double d -> {
-                    throw new RuntimeException("Double is not a condition:\n" + ctx.getText());
-                }
-                case Unit unit -> {
-                    throw new RuntimeException("Unit is not a condition:\n" + ctx.getText());
-                }
+                case String s -> throw new RuntimeException("String is not a condition:\n" + ctx.getText());
+                case Float f -> throw new RuntimeException("Float is not a condition:\n" + ctx.getText());
+                case Long l -> throw new RuntimeException("Long is not a condition:\n" + ctx.getText());
+                case Double d -> throw new RuntimeException("Double is not a condition:\n" + ctx.getText());
+                case Unit unit -> throw new RuntimeException("Unit is not a condition:\n" + ctx.getText());
                 case null, default ->
                         throw new RuntimeException("statement not supported for: " + visit.getClass().getSimpleName());
             }
@@ -570,7 +567,8 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             PythonParser.Function_def_rawContext functionDefRawContext = ctx.function_def_raw();
             if (functionDefRawContext != null) {
-                return visit(functionDefRawContext);
+                Object visit = visit(functionDefRawContext);
+                return visit;
             }
             throw new RuntimeException("No supported matching function_def_raw found for:\n" + ctx.getText());
         } finally {
@@ -631,9 +629,16 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         StringBuilder signature = new StringBuilder();
         for (TypedName typedName : parmeters) {
-            String s = imports.get(typedName.type()).name();
+            if (typedName.type() == null) {
+                throw new RuntimeException("No type found for:\n" + ctx.getText());
+            }
+            Symbol symbol = imports.get(typedName.type());
+            if (symbol == null) {
+                throw new RuntimeException("No import found for " + typedName.type() + " " + getLocation(ctx));
+            }
+            String s = symbol.name();
             if (s == null) {
-                throw new RuntimeException("No import found for:\n" + ctx.getText());
+                throw new RuntimeException("No import found for " + symbol.type(this) + " " + getLocation(ctx));
             }
             signature.append(s).append("L").append(typedName.name()).append(";");
         }
@@ -644,10 +649,13 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         if (name.getText().startsWith("__"))
             mv = cw.visitMethod(ACC_PRIVATE + (static_ ? ACC_STATIC : 0) + (class_ ? ACC_STATIC : 0), name.getText().substring(2), "(" + sig + ")" + returnType.getDescriptor(), null, null);
-        else if (name.getText().startsWith("_"))
-            mv = cw.visitMethod(ACC_PROTECTED + (static_ ? ACC_STATIC : 0) + (class_ ? ACC_STATIC : 0), name.getText().substring(1), "(" + sig + ")" + returnType.getDescriptor(), null, null);
-        else
-            mv = cw.visitMethod(ACC_PUBLIC + (static_ ? ACC_STATIC : 0) + (class_ ? ACC_STATIC : 0), name.getText(), "(" + sig + ")" + returnType.getDescriptor(), null, null);
+        else {
+            int access = ACC_PUBLIC + (static_ ? ACC_STATIC : 0) + (class_ ? ACC_STATIC : 0);
+            if (name.getText().startsWith("_"))
+                mv = cw.visitMethod(access, name.getText().substring(1), "(" + sig + ")" + returnType.getDescriptor(), null, null);
+            else
+                mv = cw.visitMethod(access, name.getText(), "(" + sig + ")" + returnType.getDescriptor(), null, null);
+        }
 
         endLabel = new Label();
         endLabel.info = 100000;
@@ -666,7 +674,23 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             FunctionContext functionContext = new FunctionContext();
             pushContext(functionContext);
 
+            PyClass oldDefiningInstance = definingInstance;
+            Map<String, Symbol> oldSymbols = null;
+            if (definingClass != null) {
+                definingInstance = definingClass;
+                oldSymbols = new HashMap<>(symbols);
+
+                for (TypedName parmeter : parmeters) {
+                    TypedName parmeter1 = parmeter;
+                    createVariable(parmeter1.name(), parmeter1.type(), ctx.start.getLine(), false);
+                }
+            }
             visit(block);
+            definingInstance = oldDefiningInstance;
+            if (oldSymbols != null) {
+                symbols.clear();
+                symbols.putAll(oldSymbols);
+            }
 
             popContext();
             while (functionContext.needsPop()) {
@@ -690,7 +714,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
 
         if (curPyClass != null) {
-            curPyClass.methods.put(name.getText(), new PyFunction(curPyClass, name.getText(), returnType, ctx.start.getLine()));
+            curPyClass.methods.computeIfAbsent(name.getText(), v -> new ArrayList<>()).add(new PyFunction(curPyClass, name.getText(), parmeters.stream().map(TypedName::type).toArray(Type[]::new), returnType, ctx.start.getLine()));
         }
         return Unit.Instance;
     }
@@ -719,22 +743,26 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
 
             if (!(visit instanceof TypedName typedName)) {
-                if (visit instanceof Self self) {
+                if (visit instanceof Self self) continue;
+                if (visit instanceof String name) {
+                    typedNames.add(new TypedName(name, Type.getType(Object.class)));
                     continue;
                 }
-                throw new RuntimeException("param_no_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("param_no_default not supported for:\n" + ctx.param_no_default(i).getText());
             }
 
             typedNames.add(typedName);
 
             if (flags.get(F_CPL_FUNCTION)) {
-                if (visit.equals("self")) {
-                    if (!flags.get(F_CPL_INSTANCE_FUNC)) {
-                        throw new CompilerException("self on a non-instance method:\n" + ctx.getText());
-                    } else {
-                        return Unit.Instance;
-                    }
-                }
+                // TODO
+                throw new AssertionError("DEBUG");
+//                if (visit.equals("self")) {
+//                    if (!flags.get(F_CPL_INSTANCE_FUNC)) {
+//                        throw new CompilerException("self on a non-instance method:\n" + ctx.getText());
+//                    } else {
+//                        return Unit.Instance;
+//                    }
+//                }
             } else {
                 throw new RuntimeException("param_no_default not supported for:\n" + ctx.getText());
             }
@@ -800,7 +828,10 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         var primaryContext = func.primaryContext;
                         if (arguments != null) {
                             String text = primaryContext.getText();
-                            if (text.equals("implements")) {
+                            Symbol symbol = imports.get(text);
+                            Type owner = func.owner(this);
+                            if (owner == null) {
+                                imports.get("implements");
                                 Object visit1 = visit(arguments);
                                 if (visit1 == null) {
                                     throw new RuntimeException("Decorators not supported for:\n" + ctx.getText());
@@ -878,9 +909,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         cw.visit(V1_8, ACC_PUBLIC, path + fileName + "/" + name.getText(), null, superClass, implementing == null ? new String[0] : implementing.isEmpty() ? null : implementing.toArray(new String[0]));
         String classname = (path + fileName + "/" + name.getText()).replace("/", ".");
-        PyClass value = new PyClass(Type.getObjectType(path + fileName + "/" + name.getText()), ctx.start.getLine());
-        imports.put(name.getText(), value);
-        symbols.put(name.getText(), value);
+        PyClass value = new PyClass(this.pathOfFile, name.getText(), ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        this.definingClass = value;
+        imports.add(name.getText(), value);
         undefinedClasses.remove(classname);
 
         curPyClass = value;
@@ -920,7 +951,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
         cw.visitEnd();
 
-        classes.put(classname, value);
+        definingClass = null;
+        classes.add(value);
+        classCache.add(this, value);
         curPyClass = null;
 
         byte[] bytes = cw.toByteArray();
@@ -1081,7 +1114,57 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
                 PythonParser.Star_atomContext targetContext = targetWithStarAtomContext.star_atom();
                 if (targetContext == null) {
-                    throw new RuntimeException("Variable target is not found :\n" + ctx.getText());
+                    List<?> visit = (List<?>) visit(starTargetsContext);
+                    Object first = visit.getFirst();
+
+                    PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions();
+                    if (starExpressionsContext == null) {
+                        throw new RuntimeException("Value for variable assignment wasn't found.");
+                    }
+
+                    List<PythonParser.Star_expressionContext> starExpressionContexts = starExpressionsContext.star_expression();
+                    if (starExpressionContexts.size() != 1) {
+                        // TODO Add support for multiple star expressions
+                        throw new RuntimeException("Expected 1 expression, got " + starExpressionContexts.size() + " which is unsupported for now.");
+                    }
+
+                    PythonParser.Star_expressionContext starExpressionContext = starExpressionContexts.getFirst();
+                    TerminalNode star = starExpressionContext.STAR();
+                    if (star != null) {
+                        // TODO Add support for star expressions
+                        throw new RuntimeException("Star expressions are not supported for now.");
+                    }
+
+                    PythonParser.ExpressionContext expressionContext = starExpressionContext.expression();
+                    if (expressionContext == null) {
+                        throw new RuntimeException("Expression for variable assignment wasn't found.");
+                    }
+
+                    Object visit1 = visit(expressionContext);
+                    if (visit1 == null) {
+                        throw new RuntimeException("Expression for variable assignment wasn't found.");
+                    }
+
+                    if (first instanceof JvmField field) {
+                        PyExpr expr = switch (visit1) {
+                            case PyExpr pyExpr -> pyExpr;
+                            case String string -> new PyConstant(string, ctx.start.getLine());
+                            case Byte byteValue -> new PyConstant(byteValue, ctx.start.getLine());
+                            case Short shortValue -> new PyConstant(shortValue, ctx.start.getLine());
+                            case Integer integer -> new PyConstant(integer, ctx.start.getLine());
+                            case Boolean booleanValue -> new PyConstant(booleanValue, ctx.start.getLine());
+                            case Long longValue -> new PyConstant(longValue, ctx.start.getLine());
+                            case Float floatValue -> new PyConstant(floatValue, ctx.start.getLine());
+                            case Double doubleValue -> new PyConstant(doubleValue, ctx.start.getLine());
+                            case Character charValue -> new PyConstant(charValue, ctx.start.getLine());
+                            default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
+                        };
+
+                        field.set(mv, this, expr);
+                        return Unit.Instance;
+                    } else {
+                        throw new RuntimeException("Variable target is not found :\n" + ctx.getText());
+                    }
                 }
 
                 name = targetContext.NAME().getText();
@@ -1097,7 +1180,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     throw new RuntimeException("Expected 1 expression, got " + starExpressionContexts.size() + " which is unsupported for now.");
                 }
 
-                PythonParser.Star_expressionContext starExpressionContext = starExpressionContexts.get(0);
+                PythonParser.Star_expressionContext starExpressionContext = starExpressionContexts.getFirst();
                 TerminalNode star = starExpressionContext.STAR();
                 if (star != null) {
                     // TODO Add support for star expressions
@@ -1296,9 +1379,81 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 }
                 throw new CompilerException("Type annotation is required " + getLocation(ctx));
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
         } finally {
             flags.clear(F_CPL_ASSIGN);
         }
+    }
+
+    @Override
+    public Object visitStar_targets(PythonParser.Star_targetsContext ctx) {
+        if (ctx.star_target().size() != 1) {
+            throw new AssertionError("DEBUG");
+        }
+        return List.of(visit(ctx.star_target(0)));
+    }
+
+    @Override
+    public Object visitStar_target(PythonParser.Star_targetContext ctx) {
+        PythonParser.Star_targetContext starTargetContext = ctx.star_target();
+        if (starTargetContext != null) {
+            throw new AssertionError("DEBUG");
+        }
+
+        TerminalNode star = ctx.STAR();
+        if (star != null) {
+            throw new AssertionError("DEBUG");
+        }
+
+        return visit(ctx.target_with_star_atom());
+    }
+
+    @Override
+    public Object visitTarget_with_star_atom(PythonParser.Target_with_star_atomContext ctx) {
+        if (ctx.LSQB() != null)
+            throw new AssertionError("DEBUG");
+        if (ctx.RSQB() != null)
+            throw new AssertionError("DEBUG");
+        if (ctx.star_atom() != null)
+            throw new AssertionError("DEBUG");
+
+        PythonParser.T_primaryContext tPrimaryContext = ctx.t_primary();
+        TerminalNode name = ctx.NAME();
+        TerminalNode dot = ctx.DOT();
+        if (tPrimaryContext == null) throw new AssertionError("DEBUG");
+        if (dot == null) throw new AssertionError("DEBUG");
+        if (name == null) throw new AssertionError("DEBUG");
+
+        Object visit = visit(tPrimaryContext);
+        if (visit instanceof JvmClass jvmClass) {
+            String name1 = name.getText();
+            JvmField field = jvmClass.field(this, name1);
+            return field;
+        }
+        if (visit instanceof Self self) {
+            PyClass pyClass = self.typeClass(this);
+            JvmField field = pyClass.field(this, name.getText());
+            if (field == null) {
+                int access;
+                if (name.getText().startsWith("__")) {
+                    access = ACC_PRIVATE;
+                } else if (name.getText().startsWith("_")) {
+                    access = ACC_PUBLIC;
+                } else {
+                    access = ACC_PUBLIC;
+                }
+                FieldVisitor fieldVisitor = cw.visitField(access, name.getText(), "Ljava/lang/Object;", null, null);
+                PyField value = new PyField(pyClass.type(this), name.getText(), Type.getType(Object.class), ctx.start.getLine());
+                pyClass.fields.put(name.getText(), value);
+                return value;
+            }
+//            self.load(mv, this, self.preload(mv, this, false), false);
+            return field;
+        }
+
+        throw new AssertionError("DEBUG");
     }
 
     private String importType(Type type) {
@@ -1308,26 +1463,24 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             return null;
         }
         if (type.getSort() != Type.OBJECT) return null;
-        Class clazz = null;
         try {
-            clazz = Class.forName(type.getClassName(), false, getClass().getClassLoader());
-            JClass value = new JClass(type.getClassName());
-            String internalName = type.getInternalName();
-            String[] split = internalName.split("/");
-            String importedName = split[split.length - 1];
-            imports.put(importedName, value);
-            symbols.put(importedName, value);
-            return importedName;
+            Class javaType = Class.forName(type.getClassName(), false, getClass().getClassLoader());
+            String simpleName = getSimpleName(type);
+            JClass value = new JClass(type.getClassName(), javaType);
+            imports.add(simpleName, value);
+            return simpleName;
         } catch (ClassNotFoundException e) {
             PyClass value = classes.get(type.getClassName());
             if (value == null) throw new CompilerException("JVM Class not found: " + type.getClassName());
-            String internalName = type.getInternalName();
-            String[] split = internalName.split("/");
-            String importedName = split[split.length - 1];
-            imports.put(importedName, value);
-            symbols.put(importedName, value);
-            return importedName;
+            String simpleName = getSimpleName(value.owner);
+            imports.add(simpleName, value);
+            return simpleName;
         }
+    }
+
+    private String getSimpleName(Type type) {
+        String[] split = type.getInternalName().split("/");
+        return split[split.length - 1];
     }
 
     public void loadConstant(ParserRuleContext ctx, Object visit1, MethodVisitor mv) {
@@ -1337,7 +1490,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     private static @NotNull PyExpr constant(ParserRuleContext ctx, Object visit1) {
-        var a = switch (visit1) {
+        return switch (visit1) {
             case PyConstant pyConstant -> pyConstant;
             case Symbol symbol -> symbol;
             case PyExpr pyExpr -> pyExpr;
@@ -1352,7 +1505,11 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             case Short shortValue -> new PyConstant(shortValue, ctx.getStart().getLine());
             default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
         };
-        return a;
+    }
+
+    @Override
+    public Object visitStar_atom(PythonParser.Star_atomContext ctx) {
+        throw new AssertionError(ctx);
     }
 
     @Override
@@ -1868,7 +2025,13 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             throw new RuntimeException("t_primary not supported for:\n" + ctx.getText());
         }
         if (atom != null) {
-            return visit(atom);
+            Object visit = visit(atom);
+            if (this.definingInstance != null && visit instanceof PyObjectRef(String name, int lineNo)) {
+                if (name.equals("self")) {
+                    return new Self(lineNo, definingInstance.owner);
+                }
+            }
+            return visit;
         }
         throw new RuntimeException("No supported matching t_primary found for:\n" + ctx.getText());
     }
@@ -2017,9 +2180,13 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
             List<Map.Entry<String, String>> visit = (List<Map.Entry<String, String>>) visit(importFromTargetsContext);
             for (Map.Entry<String, String> s : visit) {
-                JClass jClass = new JClass(((String) visit(dottedNameContext)).replace(".", "/") + "/" + s.getValue());
-                this.imports.put(s.getKey(), jClass);
-                this.symbols.put(s.getKey(), jClass);
+                String className = ((String) visit(dottedNameContext)).replace(".", "/") + "/" + s.getValue();
+                Type objectType = Type.getObjectType(className);
+                if (!classCache.load(this, objectType)) {
+                    throw new CompilerException("Class '" + className + "' not found " + getLocation(dottedNameContext));
+                }
+                JvmClass jClass = classCache.get(objectType);
+                this.imports.add(s.getKey(), jClass);
             }
 
             return visit(importFromTargetsContext);
@@ -2050,11 +2217,11 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         TerminalNode as = ctx.AS();
         if (as == null) {
             String text = ctx.NAME(0).getText();
-            return new AbstractMap.SimpleEntry(text, text);
+            return new AbstractMap.SimpleEntry<>(text, text);
         }
 
         if (ctx.NAME().size() == 2) {
-            return new AbstractMap.SimpleEntry(ctx.NAME(1).getText(), ctx.NAME(0).getText());
+            return new AbstractMap.SimpleEntry<>(ctx.NAME(1).getText(), ctx.NAME(0).getText());
         }
 
         throw new RuntimeException("No supported matching import_from_as_name found for:\n" + ctx.getText());
@@ -2107,7 +2274,10 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             File file = new File("build/tmp/compilePython/" + getName() + ".class");
             File parentFile = file.getParentFile();
             if (!parentFile.exists()) {
-                parentFile.mkdirs();
+                boolean mkdirs = parentFile.mkdirs();
+                if (!mkdirs) {
+                    throw new IOException("Failed to create directory " + parentFile);
+                }
             }
             FileOutputStream fos = new FileOutputStream(file);
             fos.write(rootCw.toByteArray());
@@ -2142,6 +2312,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         this.rootDir = rootDir.getAbsolutePath();
         this.fileName = p.substring(p.lastIndexOf("/") + 1);
         this.path = p.substring(0, p.lastIndexOf("/") + 1);
+        this.pathOfFile = file.toPath();
 
         try {
             visit(fileInputContext);
@@ -2151,13 +2322,14 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
     }
 
-    public void compile(String python, String fileName) throws IOException {
+    public void compile(String python, String fileName) {
         PythonLexer lexer = new PythonLexer(CharStreams.fromString(python));
         PythonParser parser = new PythonParser(new CommonTokenStream(lexer));
         PythonParser.File_inputContext fileInputContext = parser.file_input();
         var p = fileName.substring(0, fileName.length() - ".py".length());
         this.fileName = p.substring(p.lastIndexOf("/") + 1);
         this.path = p.substring(0, p.lastIndexOf("/") + 1);
+        this.pathOfFile = Path.of(python);
 
         try {
             visit(fileInputContext);
@@ -2275,6 +2447,14 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         return currentVariableIndex++;
     }
 
+    private void createVariable(String name, Type type, int lineNo, boolean b) {
+        Label label = new Label();
+        symbols.put(name, new PyVariable(name, type, currentVariableIndex, lineNo, false, label));
+//        writer.label(label);
+        writer.localVariable(name, Type.getType(Object.class).getDescriptor(), null, endLabel, endLabel, currentVariableIndex);
+        mv.visitLineNumber(lineNo, label);
+    }
+
     public Type typeCheck(Type type, PyExpr expr) {
         if (!type.equals(Type.getType(String.class)) && !type.equals(Type.LONG_TYPE) && !type.equals(Type.DOUBLE_TYPE)
                 && !type.equals(Type.FLOAT_TYPE) && !type.equals(Type.INT_TYPE) && !type.equals(Type.BOOLEAN_TYPE)
@@ -2378,9 +2558,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     case Byte s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
                     case Short s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
                     case Boolean s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
-                    case PyExpr expr -> {
-                        args.add(expr);
-                    }
+                    case PyExpr expr -> args.add(expr);
                     default ->
                             throw new UnsupportedOperationException("Not implemented: " + visit.getClass().getName());
                 }
