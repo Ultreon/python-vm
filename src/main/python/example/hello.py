@@ -20,12 +20,15 @@ def init():
 
     number = 3.141592653589793
 
-    frame = Frame()
+    frame: Frame = Frame()
     frame.setVisible(True)
 
     button = Button("Click me!")
     button.setLabel("Click me!")
     frame.add(button)
+
+    listeners = button.getActionListeners()
+    print(listeners)
 
     print("Hey there!", number)
 

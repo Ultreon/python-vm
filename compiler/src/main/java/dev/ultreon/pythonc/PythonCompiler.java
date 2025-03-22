@@ -678,7 +678,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
             writer.returnVoid();
             writer.end();
-
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
         } finally {
             flags.clear(F_CPL_STATIC_FUNC);
             flags.clear(F_CPL_CLASS_FUNC);
@@ -1193,7 +1195,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         pyVariable.set(mv, this, expr);
                     }
                 } else {
-                    createVariable(name, switch (visit1) {
+                    Type type = switch (visit1) {
                         case FuncCall funcCall -> funcCall.type(this);
                         case Symbol symbol -> symbol.type(this);
                         case Boolean booleanValue -> Type.BOOLEAN_TYPE;
@@ -1208,7 +1210,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         case PyConstant pyConstant -> pyConstant.type(this);
                         case PyExpr pyExpr -> pyExpr.type(this);
                         default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                    }, switch (visit1) {
+                    };
+                    String s = importType(type);
+                    createVariable(name, type, switch (visit1) {
                         case PyConstant pyConstant -> pyConstant;
                         case Symbol symbol -> symbol;
                         case String string -> new PyConstant(string, ctx.start.getLine());
@@ -1223,6 +1227,8 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         case PyExpr pyExpr -> pyExpr;
                         default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
                     }, false);
+
+                    imports.remove(s);
                 }
 
                 return Unit.Instance;
@@ -1295,6 +1301,35 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
     }
 
+    private String importType(Type type) {
+        if (type == null) throw new RuntimeException("Can't import null type");
+        if (type.getSort() == Type.ARRAY) {
+            importType(type.getElementType());
+            return null;
+        }
+        if (type.getSort() != Type.OBJECT) return null;
+        Class clazz = null;
+        try {
+            clazz = Class.forName(type.getClassName(), false, getClass().getClassLoader());
+            JClass value = new JClass(type.getClassName());
+            String internalName = type.getInternalName();
+            String[] split = internalName.split("/");
+            String importedName = split[split.length - 1];
+            imports.put(importedName, value);
+            symbols.put(importedName, value);
+            return importedName;
+        } catch (ClassNotFoundException e) {
+            PyClass value = classes.get(type.getClassName());
+            if (value == null) throw new CompilerException("JVM Class not found: " + type.getClassName());
+            String internalName = type.getInternalName();
+            String[] split = internalName.split("/");
+            String importedName = split[split.length - 1];
+            imports.put(importedName, value);
+            symbols.put(importedName, value);
+            return importedName;
+        }
+    }
+
     public void loadConstant(ParserRuleContext ctx, Object visit1, MethodVisitor mv) {
         var a = constant(ctx, visit1);
 
@@ -1359,6 +1394,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
         Object finalValue = value;
         Object finalAddition = addition;
+        if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (addition != null) {
+                throw new RuntimeException("Binary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+
+            if (value != null) {
+                return value;
+            }
+        }
         PyEval.Operator operator = null;
         if (ctx.VBAR() != null) {
             operator = PyEval.Operator.OR;
@@ -1381,6 +1425,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
+        if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (addition != null) {
+                throw new RuntimeException("Binary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+
+            if (value != null) {
+                return value;
+            }
+        }
         if (ctx.CIRCUMFLEX() != null) {
             operator = PyEval.Operator.XOR;
         }
@@ -1440,6 +1493,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         List<PythonParser.Compare_op_bitwise_or_pairContext> compareOpBitwiseOrPairContexts = ctx.compare_op_bitwise_or_pair();
         if (bitwiseOrContext != null) {
             Object visit = visit(bitwiseOrContext);
+            if (flags.get(F_CPL_TYPE_ANNO)) {
+                if (!compareOpBitwiseOrPairContexts.isEmpty()) {
+                    throw new RuntimeException("Comparison is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+                }
+
+                if (visit != null) {
+                    return visit;
+                }
+            }
             if (!compareOpBitwiseOrPairContexts.isEmpty()) {
                 for (PythonParser.Compare_op_bitwise_or_pairContext compareOpBitwiseOrPairContext : compareOpBitwiseOrPairContexts) {
                     Object visit1 = visit(compareOpBitwiseOrPairContext);
@@ -1480,6 +1542,28 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     @Override
     public Object visitCompare_op_bitwise_or_pair(PythonParser.Compare_op_bitwise_or_pairContext ctx) {
         PythonParser.Eq_bitwise_orContext eqBitwiseOrContext = ctx.eq_bitwise_or();
+        if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (ctx.eq_bitwise_or() != null) {
+                throw new RuntimeException("Equality is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+            if (ctx.noteq_bitwise_or() != null) {
+                throw new RuntimeException("Inequality is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+            if (ctx.gt_bitwise_or() != null) {
+                throw new RuntimeException("Relational operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+            if (ctx.gte_bitwise_or() != null) {
+                throw new RuntimeException("Relational operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+            if (ctx.lt_bitwise_or() != null) {
+                throw new RuntimeException("Relational operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+            if (ctx.lte_bitwise_or() != null) {
+                throw new RuntimeException("Relational operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+
+            throw new RuntimeException("No supported matching compare_op_bitwise_or_pair found for:\n" + ctx.getText());
+        }
         if (eqBitwiseOrContext != null) {
             return new PyComparison(eqBitwiseOrContext, PyComparison.Comparison.EQ, ctx);
         }
@@ -1529,6 +1613,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
+        if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (addition != null) {
+                throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+
+            if (value != null) {
+                return value;
+            }
+        }
         if (ctx.AMPER() != null) {
             operator = PyEval.Operator.AND;
         }
@@ -1550,6 +1643,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
+        if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (addition != null) {
+                throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+
+            if (value != null) {
+                return value;
+            }
+        }
         if (ctx.LEFTSHIFT() != null) {
             operator = PyEval.Operator.LSHIFT;
         } else if (ctx.RIGHTSHIFT() != null) {
@@ -1573,6 +1675,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
+        if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (addition != null) {
+                throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+
+            if (value != null) {
+                return value;
+            }
+        }
         if (ctx.PLUS() != null) {
             operator = PyEval.Operator.ADD;
         } else if (ctx.MINUS() != null) {
@@ -1615,6 +1726,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
+        if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (addition != null) {
+                throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
+
+            if (value != null) {
+                return value;
+            }
+        }
         if (ctx.STAR() != null) {
             operator = PyEval.Operator.MUL;
         } else if (ctx.SLASH() != null) {
@@ -1641,6 +1761,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_MINUS;
+            if (flags.get(F_CPL_TYPE_ANNO)) {
+                throw new RuntimeException("Unary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
             return new PyEval(this, ctx, operator, finalValue, null);
         }
 
@@ -1655,6 +1778,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_PLUS;
+            if (flags.get(F_CPL_TYPE_ANNO)) {
+                throw new RuntimeException("Unary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
             return new PyEval(this, ctx, operator, finalValue, null);
         }
 
@@ -1669,6 +1795,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_NOT;
+            if (flags.get(F_CPL_TYPE_ANNO)) {
+                throw new RuntimeException("Unary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+            }
             return new PyEval(this, ctx, operator, finalValue, null);
         }
         PythonParser.PowerContext powerContext = ctx.power();
@@ -1694,6 +1823,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             Object finalValue = value;
             Object finalAddition = addition;
             PyEval.Operator operator = PyEval.Operator.POW;
+            if (flags.get(F_CPL_TYPE_ANNO)) {
+                if (addition != null) {
+                    throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
+                }
+
+                if (value != null) {
+                    return value;
+                }
+            }
             return new PyEval(this, ctx, operator, finalValue, finalAddition);
 
         }
@@ -2126,12 +2264,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         writer.localVariable(name, Type.getType(Object.class).getDescriptor(), null, endLabel, endLabel, currentVariableIndex);
         mv.visitLineNumber(expr.lineNo(), label);
         int opcode;
-        if (!type.equals(Type.getType(String.class)) && !type.equals(Type.LONG_TYPE) && !type.equals(Type.DOUBLE_TYPE)
-                && !type.equals(Type.FLOAT_TYPE) && !type.equals(Type.INT_TYPE) && !type.equals(Type.BOOLEAN_TYPE)
-                && !type.equals(Type.BYTE_TYPE) && !type.equals(Type.SHORT_TYPE)
-                && symbols.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
-            throw typeNotFound(type.getClassName(), expr);
-        }
+        typeCheck(type, expr);
         Context context = writer.getContext();
         context.pop();
 
@@ -2140,6 +2273,31 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         mv.visitVarInsn(ASTORE, currentVariableIndex);
 
         return currentVariableIndex++;
+    }
+
+    public Type typeCheck(Type type, PyExpr expr) {
+        if (!type.equals(Type.getType(String.class)) && !type.equals(Type.LONG_TYPE) && !type.equals(Type.DOUBLE_TYPE)
+                && !type.equals(Type.FLOAT_TYPE) && !type.equals(Type.INT_TYPE) && !type.equals(Type.BOOLEAN_TYPE)
+                && !type.equals(Type.BYTE_TYPE) && !type.equals(Type.SHORT_TYPE)
+                && symbols.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
+            if (type.getSort() == Type.ARRAY) {
+                Type actualType = type.getElementType();
+                while (actualType.getSort() == Type.ARRAY) {
+                    actualType = actualType.getElementType();
+                }
+                if (!actualType.equals(Type.getType(String.class)) && !actualType.equals(Type.LONG_TYPE) && !actualType.equals(Type.DOUBLE_TYPE)
+                        && !actualType.equals(Type.FLOAT_TYPE) && !actualType.equals(Type.INT_TYPE) && !actualType.equals(Type.BOOLEAN_TYPE)
+                        && !actualType.equals(Type.BYTE_TYPE) && !actualType.equals(Type.SHORT_TYPE)
+                        && symbols.get(actualType.getClassName().substring(actualType.getClassName().lastIndexOf('.') + 1)) == null) {
+                    throw typeNotFound(actualType.getClassName(), expr);
+                }
+
+                return actualType;
+            } else {
+                throw typeNotFound(type.getClassName(), expr);
+            }
+        }
+        return type;
     }
 
     CompilerException typeNotFound(String type, PyExpr expr) {

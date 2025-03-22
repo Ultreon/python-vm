@@ -13,7 +13,7 @@ final class JClass implements JvmClass {
 
     JClass(String className) {
         this.className = className;
-        this.asmType = Type.getType("L" + className + ";");
+        this.asmType = Type.getObjectType(className.replace(".", "/"));
         try {
             this.type = Class.forName(className.replace("/", "."), false, getClass().getClassLoader());
         } catch (ClassNotFoundException e) {

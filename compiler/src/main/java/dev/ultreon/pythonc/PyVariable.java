@@ -35,16 +35,6 @@ final class PyVariable implements Symbol {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         int opcode;
-        if (type.getSort() == Type.OBJECT) {
-            if (type.equals(Type.getType(String.class)) || type.equals(Type.BYTE_TYPE) || type.equals(Type.CHAR_TYPE) || type.equals(Type.SHORT_TYPE) || type.equals(Type.INT_TYPE) || type.equals(Type.LONG_TYPE) || type.equals(Type.FLOAT_TYPE) || type.equals(Type.DOUBLE_TYPE) || type.equals(Type.BOOLEAN_TYPE)
-            || type.equals(Type.getType(byte[].class)) || type.equals(Type.getType(Object[].class)) || type.equals(Type.getType(Object.class)) || type.equals(Type.getType(Class.class))
-            || type.equals(Type.getType(Byte.class)) || type.equals(Type.getType(Character.class)) || type.equals(Type.getType(Short.class)) || type.equals(Type.getType(Integer.class)) || type.equals(Type.getType(Long.class)) || type.equals(Type.getType(Float.class)) || type.equals(Type.getType(Double.class)) || type.equals(Type.getType(Boolean.class))) {
-
-            } else if (compiler.imports.get(compiler.writer.boxType(type).getClassName().substring(compiler.writer.boxType(type).getClassName().lastIndexOf('.') + 1)) == null) {
-                throw compiler.typeNotFound(compiler.writer.boxType(type).getClassName().substring(compiler.writer.boxType(type).getClassName().lastIndexOf('.') + 1), this);
-            }
-        }
-
         compiler.writer.loadObject(index, compiler.writer.boxType(type));
 
         if (!boxed) {
@@ -87,11 +77,7 @@ final class PyVariable implements Symbol {
         } else if (type.equals(Type.getType(Class.class))) {
             return Type.getType(Class.class);
         }
-        if (compiler.symbols.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
-            throw compiler.typeNotFound(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1), this);
-        }
-
-        return compiler.symbols.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)).type(compiler);
+        return compiler.typeCheck(type, this);
     }
 
     @Override

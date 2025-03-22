@@ -947,6 +947,13 @@ public class JvmWriter {
                     default -> throw new RuntimeException("Unsupported cast from " + pop + " to " + type);
                 }
             }
+            case Type.ARRAY -> {
+                if (!pop.equals(type)) {
+                    if (pop.getSort() != Type.ARRAY && pop.getSort() != Type.OBJECT) {
+                        throw new RuntimeException("Unsupported cast from " + pop + " to " + type);
+                    }
+                }
+            }
             default -> throw new RuntimeException("Unsupported cast to " + type);
         }
         context.push(type);
@@ -1145,6 +1152,10 @@ public class JvmWriter {
             } else if (from == Type.SHORT_TYPE && to.getInternalName().equals("java/lang/Short")) {
                 mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
             } else if (!from.equals(to)) {
+                throw new RuntimeException("Cannot smart cast " + from + " to " + to);
+            }
+        } else if (to.getSort() == Type.ARRAY) {
+            if (!from.equals(to)) {
                 throw new RuntimeException("Cannot smart cast " + from + " to " + to);
             }
         } else {
