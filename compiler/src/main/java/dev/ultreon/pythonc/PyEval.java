@@ -88,8 +88,28 @@ class PyEval implements PyExpr {
                             doOperation(mv);
                             return;
                         }
+                    } else if (pyExpr.type(compiler) == Type.BOOLEAN_TYPE) {
+                        loadAddition(compiler);
+                        compiler.writer.smartCast(Type.BOOLEAN_TYPE);
+                        doOperation(mv);
+                        return;
+                    } else if (pyExpr.type(compiler) == Type.CHAR_TYPE) {
+                        loadAddition(compiler);
+                        compiler.writer.smartCast(Type.CHAR_TYPE);
+                        doOperation(mv);
+                        return;
+                    } else if (pyExpr.type(compiler).equals(Type.getType(String.class))) {
+                        loadAddition(compiler);
+                        compiler.writer.smartCast(Type.getType(String.class));
+                        doOperation(mv);
+                        return;
+                    } else if (pyExpr.type(compiler).equals(Type.getType(Object.class))) {
+                        loadAddition(compiler);
+                        compiler.writer.smartCast(Type.getType(Object.class));
+                        doOperation(mv);
+                        return;
                     } else {
-                        throw new RuntimeException("Unknown type: " + pyExpr.type(compiler));
+                        throw new RuntimeException("Unknown type: " + pyExpr.type(compiler).getClassName());
                     }
                 }
             }
@@ -368,9 +388,13 @@ class PyEval implements PyExpr {
             return Type.CHAR_TYPE;
         } else if (finalValue instanceof String s) {
             return Type.getType(String.class);
+        } else if (finalValue instanceof Unit u) {
+            return Type.VOID_TYPE;
+        } else if (finalValue == None.Instance) {
+            return Type.VOID_TYPE;
         }
 
-        throw new RuntimeException("No supported matching sum type found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching type found for:\n" + ctx.getText());
     }
 
     private static @Nullable Type castInt(Type type) {

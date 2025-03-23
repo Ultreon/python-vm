@@ -22,19 +22,27 @@ public class PyClasses {
         byType.put(Type.getObjectType(pyClass.className()), pyClass);
     }
 
-    public PyClass get(String name) {
+    public PyClass byName(String name) {
         return byName.get(name);
     }
 
-    public JvmClass get(Type type) {
+    public PyClass byClassName(String className) {
+        return byClassName.get(className);
+    }
+
+    public JvmClass byType(Type type) {
         return byType.get(type);
     }
 
-    public boolean has(String className) {
+    public boolean hasName(String name) {
+        return byName.containsKey(name);
+    }
+
+    public boolean hasClassName(String className) {
         return byClassName.containsKey(className);
     }
 
-    public boolean has(Type type) {
+    public boolean hasType(Type type) {
         return byType.containsKey(type);
     }
 }

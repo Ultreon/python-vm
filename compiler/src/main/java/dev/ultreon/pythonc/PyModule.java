@@ -7,6 +7,7 @@ import org.objectweb.asm.Type;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class PyModule implements JvmClass, PyCompileClass {
@@ -15,14 +16,14 @@ public class PyModule implements JvmClass, PyCompileClass {
     public final Path path;
     public final Type owner;
     public final Map<String, PyField> fields;
-    public final Map<String, PyFunction> methods;
+    public final Map<String, List<JvmFunction>> methods;
     private final int lineNo;
 
     public PyModule(Path path, int lineNo) {
         this.path = path;
         String internalNamePre = path.toString().replace(File.pathSeparatorChar, '/');
         String internalName = internalNamePre.substring(0, internalNamePre.length() - ".py".length()) + "Py";
-        this.owner = Type.getObjectType(internalName);
+        this.owner = Type.getObjectType(Character.toUpperCase(internalName.charAt(0)) + internalName.substring(1, internalName.length()));
         this.lineNo = lineNo;
         this.fields = new LinkedHashMap<>();
         this.methods = new LinkedHashMap<>();
@@ -101,7 +102,14 @@ public class PyModule implements JvmClass, PyCompileClass {
 
     @Override
     public @Nullable JvmFunction function(PythonCompiler compiler, String name, Type[] paramTypes) {
-        return methods.get(name);
+        for (List<JvmFunction> functions : methods.values()) {
+            for (JvmFunction function : functions) {
+                if (canAgreeWithParameters(compiler, function, paramTypes)) {
+                    return function;
+                }
+            }
+        }
+        return null;
     }
 
     @Override
@@ -110,8 +118,45 @@ public class PyModule implements JvmClass, PyCompileClass {
     }
 
     @Override
-    public JvmFunction constructor(PythonCompiler compiler, Type[] paramTypes) {
+    public @Nullable JvmConstructor constructor(PythonCompiler compiler, Type[] paramTypes) {
         throw new AssertionError("Illegal compiler object call");
+    }
+
+    @Override
+    public JvmClass superClass(PythonCompiler compiler) {
+        if (!PythonCompiler.classCache.load(compiler, Type.getType(Object.class))) {
+            throw new AssertionError("Illegal compiler object call");
+        }
+
+        return PythonCompiler.classCache.get(Type.getType(Object.class));
+    }
+
+    @Override
+    public JvmClass[] interfaces(PythonCompiler compiler) {
+        if (!PythonCompiler.classCache.load(compiler, Type.getType("L_pythonvm/PyModule;"))) {
+            throw new NoClassDefFoundError("_pythonvm/PyModule");
+        }
+
+        JvmClass jvmClass = PythonCompiler.classCache.get(Type.getType("L_pythonvm/PyModule;"));
+        if (!jvmClass.isInterface()) {
+            throw new AssertionError("_pythonvm.PyModule is not an interface");
+        }
+        return new JvmClass[] {jvmClass};
+    }
+
+    @Override
+    public Map<String, List<JvmFunction>> methods(PythonCompiler compiler) {
+        return methods;
+    }
+
+    @Override
+    public JvmConstructor[] constructors(PythonCompiler compiler) {
+        return new JvmConstructor[0];
+    }
+
+    @Override
+    public boolean isArray() {
+        return false;
     }
 
     @Override

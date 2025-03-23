@@ -106,7 +106,10 @@ public class JvmWriter {
         Context context = getContext();
         Type methodType = Type.getMethodType(signature);
         Type[] argumentTypes = methodType.getArgumentTypes();
-        context.pop();
+        Type pop1 = context.pop();
+        if (!PythonCompiler.isInstanceOf(pc, pop1, owner)) {
+            throw new RuntimeException("Expected " + pop1.getInternalName() + " to be " + owner);
+        }
         for (Type arg : argumentTypes) {
             Type pop = context.pop();
             getClassSymbol(pop.getClassName());
@@ -442,6 +445,9 @@ public class JvmWriter {
         } else if (left == Type.LONG_TYPE && right == Type.FLOAT_TYPE) {
             mv.visitInsn(FADD);
             context.push(Type.FLOAT_TYPE);
+        } else if (left.equals(Type.getType(String.class)) && right.equals(Type.getType(String.class))) {
+            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/String", "concat", "(Ljava/lang/String;)Ljava/lang/String;", false);
+            context.push(Type.getType(String.class));
         } else {
             throw new RuntimeException("Unsupported addition between " + left + " and " + right);
         }
@@ -1489,5 +1495,23 @@ public class JvmWriter {
         Type pop = getContext().pop();
         smartCast(pop, to);
         getContext().push(to);
+    }
+
+    public void loadThis(PythonCompiler compiler, JvmClass type) {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        mv.visitVarInsn(ALOAD, 0);
+        getContext().push(type.type(compiler));
+    }
+
+    public void loadSuper() {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        mv.visitVarInsn(ALOAD, 1);
+        getContext().push(Type.getType(Object.class));
+    }
+
+    public void loadNull() {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        mv.visitInsn(ACONST_NULL);
+        getContext().push(Type.getType(Object.class));
     }
 }

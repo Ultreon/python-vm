@@ -27,7 +27,11 @@ public class JField implements JvmField {
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-
+        if (Modifier.isStatic(field.getModifiers())) {
+            compiler.writer.getStatic(jClass.type(compiler).getInternalName(), name, type1.getDescriptor());
+            return;
+        }
+        compiler.writer.getField(jClass.type(compiler).getInternalName(), name, type1.getDescriptor());
     }
 
     @Override
@@ -42,7 +46,7 @@ public class JField implements JvmField {
 
     @Override
     public Type type(PythonCompiler compiler) {
-        return null;
+        return type1;
     }
 
     @Override
@@ -74,5 +78,10 @@ public class JField implements JvmField {
     public JvmClass typeClass(PythonCompiler compiler) {
         PythonCompiler.classCache.load(compiler, type1);
         return PythonCompiler.classCache.get(type1);
+    }
+
+    @Override
+    public JvmClass cls(PythonCompiler pythonCompiler) {
+        return typeClass(pythonCompiler);
     }
 }

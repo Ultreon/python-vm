@@ -111,7 +111,7 @@ public class PyClass implements JvmClass, PyCompileClass {
             }
 
             if (jvmClass instanceof JClass jClass) {
-                if (compiler.classes.get(type).doesInherit(compiler, jClass.type(compiler))) {
+                if (compiler.classes.byType(type).doesInherit(compiler, jClass.type(compiler))) {
                     return true;
                 }
             }
@@ -136,8 +136,65 @@ public class PyClass implements JvmClass, PyCompileClass {
     }
 
     @Override
-    public JvmFunction constructor(PythonCompiler compiler, Type[] paramTypes) {
-        throw new AssertionError("DEBUG");
+    public @Nullable JvmConstructor constructor(PythonCompiler compiler, Type[] paramTypes) {
+        for (JvmFunction function : methods.get("<init>")) {
+            if (canAgreeWithParameters(compiler, function, paramTypes)) {
+                return (JvmConstructor) function;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public JvmClass superClass(PythonCompiler compiler) {
+        for (JvmClass superClass : superClasses) {
+            if (superClass instanceof JClass jClass) {
+                if (!jClass.getType().isInterface()) {
+                    return jClass;
+                }
+            } else {
+                return superClass;
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public int columnNo() {
+        return columnNo;
+    }
+
+    @Override
+    public JvmClass[] interfaces(PythonCompiler compiler) {
+        List<JvmClass> superClasses = new ArrayList<>();
+        for (JvmClass superClass : superClasses) {
+            if (superClass instanceof JClass jClass) {
+                if (jClass.getType().isInterface()) {
+                    superClasses.add(jClass);
+                }
+            }
+        }
+        return superClasses.toArray(JvmClass[]::new);
+    }
+
+    @Override
+    public Map<String, List<JvmFunction>> methods(PythonCompiler compiler) {
+        return methods;
+    }
+
+    @Override
+    public JvmConstructor[] constructors(PythonCompiler compiler) {
+        List<JvmConstructor> list = new ArrayList<>();
+        for (JvmFunction jvmFunction : methods.get("<init>")) {
+            JvmConstructor function = (JvmConstructor) jvmFunction;
+            list.add(function);
+        }
+        return list.toArray(JvmConstructor[]::new);
+    }
+
+    @Override
+    public boolean isArray() {
+        return owner.getSort() == Type.ARRAY;
     }
 
     @Override

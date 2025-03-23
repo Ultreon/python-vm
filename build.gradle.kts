@@ -24,6 +24,8 @@ tasks.test {
 }
 
 tasks.register<JavaExec>("compilePython") {
+    dependsOn(":compilePyLib")
+
     doFirst {
         delete(file("build/libs/example-1.0.jar"))
         delete(file("build/tmp/compilePython/"))
@@ -40,6 +42,25 @@ tasks.register<JavaExec>("compilePython") {
 
     outputs.file("build/libs/example-1.0.jar")
     outputs.dir("build/tmp/compilePython")
+}
+
+tasks.register<JavaExec>("compilePyLib") {
+    doFirst {
+        delete(file("build/libs/pylib-1.0.jar"))
+        delete(file("build/tmp/compilePyLib/"))
+    }
+    finalizedBy(":testing:compileJava")
+    classpath = project(":compiler").sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.ultreon.pythonc.App")
+    args = listOf("-o", file("build/libs/pylib-1.0.jar").path, file("pylib/src/main/python").path)
+
+    group = "python-vm"
+    inputs.files("pylib/src/main/python", "pylib/src/main/resources", "build.gradle.kts", "build/tmp/compilePyLib")
+
+    notCompatibleWithConfigurationCache("Dynamically compiles python")
+
+    outputs.file("build/libs/pylib-1.0.jar")
+    outputs.dir("build/tmp/compilePyLib")
 }
 
 tasks.register<Jar>("jarPython") {

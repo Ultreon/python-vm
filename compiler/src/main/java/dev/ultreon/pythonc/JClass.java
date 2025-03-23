@@ -10,6 +10,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.*;
+import java.util.stream.Collectors;
 
 final class JClass implements JvmClass {
     private final String className;
@@ -33,7 +34,7 @@ final class JClass implements JvmClass {
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        // Do <name>.class
+        // Do <typedName>.class
         compiler.writer.loadClass(Type.getType("L" + className + ";"));
     }
 
@@ -91,6 +92,10 @@ final class JClass implements JvmClass {
 
     @Override
     public boolean doesInherit(PythonCompiler compiler, Type type) {
+        if (type(compiler).equals(type)) return true;
+        if (type.getSort() != Type.OBJECT && type.getSort() != Type.ARRAY) {
+            return type.getSort() == type(compiler).getSort();
+        }
         JvmClass jvmClass = PythonCompiler.classCache.get(type);
         if (jvmClass instanceof JClass jClass) {
             return jClass.type.isAssignableFrom(this.type);
@@ -99,7 +104,7 @@ final class JClass implements JvmClass {
     }
 
     @Override
-    public JvmFunction constructor(PythonCompiler compiler, Type[] paramTypes) {
+    public @Nullable JvmConstructor constructor(PythonCompiler compiler, Type[] paramTypes) {
         Method method;
         Constructor<?>[] constructors = type.getConstructors();
         JvmClass[] ourParamTypes = new JvmClass[paramTypes.length];
@@ -140,6 +145,61 @@ final class JClass implements JvmClass {
     }
 
     @Override
+    public JvmClass superClass(PythonCompiler compiler) {
+        Class<?> superclass = type.getSuperclass();
+        if (superclass == null) {
+            return null;
+        }
+        if (!(PythonCompiler.classCache.load(compiler, superclass))) {
+            throw new CompilerException("Class '" + type.getSuperclass().getName() + "' not found (" + compiler.getLocation(this) + ")");
+        }
+
+        return PythonCompiler.classCache.get(type.getSuperclass());
+    }
+
+    @Override
+    public JvmClass[] interfaces(PythonCompiler compiler) {
+        JvmClass[] interfaces = new JvmClass[type.getInterfaces().length];
+        for (int i = 0, interfacesLength = interfaces.length; i < interfacesLength; i++) {
+            Class<?> anInterface = type.getInterfaces()[i];
+            if (!(PythonCompiler.classCache.load(compiler, anInterface))) {
+                throw new CompilerException("Class '" + type.getInterfaces()[i].getName() + "' not found (" + compiler.getLocation(this) + ")");
+            }
+            interfaces[i] = PythonCompiler.classCache.get(type.getInterfaces()[i]);
+        }
+        return interfaces;
+    }
+
+    @Override
+    public Map<String, List<JvmFunction>> methods(PythonCompiler compiler) {
+        this.functions.clear();
+        for (Method method : type.getMethods()) {
+            JvmFunction jvmFunction = new JFunction(method.getName(), method, 0, 0);
+            if (Modifier.isStatic(method.getModifiers()) && method.getName().equals("__init__")) {
+                this.functions.computeIfAbsent("<init>", k -> new ArrayList<>()).add(jvmFunction);
+            } else {
+                this.functions.computeIfAbsent(method.getName(), k -> new ArrayList<>()).add(jvmFunction);
+            }
+        }
+        for (Constructor<?> constructor : type.getConstructors()) {
+            JvmFunction jvmFunction = new JConstructor("__init__", constructor, 0, 0);
+            this.functions.computeIfAbsent("<init>", k -> new ArrayList<>()).add(jvmFunction);
+        }
+        return functions;
+    }
+
+    @Override
+    public JvmConstructor[] constructors(PythonCompiler compiler) {
+        Map<String, List<JvmFunction>> methods = methods(compiler);
+        List<JvmConstructor> constructors = new ArrayList<>();
+        List<JvmFunction> jvmFunctions = methods.get("<init>");
+        if (jvmFunctions == null)
+            return new JvmConstructor[0];
+        jvmFunctions.forEach(jvmFunction -> constructors.add((JConstructor) jvmFunction));
+        return constructors.toArray(new JvmConstructor[0]);
+    }
+
+    @Override
     public @Nullable JvmFunction function(PythonCompiler compiler, String name, Type[] paramTypes) {
         Method method;
         Method[] methodsByName = ClassUtils.getMethodsByName(type, name);
@@ -155,12 +215,15 @@ final class JClass implements JvmClass {
         methodLoop:
         for (Method method1 : methodsByName) {
             @NotNull Class<?>[] parameterTypes = method1.getParameterTypes();
+            if (parameterTypes.length != paramTypes.length) {
+                continue;
+            }
             for (int i = 0, parameterTypesLength = parameterTypes.length; i < parameterTypesLength; i++) {
                 Class<?> theParamType = parameterTypes[i];
                 if (!(PythonCompiler.classCache.load(compiler, Type.getType(theParamType))))
                     throw new CompilerException("Class '" + theParamType.getName() + "' not found (" + compiler.getLocation(this) + ")");
 
-                if (!ourParamTypes[i].doesInherit(compiler, Type.getType(theParamType))) {
+                if (!ourParamTypes[i].doesInherit(compiler, PythonCompiler.classCache.require(compiler, Type.getType(theParamType)))) {
                     continue methodLoop;
                 }
             }
@@ -170,7 +233,7 @@ final class JClass implements JvmClass {
             return jFunction;
         }
 
-        throw new CompilerException("Method '" + name + "' not found (" + compiler.getLocation(this) + ")");
+        throw new CompilerException("Method '" + name + "' not found with parameters (" + Arrays.stream(paramTypes).map(Type::getClassName).collect(Collectors.joining(", ")) + ") in '" + type.getName() + "' (" + compiler.getLocation(this) + ")");
     }
 
     @Override
@@ -229,4 +292,8 @@ final class JClass implements JvmClass {
                 "className=" + className + ']';
     }
 
+    @Override
+    public boolean isArray() {
+        return type.isArray();
+    }
 }

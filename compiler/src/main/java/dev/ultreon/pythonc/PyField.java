@@ -112,4 +112,9 @@ public record PyField(Type owner, String name, Type type, int lineNo) implements
     public Type owner(PythonCompiler compiler) {
         return owner;
     }
+
+    @Override
+    public JvmClass cls(PythonCompiler pythonCompiler) {
+        return ownerClass(pythonCompiler);
+    }
 }

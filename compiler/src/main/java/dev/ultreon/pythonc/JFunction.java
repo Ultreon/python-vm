@@ -6,6 +6,8 @@ import org.objectweb.asm.Type;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import static org.objectweb.asm.Opcodes.INVOKESTATIC;
 import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
@@ -74,6 +76,19 @@ public class JFunction implements JvmFunction {
     }
 
     @Override
+    public boolean isStatic() {
+        return Modifier.isStatic(method.getModifiers());
+    }
+
+    @Override
+    public JvmClass ownerClass(PythonCompiler compiler) {
+        if (this.ownerClass != null) return this.ownerClass;
+        if (!PythonCompiler.classCache.load(compiler, owner))
+            throw new CompilerException("Class '" + owner.getName() + "' not found (" + compiler.getLocation(this) + ")");
+        return this.ownerClass = PythonCompiler.classCache.get(owner);
+    }
+
+    @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
         return null;
     }
@@ -120,5 +135,10 @@ public class JFunction implements JvmFunction {
             throw new CompilerException("Class '" + owner.getName() + "' not found (" + compiler.getLocation(this) + ")");
         this.ownerClass = PythonCompiler.classCache.get(owner);
         return this.ownerClass;
+    }
+
+    @Override
+    public String toString() {
+        return "JFunction< " + owner.getName() + "." + name + "(" + Arrays.stream(paramTypes).map(Class::getName).collect(Collectors.joining(", ")) + ") -> " + returnType.getName() + ">";
     }
 }

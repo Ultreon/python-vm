@@ -1,17 +1,19 @@
 package dev.ultreon.pythonc;
 
+import com.google.common.base.Preconditions;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
 public class PyFunction implements JvmFunction, Symbol {
-    private final PyClass owner;
+    private final PyCompileClass owner;
     private final String name;
     private final Type[] paramTypes;
-    private final Type returnType;
+    Type returnType;
     private final int lineNo;
     private JvmClass returnClass;
 
-    public PyFunction(PyClass owner, String name, Type[] paramTypes, Type returnType, int lineNo) {
+    public PyFunction(PyCompileClass owner, String name, Type[] paramTypes, Type returnType, int lineNo) {
+        Preconditions.checkArgument(owner != null, "owner == null");
         this.owner = owner;
         this.name = name;
         this.paramTypes = paramTypes;
@@ -26,7 +28,13 @@ public class PyFunction implements JvmFunction, Symbol {
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        throw new RuntimeException("not supported");
+        Type methodType = Type.getMethodType(returnType(compiler), parameterTypes(compiler));
+        // TODO
+//        if (Modifier.isStatic(method.getModifiers())) {
+//            compiler.writer.invokeStatic(owner(compiler).type(compiler).getInternalName(), typedName, methodType.getDescriptor(), boxed);
+//            return;
+//        }
+        compiler.writer.invokeVirtual(owner(compiler).type(compiler).getInternalName(), name, methodType.getDescriptor(), boxed);
     }
 
     @Override
@@ -40,7 +48,7 @@ public class PyFunction implements JvmFunction, Symbol {
     }
 
     @Override
-    public PyClass owner(PythonCompiler compiler) {
+    public PyCompileClass owner(PythonCompiler compiler) {
         return owner;
     }
 
@@ -67,6 +75,7 @@ public class PyFunction implements JvmFunction, Symbol {
     @Override
     public JvmClass returnClass(PythonCompiler compiler) {
         if (returnClass != null) return returnClass;
+        if (returnType.equals(Type.VOID_TYPE)) return null;
         if (!PythonCompiler.classCache.load(compiler, returnType)) {
             throw new CompilerException("Class '" + returnType.getClassName() + "' not found yet (" + compiler.getLocation(this) + ")");
         }
@@ -87,5 +96,16 @@ public class PyFunction implements JvmFunction, Symbol {
             classes[i] = PythonCompiler.classCache.get(paramTypes[i]);
         }
         return classes;
+    }
+
+    @Override
+    public boolean isStatic() {
+        // TODO implement
+        return false;
+    }
+
+    @Override
+    public JvmClass ownerClass(PythonCompiler compiler) {
+        return owner(compiler);
     }
 }

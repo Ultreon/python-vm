@@ -104,12 +104,11 @@ public class PyImport implements Symbol {
         }
     }
 
-    public JvmFunction function(PythonCompiler compiler, String name, Type[] paramTypes, Runnable paramInit) {
+    public JvmFunction function(PythonCompiler compiler, String name, Type[] paramTypes) {
         if (symbol instanceof JvmClass cls) {
             if (name.equals("<init>")) {
                 return cls.constructor(compiler, paramTypes);
             }
-            paramInit.run();
             return cls.function(compiler, name, paramTypes);
         } else {
             throw new CompilerException("Unsupported call to " + symbol + " (type: " + symbol.getClass() + ")");

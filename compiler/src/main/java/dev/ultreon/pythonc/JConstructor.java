@@ -4,10 +4,8 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-
-import static org.objectweb.asm.Opcodes.*;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 public class JConstructor implements JvmFunction, JvmConstructor {
     public String name;
@@ -72,6 +70,20 @@ public class JConstructor implements JvmFunction, JvmConstructor {
     }
 
     @Override
+    public boolean isStatic() {
+        return true;
+    }
+
+    @Override
+    public JvmClass ownerClass(PythonCompiler compiler) {
+        if (this.ownerClass != null) return this.ownerClass;
+        if (!PythonCompiler.classCache.load(compiler, owner))
+            throw new CompilerException("Class '" + owner.getName() + "' not found (" + compiler.getLocation(this) + ")");
+        this.ownerClass = PythonCompiler.classCache.get(owner);
+        return this.ownerClass;
+    }
+
+    @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
         return null;
     }
@@ -118,5 +130,12 @@ public class JConstructor implements JvmFunction, JvmConstructor {
             throw new CompilerException("Class '" + owner.getName() + "' not found (" + compiler.getLocation(this) + ")");
         this.ownerClass = PythonCompiler.classCache.get(owner);
         return this.ownerClass;
+    }
+
+
+
+    @Override
+    public String toString() {
+        return "JFunction< " + owner.getName() + ".__init__(" + Arrays.stream(paramTypes).map(Class::getName).collect(Collectors.joining(", ")) + ")>";
     }
 }

@@ -7,7 +7,7 @@ import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
-class PyBuiltinFunction implements Symbol {
+public class PyBuiltinFunction implements Symbol {
     public final Type jvmOwner;
     public final Type mapOwner;
     public final Type[] signatures;

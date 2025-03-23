@@ -28,6 +28,9 @@ def init():
 
     number = 3.141592653589793
 
+    test_class = TestClass(1, 2)
+    test_class.run()
+
     frame: Frame = Frame()
     frame.setVisible(True)
 

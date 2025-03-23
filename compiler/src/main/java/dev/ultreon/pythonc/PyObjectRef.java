@@ -13,7 +13,7 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
         }
         switch (symbol1) {
             case PyVariable variable -> {
-                // Set variable to "<name>.class"
+                // Set variable to "<typedName>.class"
                 Symbol symbol = compiler.symbols.get(name);
                 if (symbol == null) {
                     throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
@@ -22,11 +22,11 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
                 return symbol.preload(mv, compiler, false);
             }
             case PyObjectRef objectRef ->
-                // Set variable to "<name>.class"
+                // Set variable to "<typedName>.class"
                 //TODO
                     PythonCompiler.throwError(mv, "TODO");
             case JClass jclass -> {
-                // Set variable to "<name>.class"
+                // Set variable to "<typedName>.class"
                 if (mv == null) {
                     return jclass.asmType();
                 }
@@ -35,6 +35,43 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
             }
             case ImportedField importedField -> {
 
+            }
+            case PyImport importSymbol -> {
+                switch (importSymbol.symbol) {
+                    case PyVariable variable -> {
+                        // Set variable to "<typedName>.class"
+                        Symbol symbol = compiler.symbols.get(name);
+                        if (symbol == null) {
+                            throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
+                        }
+
+                        return symbol.preload(mv, compiler, false);
+                    }
+                    case PyObjectRef objectRef ->
+                        // Set variable to "<typedName>.class"
+                        //TODO
+                            PythonCompiler.throwError(mv, "TODO");
+                    case JClass jclass -> {
+                        // Set variable to "<typedName>.class"
+                        if (mv == null) {
+                            return jclass.asmType();
+                        }
+                        jclass.load(mv, compiler, jclass.preload(mv, compiler, false), false);
+                        return jclass;
+                    }
+                    case ImportedField importedField -> {
+
+                    }
+                    default -> throw new CompilerException("Symbol '" + name + "' invalid type: " + compiler.symbols.get(name).getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
+                }
+            }
+            case JvmFunction jvmFunction -> {
+                // Set variable to "<typedName>.class"
+                return jvmFunction.preload(mv, compiler, false);
+            }
+            case JvmField jvmField -> {
+                // Set variable to "<typedName>.class"
+                return jvmField.preload(mv, compiler, false);
             }
             default ->
                     throw new CompilerException("Symbol '" + name + "' invalid type: " + compiler.symbols.get(name).getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
@@ -51,7 +88,7 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
 
         switch (compiler.symbols.get(name)) {
             case PyVariable variable -> {
-                // Set variable to "<name>.class"
+                // Set variable to "<typedName>.class"
                 Symbol symbol = compiler.symbols.get(name);
                 if (symbol == null) {
                     throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
@@ -59,7 +96,7 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
                 symbol.load(mv, compiler, preloaded, boxed);
             }
             case PyObjectRef objectRef -> {
-                // Set variable to "<name>.class"
+                // Set variable to "<typedName>.class"
                 compiler.writer.loadConstant(name);
                 compiler.writer.invokeStatic("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;", false);
 
@@ -67,8 +104,56 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
                 compiler.writer.storeInt(compiler.currentVariableIndex++);
             }
             case ImportedField importedField -> importedField.load(mv, compiler, importedField.preload(mv, compiler, false), false);
+            case PyImport importSymbol -> {
+                switch (importSymbol.symbol) {
+                    case PyVariable variable -> {
+                        // Set variable to "<typedName>.class"
+                        Symbol symbol = compiler.symbols.get(name);
+                        if (symbol == null) {
+                            throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
+                        }
+                        symbol.load(mv, compiler, preloaded, boxed);
+                    }
+                    case PyObjectRef objectRef -> {
+                        // Set variable to "<typedName>.class"
+                        compiler.writer.loadConstant(name);
+                        compiler.writer.invokeStatic("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;", false);
+
+                        // Set variable
+                        compiler.writer.storeInt(compiler.currentVariableIndex++);
+                    }
+                    case JClass jclass -> {
+                        // Set variable to "<typedName>.class"
+                        if (mv == null) {
+                            return;
+                        }
+                        jclass.load(mv, compiler, jclass.preload(mv, compiler, false), false);
+                    }
+                    case ImportedField importedField -> importedField.load(mv, compiler, importedField.preload(mv, compiler, false), false);
+                    default -> throw new CompilerException("Symbol '" + name + "' invalid type: " + importSymbol.symbol.getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
+                }
+            }
+            case JvmConstructor jvmConstructor -> {
+                // Set variable to "<typedName>.class"
+                jvmConstructor.load(mv, compiler, preloaded, false);
+            }
+            case JvmFunction jvmFunction -> {
+                // Set variable to "<typedName>.class"
+                if (!jvmFunction.isStatic()) {
+                    JvmClass owner = jvmFunction.owner(compiler);
+                    PyCompileClass compilingClass = compiler.compilingClass;
+                    if (compilingClass.doesInherit(compiler, owner)) {
+                        compiler.writer.loadThis(compiler, compiler.compilingClass);
+                    }
+                }
+                jvmFunction.load(mv, compiler, preloaded, false);
+            }
+            case JvmField jvmField -> {
+                // Set variable to "<typedName>.class"
+                jvmField.load(mv, compiler, preloaded, false);
+            }
             default ->
-                    throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
+                    throw new CompilerException("Symbol '" + name + "' invalid type: " + compiler.symbols.get(name).getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
         }
     }
 

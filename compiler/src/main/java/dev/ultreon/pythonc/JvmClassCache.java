@@ -8,6 +8,25 @@ import java.util.Map;
 public class JvmClassCache {
     private final Map<Type, JvmClass> byType = new HashMap<>();
 
+    public JvmClassCache() {
+
+    }
+
+    public void init(PythonCompiler compiler) {
+        for (PyBuiltinClass pyBuiltinClass : compiler.builtinClasses) {
+            byType.put(compiler.writer.unboxType(pyBuiltinClass.type(compiler)), pyBuiltinClass);
+            byType.put(compiler.writer.boxType(pyBuiltinClass.type(compiler)), pyBuiltinClass);
+
+            if (pyBuiltinClass.pyName.equals("int")) {
+                byType.put(Type.INT_TYPE, pyBuiltinClass);
+                byType.put(Type.getType(Integer.class), pyBuiltinClass);
+            } else if (pyBuiltinClass.pyName.equals("float")) {
+                byType.put(Type.FLOAT_TYPE, pyBuiltinClass);
+                byType.put(Type.getType(Float.class), pyBuiltinClass);
+            }
+        }
+    }
+
     public JvmClass get(Type type) {
         JvmClass jvmClass = byType.get(type);
         if (jvmClass == null) {
@@ -24,6 +43,8 @@ public class JvmClassCache {
         if (byType.containsKey(type)) {
             return true;
         }
+        if (type.getSort() == Type.ARRAY) throw new AssertionError("DEBUG");
+        if (type.getSort() != Type.OBJECT) return true;
         String className = type.getClassName();
         try {
             Class<?> aClass = Class.forName(className, false, getClass().getClassLoader());
@@ -59,5 +80,19 @@ public class JvmClassCache {
             throw new RuntimeException("Class '" + declaringClass.getName() + "' not found");
         }
         return jvmClass;
+    }
+
+    public JvmClass require(PythonCompiler compiler, Type type) {
+        if (!(load(compiler, type))) {
+            throw new CompilerException("Class '" + type.getClassName() + "' not found");
+        }
+        return get(type);
+    }
+
+    public JvmClass require(PythonCompiler compiler, Class<?> type) {
+        if (!(load(compiler, type))) {
+            throw new CompilerException("Class '" + type.getName() + "' not found");
+        }
+        return get(type);
     }
 }

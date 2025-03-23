@@ -165,11 +165,17 @@ final class PyVariable implements Symbol {
     @Override
     public String toString() {
         return "PyVariable[" +
-                "name=" + name + ", " +
+                "typedName=" + name + ", " +
                 "type=" + type + ", " +
                 "index=" + index + ", " +
                 "lineNo=" + lineNo + ", " +
                 "label=" + label + ']';
     }
 
+    public JvmClass cls(PythonCompiler compiler) {
+        if (!PythonCompiler.classCache.load(compiler, type)) {
+            throw new RuntimeException("Class " + type + " not found");
+        }
+        return PythonCompiler.classCache.get(type);
+    }
 }
