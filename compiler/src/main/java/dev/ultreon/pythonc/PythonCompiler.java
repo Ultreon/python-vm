@@ -11,15 +11,16 @@ import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.MethodNode;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.jar.JarOutputStream;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
 
 import static org.objectweb.asm.Opcodes.*;
 
@@ -2807,10 +2808,21 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
     public void pack(String outputDir, String outputJar) {
         // Pack "build/rustc/**/*.class"
-        try {
-            Process process = Runtime.getRuntime().exec("jar cf " + outputJar + " -C " + outputDir + " .");
-            process.waitFor();
-        } catch (IOException | InterruptedException e) {
+        try (JarOutputStream jarOut = new JarOutputStream(new FileOutputStream(outputJar))) {
+            Path sourcePath = Paths.get(outputDir);
+            Files.walk(sourcePath)
+                    .filter(path -> !Files.isDirectory(path))
+                    .forEach(path -> {
+                        String entryName = sourcePath.relativize(path).toString().replace("\\", "/");
+                        try {
+                            jarOut.putNextEntry(new ZipEntry(entryName));
+                            Files.copy(path, jarOut);
+                            jarOut.closeEntry();
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    });
+        } catch (IOException e) {
             throw new RuntimeException(e);
         }
     }

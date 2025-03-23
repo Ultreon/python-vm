@@ -1036,7 +1036,7 @@ public class JvmWriter {
 
     public void lineNumber(int line, Label label) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        mv.visitLineNumber(line, label);
+//        mv.visitLineNumber(line, label);
     }
 
     public void jumpIfEqual(Label label) {
