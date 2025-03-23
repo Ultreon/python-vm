@@ -136,11 +136,11 @@ final class FuncCall implements Symbol {
                         return;
                     }
                     case PyVariable pyVariable -> {
+                        symbol.load(mv, compiler, symbol.preload(mv, compiler, false), false);
                         setupCallArgs(mv, compiler);
 
                         installArgs(mv, compiler, pyVariable.type(compiler));
 
-                        symbol.load(mv, compiler, symbol.preload(mv, compiler, false), false);
                         String s = argDesc(compiler, callArgs);
                         if (owner.getSort() == Type.OBJECT) {
                             String internalName = owner.getInternalName();
@@ -388,8 +388,9 @@ final class FuncCall implements Symbol {
 //                throwError(mv, "Unimplemented function call: atom=" + atom.getText() + ", primaryContext=" + primaryContext.getText() + ", arguments=" + arguments.getText());
         } else if (visit instanceof MemberFuncCall call) {
             setupCallArgs(mv, compiler);
+            Object preload = call.preload(mv, compiler, false);
             installArgs(mv, compiler, call.owner(compiler));
-            call.load(mv, compiler, call.preload(mv, compiler, false), false);
+            call.load(mv, compiler, preload, false);
         } else {
             throw new RuntimeException("No supported matching atom found for: " + visit.getClass().getName());
         }

@@ -18,12 +18,12 @@ public class MemberFuncCall implements PyExpr {
 
     @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
+        parent.load(mv, compiler, parent.preload(mv, compiler, boxed), boxed);
         return null;
     }
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        parent.load(mv, compiler, parent.preload(mv, compiler, boxed), boxed);
         if (memberFunc != null) {
             memberFunc.write(mv, compiler);
         }

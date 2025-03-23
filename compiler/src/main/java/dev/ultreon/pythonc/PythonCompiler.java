@@ -9,6 +9,7 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.*;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import java.io.*;
@@ -795,7 +796,16 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 writer.pop();
             }
 
-            if (mv != rootInitMv) writer.returnVoid();
+            if (mv != rootInitMv) {
+                if (mv instanceof MethodNode) {
+                    AbstractInsnNode last = ((MethodNode) mv).instructions.getLast();
+                    if ((last == null || last.getOpcode() != IRETURN) && last.getOpcode() != ARETURN && last.getOpcode() != DRETURN && last.getOpcode() != FRETURN && last.getOpcode() != LRETURN && last.getOpcode() != RETURN) {
+                        doReturn(returnType);
+                    }
+                } else {
+                    doReturn(returnType);
+                }
+            }
             if (mv != rootInitMv) writer.end();
         } catch (Exception e) {
             e.printStackTrace();
@@ -830,6 +840,42 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
         }
         return Unit.Instance;
+    }
+
+    private void doReturn(Type returnType) {
+        if (returnType.getSort() == Type.VOID) {
+            writer.returnVoid();
+        } else if (returnType.getSort() == Type.ARRAY) {
+            writer.pushNull();
+            writer.returnObject();
+        } else if (returnType.getSort() == Type.OBJECT) {
+            writer.pushNull();
+            writer.returnObject();
+        } else if (returnType.getSort() == Type.CHAR) {
+            writer.pushInt(0);
+            writer.returnChar();
+        } else if (returnType.getSort() == Type.BOOLEAN) {
+            writer.pushBoolean(false);
+            writer.returnBoolean();
+        } else if (returnType.getSort() == Type.BYTE) {
+            writer.pushInt(0);
+            writer.returnByte();
+        } else if (returnType.getSort() == Type.SHORT) {
+            writer.pushInt(0);
+            writer.returnShort();
+        } else if (returnType.getSort() == Type.INT) {
+            writer.pushInt(0);
+            writer.returnInt();
+        } else if (returnType.getSort() == Type.FLOAT) {
+            writer.pushFloat(0f);
+            writer.returnFloat();
+        } else if (returnType.getSort() == Type.DOUBLE) {
+            writer.pushDouble(0.0);
+            writer.returnDouble();
+        } else if (returnType.getSort() == Type.LONG) {
+            writer.pushLong(0L);
+            writer.returnLong();
+        }
     }
 
     @Override

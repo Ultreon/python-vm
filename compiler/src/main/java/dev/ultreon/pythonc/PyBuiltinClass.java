@@ -172,7 +172,7 @@ public class PyBuiltinClass implements JvmClass {
 
     @Override
     public boolean isPrimitive() {
-        return false;
+        return pyName.equals("int") || pyName.equals("float") || pyName.equals("bool");
     }
 
     @Override
