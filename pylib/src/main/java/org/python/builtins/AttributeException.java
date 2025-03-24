@@ -1,4 +1,4 @@
-package pythonvm.builtins;
+package org.python.builtins;
 
 public class AttributeException extends Exception {
     public AttributeException(String name) {

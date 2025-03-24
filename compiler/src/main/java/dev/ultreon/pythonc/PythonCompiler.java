@@ -101,6 +101,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 walk
                         .map(Path::toString)
                         .filter(string -> string.endsWith(".py"))
+                        .collect(Collectors.toSet())
                         .forEach(v -> {
                             try {
                                 compile(new File(v), new File(sourceDir));
@@ -187,38 +188,38 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     public PythonCompiler() {
-        symbols.put("int", new PyBuiltinClass("Ljava/lang/Long;", "J", "Lpythonvm/builtins/PyLong;", "int"));
-        symbols.put("float", new PyBuiltinClass("Ljava/lang/Double;", "D", "Lpythonvm/builtins/PyDouble;", "float"));
-        symbols.put("bool", new PyBuiltinClass("Ljava/lang/Boolean;", "Z", "Lpythonvm/builtins/PyBoolean;", "bool"));
-        symbols.put("str", new PyBuiltinClass("Ljava/lang/String;", "Lpythonvm/builtins/PyStr;", "str"));
-        symbols.put("bytes", new PyBuiltinClass("[B", "[B", "Lpythonvm/builtins/PyBytes;", "bytes"));
-        symbols.put("bytearray", new PyBuiltinClass("[B", "[B", "Lpythonvm/builtins/PyByteArray;", "bytearray"));
-        symbols.put("list", new PyBuiltinClass("Ljava/util/List;", "Lpythonvm/builtins/PyList;", "list"));
-        symbols.put("dict", new PyBuiltinClass("Ljava/util/Map;", "Lpythonvm/builtins/PyDict;", "dict"));
-        symbols.put("set", new PyBuiltinClass("Ljava/util/Set;", "Lpythonvm/builtins/PySet;", "set"));
-        symbols.put("tuple", new PyBuiltinClass("[Ljava/util/Object;", "Lpythonvm/builtins/PyTuple;", "tuple"));
-        symbols.put("range", new PyBuiltinClass("Ljava/util/List;", "Lpythonvm/builtins/PyRange;", "range"));
-        symbols.put("None", new PyBuiltinClass("Ljava/lang/Object;", "Lpythonvm/builtins/PyNone;", "None"));
-        symbols.put("object", new PyBuiltinClass("Ljava/lang/Object;", "Lpythonvm/builtins/PyObject;", "object"));
-        symbols.put("type", new PyBuiltinClass("Ljava/lang/Class;", "Lpythonvm/builtins/PyType;", "type"));
-        symbols.put("Exception", new PyBuiltinClass("Ljava/lang/Exception;", "Lpythonvm/builtins/PyException;", "Exception"));
-        symbols.put("BaseException", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyBaseException;", "BaseException"));
-        symbols.put("StopIteration", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyStopIteration;", "StopIteration"));
-        symbols.put("StopAsyncIteration", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyStopAsyncIteration;", "StopAsyncIteration"));
-        symbols.put("GeneratorExit", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyGeneratorExit;", "GeneratorExit"));
-        symbols.put("SystemExit", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PySystemExit;", "SystemExit"));
-        symbols.put("KeyboardInterrupt", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyKeyboardInterrupt;", "KeyboardInterrupt"));
-        symbols.put("ImportError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyImportError;", "ImportError"));
-        symbols.put("ModuleNotFoundError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyModuleNotFoundError;", "ModuleNotFoundError"));
-        symbols.put("IndexError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyIndexError;", "IndexError"));
-        symbols.put("KeyError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyKeyError;", "KeyError"));
-        symbols.put("ValueError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyValueError;", "ValueError"));
-        symbols.put("TypeError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyTypeError;", "TypeError"));
-        symbols.put("NotImplementedError", new PyBuiltinClass("Ljava/lang/UnsupportedOperationException;", "Lpythonvm/builtins/PyNotImplementedError;", "NotImplementedError"));
-        symbols.put("OverflowError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lpythonvm/builtins/PyOverflowError;", "OverflowError"));
+        symbols.put("int", new PyBuiltinClass("Ljava/lang/Long;", "J", "Lorg/python/builtins/PyLong;", "int"));
+        symbols.put("float", new PyBuiltinClass("Ljava/lang/Double;", "D", "Lorg/python/builtins/PyDouble;", "float"));
+        symbols.put("bool", new PyBuiltinClass("Ljava/lang/Boolean;", "Z", "Lorg/python/builtins/PyBoolean;", "bool"));
+        symbols.put("str", new PyBuiltinClass("Ljava/lang/String;", "Lorg/python/builtins/PyStr;", "str"));
+        symbols.put("bytes", new PyBuiltinClass("[B", "[B", "Lorg/python/builtins/PyBytes;", "bytes"));
+        symbols.put("bytearray", new PyBuiltinClass("[B", "[B", "Lorg/python/builtins/PyByteArray;", "bytearray"));
+        symbols.put("list", new PyBuiltinClass("Ljava/util/List;", "Lorg/python/builtins/PyList;", "list"));
+        symbols.put("dict", new PyBuiltinClass("Ljava/util/Map;", "Lorg/python/builtins/PyDict;", "dict"));
+        symbols.put("set", new PyBuiltinClass("Ljava/util/Set;", "Lorg/python/builtins/PySet;", "set"));
+        symbols.put("tuple", new PyBuiltinClass("[Ljava/util/Object;", "Lorg/python/builtins/PyTuple;", "tuple"));
+        symbols.put("range", new PyBuiltinClass("Ljava/util/List;", "Lorg/python/builtins/PyRange;", "range"));
+        symbols.put("None", new PyBuiltinClass("Ljava/lang/Object;", "Lorg/python/builtins/PyNone;", "None"));
+        symbols.put("object", new PyBuiltinClass("Ljava/lang/Object;", "Lorg/python/builtins/PyObject;", "object"));
+        symbols.put("type", new PyBuiltinClass("Ljava/lang/Class;", "Lorg/python/builtins/PyType;", "type"));
+        symbols.put("Exception", new PyBuiltinClass("Ljava/lang/Exception;", "Lorg/python/builtins/PyException;", "Exception"));
+        symbols.put("BaseException", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyBaseException;", "BaseException"));
+        symbols.put("StopIteration", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyStopIteration;", "StopIteration"));
+        symbols.put("StopAsyncIteration", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyStopAsyncIteration;", "StopAsyncIteration"));
+        symbols.put("GeneratorExit", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyGeneratorExit;", "GeneratorExit"));
+        symbols.put("SystemExit", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PySystemExit;", "SystemExit"));
+        symbols.put("KeyboardInterrupt", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyKeyboardInterrupt;", "KeyboardInterrupt"));
+        symbols.put("ImportError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyImportError;", "ImportError"));
+        symbols.put("ModuleNotFoundError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyModuleNotFoundError;", "ModuleNotFoundError"));
+        symbols.put("IndexError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyIndexError;", "IndexError"));
+        symbols.put("KeyError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyKeyError;", "KeyError"));
+        symbols.put("ValueError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyValueError;", "ValueError"));
+        symbols.put("TypeError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyTypeError;", "TypeError"));
+        symbols.put("NotImplementedError", new PyBuiltinClass("Ljava/lang/UnsupportedOperationException;", "Lorg/python/builtins/PyNotImplementedError;", "NotImplementedError"));
+        symbols.put("OverflowError", new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyOverflowError;", "OverflowError"));
 
-        symbols.put("asc", new PyBuiltinFunction("java/lang/String", "pythonvm/builtins/BuiltinsPy", new String[]{"asc(Ljava/lang/String;)V"}, 1, "asc"));
-        symbols.put("print", new PyBuiltinFunction("java/lang/System", "pythonvm/builtins/BuiltinsPy", new String[]{"print([Ljava/lang/Object;Ljava/util/Map;)"}, 2, "print", PyBuiltinFunction.Mode.DYN_CTOR));
+        symbols.put("asc", new PyBuiltinFunction("java/lang/String", "org/python/builtins/BuiltinsPy", new String[]{"asc(Ljava/lang/String;)V"}, 1, "asc"));
+        symbols.put("print", new PyBuiltinFunction("java/lang/System", "org/python/builtins/BuiltinsPy", new String[]{"print([Ljava/lang/Object;Ljava/util/Map;)"}, 2, "print", PyBuiltinFunction.Mode.DYN_CTOR));
 
         for (Symbol symbol : symbols.values()) {
             if (symbol instanceof PyBuiltinClass) {
@@ -657,12 +658,12 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             throw new RuntimeException("No block found for:\n" + ctx.getText());
         }
 
-        if (decorators.byJvmName.containsKey("pythonvm/utils/Override")) {
+        if (decorators.byJvmName.containsKey("org/pythonutils/Override")) {
             // Ignore for now
         }
 
-        boolean static_ = decorators.byJvmName.containsKey("pythonvm/builtins/PyStaticmethod") || cw == rootCw;
-        boolean class_ = decorators.byJvmName.containsKey("pythonvm/builtins/PyClassmethod");
+        boolean static_ = decorators.byJvmName.containsKey("org/python/builtins/PyStaticmethod") || cw == rootCw;
+        boolean class_ = decorators.byJvmName.containsKey("org/python/builtins/PyClassmethod");
 
         if (static_) {
             flags.set(F_CPL_STATIC_FUNC);
@@ -732,7 +733,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             if (jvmFunctions == null || jvmFunctions.isEmpty()) {
                 mv = rootInitMv;
                 MethodNode initMv = (MethodNode) rootInitMv;
-                initMv.desc = "(" + sig + ")" + returnType.getDescriptor();
+                initMv.desc = "(" + sig + ")V";
             } else {
                 mv = cw.visitMethod(ACC_PUBLIC, "<init>", "(" + sig + ")" + returnType.getDescriptor(), null, null);
             }
@@ -746,6 +747,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 mv = cw.visitMethod(access, name.getText(), "(" + sig + ")" + returnType.getDescriptor(), null, null);
         }
 
+        if (definingInstance != null) {
+            currentVariableIndex = 2;
+        }
         for (PyParameter typedName : parmeters) {
             mv.visitParameter(typedName.typedName().name(), 0);
             symbols.put(typedName.typedName().name(), new PyVariable(typedName.typedName().name(), typedName.type(), currentVariableIndex, ctx.getStart().getLine(), false, null));
@@ -761,7 +765,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         try {
             if (mv != rootInitMv) mv.visitCode();
 
-            if (decorators.byJvmName.containsKey("pythonvm/utils/Override")) {
+            if (decorators.byJvmName.containsKey("org/pythonutils/Override")) {
                 // Ignore for now
             }
 
@@ -1157,22 +1161,27 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
                 if (visit instanceof List<?> list) {
                     for (Object o : list) {
+                        if (o instanceof PyObjectRef(String name1, int lineNo)) {
+                            o = name1;
+                        }
                         if (o instanceof String classname) {
-                            if (!classname.startsWith("L") || !classname.endsWith(";")) {
-                                throw new RuntimeException("Class not supported for:\n" + ctx.getText());
-                            }
-                            var normalName = classname.substring(1, classname.length() - 1).replace('/', '.');
-                            try {
-                                Class<?> type = Class.forName(normalName, false, getClass().getClassLoader());
-                                if (type.isInterface()) {
-                                    implementing.add(normalName.replace('.', '/'));
-                                } else if (superClass.equals("java/lang/Object") && type != Object.class) {
-                                    superClass = normalName.replace('.', '/');
-                                } else {
-                                    throw new CompilerException("Cannot inherit multiple super classes for: " + path.replace("/", ".") + name.getText() + " at " + getLocation(ctx));
-                                }
-                            } catch (ClassNotFoundException e) {
-                                throw new RuntimeException(e);
+                            Symbol symbol = symbols.get(classname);
+                            JvmClass type = switch (symbol) {
+                                case JvmClass jvmClass -> jvmClass;
+                                case PyImport pyImport -> switch (pyImport.symbol) {
+                                    case JvmClass jvmClass -> jvmClass;
+                                    default -> throw new AssertionError("No supported imported compile class type: " + pyImport.symbol.getClass().getName());
+                                };
+                                default -> throw new AssertionError("No supported compile class type: " + symbol.getClass().getName());
+                            };
+                            Type classType = type.type(this);
+                            String internalName = classType.getInternalName();
+                            if (type.isInterface()) {
+                                implementing.add(internalName);
+                            } else if (superClass.equals("java/lang/Object") && !classType.equals(Type.getType(Object.class))) {
+                                superClass = internalName;
+                            } else {
+                                throw new CompilerException("Cannot inherit multiple super classes for: " + path.replace("/", ".") + name.getText() + " at " + getLocation(ctx));
                             }
                         }
                     }
@@ -1191,13 +1200,35 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         imports.add(name.getText(), value);
         undefinedClasses.remove(classname);
 
+        classes.add(value);
+        classCache.add(this, value);
+
         curPyClass = value;
 
         FieldVisitor self = cw.visitField(ACC_PUBLIC | ACC_FINAL, "__dict__", "Ljava/util/Map;", /*<String, Object>*/ "Ljava/util/Map<Ljava/lang/String;Ljava/lang/Object;>;", null);
-//        AnnotationVisitor annotationVisitor = self.visitAnnotation("pythonvm/vm/annotations/Generated", true);
+//        AnnotationVisitor annotationVisitor = self.visitAnnotation("org/pythonvm/annotations/Generated", true);
 //        annotationVisitor.visit("reason", "Generated for Python interop");
 //        annotationVisitor.visitEnd();
         self.visitEnd();
+
+        // Generate method: public Map<String, Object> --dict--() { return storage; }
+        mv = cw.visitMethod(ACC_PUBLIC, "--dict--", "()Ljava/util/Map;", "()Ljava/util/Map<Ljava/lang/String;Ljava/lang/Object;>;", null);
+        mv.visitCode();
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitFieldInsn(GETFIELD, path + name.getText(), "__dict__", "Ljava/util/Map;");
+        mv.visitInsn(ARETURN);
+        mv.visitMaxs(1, 1);
+        mv.visitEnd();
+
+        // Generate method: public void --dict--(Map<String, Object> dict) { storage = dict; }
+        mv = cw.visitMethod(ACC_PUBLIC, "--dict--", "(Ljava/util/Map;)V", "(Ljava/util/Map<Ljava/lang/String;Ljava/lang/Object;>;)V", null);
+        mv.visitCode();
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitFieldInsn(PUTFIELD, path + name.getText(), "__dict__", "Ljava/util/Map;");
+        mv.visitInsn(RETURN);
+        mv.visitMaxs(2, 2);
+        mv.visitEnd();
 
         // Create default constructor
         MethodNode mv = new MethodNode(ACC_PUBLIC, "<init>", "()V", null, null);
@@ -1227,8 +1258,6 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         cw.visitEnd();
 
         definingClass = null;
-        classes.add(value);
-        classCache.add(this, value);
         curPyClass = null;
 
         byte[] bytes = cw.toByteArray();
@@ -1859,7 +1888,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
         Object finalValue = value;
         Object finalAddition = addition;
-        if (flags.get(F_CPL_TYPE_ANNO)) {
+        if (shouldNotCreateEval()) {
             if (addition != null) {
                 throw new RuntimeException("Binary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
@@ -1873,6 +1902,10 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             operator = PyEval.Operator.OR;
         }
         return new PyEval(this, ctx, operator, finalValue, finalAddition);
+    }
+
+    private boolean shouldNotCreateEval() {
+        return flags.get(F_CPL_TYPE_ANNO) || flags.get(F_CPL_CLASS_INHERITANCE);
     }
 
     @Override
@@ -1890,7 +1923,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
-        if (flags.get(F_CPL_TYPE_ANNO)) {
+        if (shouldNotCreateEval()) {
             if (addition != null) {
                 throw new RuntimeException("Binary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
@@ -1958,7 +1991,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         List<PythonParser.Compare_op_bitwise_or_pairContext> compareOpBitwiseOrPairContexts = ctx.compare_op_bitwise_or_pair();
         if (bitwiseOrContext != null) {
             Object visit = visit(bitwiseOrContext);
-            if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (shouldNotCreateEval()) {
                 if (!compareOpBitwiseOrPairContexts.isEmpty()) {
                     throw new RuntimeException("Comparison is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
                 }
@@ -2007,7 +2040,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     @Override
     public Object visitCompare_op_bitwise_or_pair(PythonParser.Compare_op_bitwise_or_pairContext ctx) {
         PythonParser.Eq_bitwise_orContext eqBitwiseOrContext = ctx.eq_bitwise_or();
-        if (flags.get(F_CPL_TYPE_ANNO)) {
+        if (shouldNotCreateEval()) {
             if (ctx.eq_bitwise_or() != null) {
                 throw new RuntimeException("Equality is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
@@ -2078,7 +2111,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
-        if (flags.get(F_CPL_TYPE_ANNO)) {
+        if (shouldNotCreateEval()) {
             if (addition != null) {
                 throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
@@ -2108,7 +2141,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
-        if (flags.get(F_CPL_TYPE_ANNO)) {
+        if (shouldNotCreateEval()) {
             if (addition != null) {
                 throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
@@ -2140,7 +2173,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
-        if (flags.get(F_CPL_TYPE_ANNO)) {
+        if (shouldNotCreateEval()) {
             if (addition != null) {
                 throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
@@ -2194,7 +2227,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object finalValue = value;
         Object finalAddition = addition;
         PyEval.Operator operator = null;
-        if (flags.get(F_CPL_TYPE_ANNO)) {
+        if (shouldNotCreateEval()) {
             if (addition != null) {
                 throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
@@ -2229,7 +2262,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_MINUS;
-            if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (shouldNotCreateEval()) {
                 throw new RuntimeException("Unary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
             return new PyEval(this, ctx, operator, finalValue, null);
@@ -2246,7 +2279,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_PLUS;
-            if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (shouldNotCreateEval()) {
                 throw new RuntimeException("Unary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
             return new PyEval(this, ctx, operator, finalValue, null);
@@ -2263,7 +2296,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_NOT;
-            if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (shouldNotCreateEval()) {
                 throw new RuntimeException("Unary operator is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
             return new PyEval(this, ctx, operator, finalValue, null);
@@ -2291,7 +2324,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             Object finalValue = value;
             Object finalAddition = addition;
             PyEval.Operator operator = PyEval.Operator.POW;
-            if (flags.get(F_CPL_TYPE_ANNO)) {
+            if (shouldNotCreateEval()) {
                 if (addition != null) {
                     throw new RuntimeException("Type annotation is not allowed in type annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
                 }
@@ -2740,7 +2773,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     public Object visitFile_input(PythonParser.File_inputContext ctx) {
         PythonParser.StatementsContext statements = ctx.statements();
         rootCw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-        rootCw.visit(V1_8, ACC_PUBLIC, getName(), null, "java/lang/Object", null);
+        rootCw.visit(V1_8, ACC_PUBLIC, getName(), null, "java/lang/Object", new String[]{"org/python/_internal/PyModule"});
         cw = rootCw;
 
         definingModule = new PyModule(pathOfFile.resolve(fileName + ".py"), 0);
@@ -3086,6 +3119,21 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     default ->
                             throw new UnsupportedOperationException("Not implemented: " + visit.getClass().getName());
                 }
+//            } else if (flags.get(F_DYN_CALL)) {
+//                switch (visit) {
+//                    case String s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Integer s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Float s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Long s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Double s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Character s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Byte s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Short s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case Boolean s -> args.add(new PyConstant(s, ctx.getStart().getLine()));
+//                    case PyExpr expr -> args.add(expr);
+//                    default ->
+//                            throw new UnsupportedOperationException("Not implemented: " + visit.getClass().getName());
+//                }
             }
         }
 

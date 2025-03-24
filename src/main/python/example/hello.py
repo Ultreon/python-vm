@@ -15,7 +15,18 @@ class TestClass(Runnable):
         self.b = b
 
     def run(self):
-        print(self.a + self.b)
+        print("LMAO")
+
+        print(Objects.hashCode("Hello, world!"))
+
+        print(HASHCODE)
+        print(INTEGER)
+        print(FLOAT)
+        print(STRING)
+
+
+
+TEST_CLASS = TestClass(3, 6)
 
 
 def init():
@@ -28,8 +39,11 @@ def init():
 
     number = 3.141592653589793
 
-    # test_class = TestClass(1, 2)
-    # test_class.run()
+    test_class = TestClass(1, 2)
+    test_class.run()
+
+    print(test_class.a)
+    print(test_class.b)
 
     frame: Frame = Frame()
     frame.setVisible(True)

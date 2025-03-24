@@ -1,4 +1,4 @@
-package pythonvm.builtins;
+package org.python.builtins;
 
 import java.util.Map;
 

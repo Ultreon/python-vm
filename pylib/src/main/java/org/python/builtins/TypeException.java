@@ -1,6 +1,6 @@
-package pythonvm.builtins;
+package org.python.builtins;
 
-import _pythonvm.PythonException;
+import org.python._internal.PythonException;
 
 public class TypeException extends PythonException {
     public TypeException(String message) {

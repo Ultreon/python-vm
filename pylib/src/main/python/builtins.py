@@ -1,7 +1,7 @@
 from java.util import StringJoiner, Objects
 from java.io import ByteArrayOutputStream
 from java.lang import String, System
-from _pythonvm import ClassUtils, PythonException
+from org.python._internal import ClassUtils, PythonException
 
 # __all__ = ["print", "input"]  # TODO: Add list support to PythonVM
 

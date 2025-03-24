@@ -133,13 +133,13 @@ public class PyModule implements JvmClass, PyCompileClass {
 
     @Override
     public JvmClass[] interfaces(PythonCompiler compiler) {
-        if (!PythonCompiler.classCache.load(compiler, Type.getType("L_pythonvm/PyModule;"))) {
-            throw new NoClassDefFoundError("_pythonvm/PyModule");
+        if (!PythonCompiler.classCache.load(compiler, Type.getType("Lorg/python/_internal/PyModule;"))) {
+            throw new NoClassDefFoundError("org/python/_internal/PyModule");
         }
 
-        JvmClass jvmClass = PythonCompiler.classCache.get(Type.getType("L_pythonvm/PyModule;"));
+        JvmClass jvmClass = PythonCompiler.classCache.get(Type.getType("Lorg/python/_internal/PyModule;"));
         if (!jvmClass.isInterface()) {
-            throw new AssertionError("_pythonvm.PyModule is not an interface");
+            throw new AssertionError("org/python/_internal/PyModule is not an interface");
         }
         return new JvmClass[] {jvmClass};
     }

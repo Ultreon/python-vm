@@ -1,4 +1,4 @@
-import pythonvm.builtins.BuiltinsPy;
+import org.python.builtins.BuiltinsPy;
 
 import java.util.*;
 

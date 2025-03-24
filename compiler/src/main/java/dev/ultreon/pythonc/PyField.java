@@ -35,11 +35,11 @@ public record PyField(Type owner, String name, Type type, int lineNo) implements
     }
 
     public JvmClass ownerClass(PythonCompiler compiler) {
-        Symbol symbol = compiler.symbols.get(owner.getClassName());
+        Symbol symbol = PythonCompiler.classCache.require(compiler, owner);
         if (symbol instanceof JvmClass jvmClass) {
             return jvmClass;
         }
-        throw new IllegalStateException("Invalid owner: " + owner);
+        throw new IllegalStateException("Invalid owner: " + owner + " (" + compiler.getLocation(this) + ")");
     }
 
     public JvmClass typeClass(PythonCompiler compiler) {
@@ -53,10 +53,11 @@ public record PyField(Type owner, String name, Type type, int lineNo) implements
     @Override
     public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
         if (type.getSort() == Type.OBJECT) {
+            if (compiler.definingInstance.type(compiler).equals(ownerClass(compiler).type(compiler))) {
+                compiler.writer.loadThis(compiler, ownerClass(compiler));
+            }
             visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
-            compiler.writer.getContext().pop();
-
-            mv.visitFieldInsn(Opcodes.PUTFIELD, owner.getDescriptor(), name, type.getDescriptor());
+            compiler.writer.putField(owner.getInternalName(), name, type.getDescriptor());
         } else {
             visit.load(mv, compiler, visit.preload(mv, compiler, false), false);
             if (compiler.writer.getContext().pop() != type) {

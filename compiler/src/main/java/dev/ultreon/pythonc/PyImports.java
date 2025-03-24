@@ -14,7 +14,7 @@ public class PyImports {
     public PyImports(PythonCompiler compiler) {
         this.compiler = compiler;
 
-        add("object", new PyImport("object", new PyBuiltinClass(Type.getType(Object.class), "Lpythonvm/PythonObject;", "object")));
+        add("object", new PyImport("object", new PyBuiltinClass(Type.getType(Object.class), "Lorg/pythonPythonObject;", "object")));
     }
 
     public void add(String alias, Symbol symbol) {

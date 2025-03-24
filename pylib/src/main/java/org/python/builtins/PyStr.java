@@ -1,4 +1,4 @@
-package pythonvm.builtins;
+package org.python.builtins;
 
 public class PyStr {
     public static String __init__() {

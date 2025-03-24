@@ -1,6 +1,6 @@
 from java.awt import Button
 
 
-class TestClass(Button):
+class TestButton(Button):
     def __init__(self):
         print("Hello, world!")

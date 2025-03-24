@@ -89,7 +89,7 @@ final class FuncCall implements Symbol {
 
                             // Kwargs
                             // Create Map<String, Object>
-                            // Call Mao.of()
+                            // Call Map.of()
                             compiler.writer.invokeStatic("java/util/Map", "of", "()Ljava/util/Map;", true);
                             compiler.writer.invokeStatic(builtinFunction.mapOwner.getInternalName(), builtinFunction.name, "([Ljava/lang/Object;Ljava/util/Map;)V", false);
                             return;

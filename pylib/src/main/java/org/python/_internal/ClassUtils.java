@@ -1,7 +1,7 @@
-package _pythonvm;
+package org.python._internal;
 
-import pythonvm.builtins.AttributeException;
-import pythonvm.builtins.TypeException;
+import org.python.builtins.AttributeException;
+import org.python.builtins.TypeException;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Field;
