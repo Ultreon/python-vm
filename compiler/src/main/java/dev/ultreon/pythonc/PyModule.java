@@ -17,14 +17,14 @@ public class PyModule implements JvmClass, PyCompileClass {
     public final Type owner;
     public final Map<String, PyField> fields;
     public final Map<String, List<JvmFunction>> methods;
-    private final int lineNo;
+    private Location location;
 
-    public PyModule(Path path, int lineNo) {
+    public PyModule(Path path, Location location) {
         this.path = path;
+        this.location = location;
         String internalNamePre = path.toString().replace(File.pathSeparatorChar, '/');
         String internalName = internalNamePre.substring(0, internalNamePre.length() - ".py".length()) + "Py";
         this.owner = Type.getObjectType(Character.toUpperCase(internalName.charAt(0)) + internalName.substring(1, internalName.length()));
-        this.lineNo = lineNo;
         this.fields = new LinkedHashMap<>();
         this.methods = new LinkedHashMap<>();
     }
@@ -41,11 +41,6 @@ public class PyModule implements JvmClass, PyCompileClass {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         throw new UnsupportedOperationException(PythonCompiler.E_NOT_ALLOWED);
-    }
-
-    @Override
-    public int lineNo() {
-        return lineNo;
     }
 
     @Override
@@ -67,6 +62,17 @@ public class PyModule implements JvmClass, PyCompileClass {
     @Override
     public Type type(PythonCompiler compiler) {
         return owner;
+    }
+
+    @Override
+    public Location location() {
+        return location;
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!returnType.doesInherit(compiler, this))
+            throw new CompilerException("Expected " + this + " but got " + returnType + " at ", location);
     }
 
     @Override
@@ -123,12 +129,17 @@ public class PyModule implements JvmClass, PyCompileClass {
     }
 
     @Override
-    public JvmClass superClass(PythonCompiler compiler) {
+    public JvmClass firstSuperClass(PythonCompiler compiler) {
         if (!PythonCompiler.classCache.load(compiler, Type.getType(Object.class))) {
             throw new AssertionError("Illegal compiler object call");
         }
 
         return PythonCompiler.classCache.get(Type.getType(Object.class));
+    }
+
+    @Override
+    public JvmClass[] dynamicSuperClasses(PythonCompiler compiler) {
+        return new JvmClass[0];
     }
 
     @Override
@@ -160,7 +171,22 @@ public class PyModule implements JvmClass, PyCompileClass {
     }
 
     @Override
+    public JvmFunction requireFunction(PythonCompiler pythonCompiler, String name, Type[] types) {
+        JvmFunction function = function(pythonCompiler, name, types);
+        if (function == null) {
+            return PythonCompiler.expectations.expectFunction(pythonCompiler, this, name, types, true, false, location);
+        } else {
+            return function;
+        }
+    }
+
+    @Override
     public Path getOutputPath() {
         return path;
+    }
+
+    @Override
+    public boolean isModule() {
+        return true;
     }
 }

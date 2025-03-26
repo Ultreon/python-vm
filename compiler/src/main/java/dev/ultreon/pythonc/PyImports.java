@@ -14,7 +14,7 @@ public class PyImports {
     public PyImports(PythonCompiler compiler) {
         this.compiler = compiler;
 
-        add("object", new PyImport("object", new PyBuiltinClass(Type.getType(Object.class), "Lorg/pythonPythonObject;", "object")));
+        add("object", new PyImport("object", new PyBuiltinClass(Type.getType(Object.class), "Lorg/pythonPythonObject;", "object"), new Location()));
     }
 
     public void add(String alias, Symbol symbol) {
@@ -22,7 +22,7 @@ public class PyImports {
         byAlias.put(alias, symbol);
         byType.put(symbol.type(compiler), symbol);
 
-        compiler.symbols.put(alias, new PyImport(alias, symbol));
+        compiler.symbols.put(alias, new PyImport(alias, symbol, new Location()));
     }
 
     public Symbol get(String name) {

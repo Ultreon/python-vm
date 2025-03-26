@@ -5,20 +5,28 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
 public class PyFunction implements JvmFunction, Symbol {
-    private final PyCompileClass owner;
+    final PyCompileClass owner;
     private final String name;
     private final Type[] paramTypes;
+    private Self self = null;
     Type returnType;
-    private final int lineNo;
     private JvmClass returnClass;
+    private final Location location;
+    private final boolean isStatic;
+    private final PyLocalVariables localSymbols = new PyLocalVariables(this);
 
-    public PyFunction(PyCompileClass owner, String name, Type[] paramTypes, Type returnType, int lineNo) {
+    public PyFunction(PythonCompiler compiler, PyCompileClass owner, String name, Type[] paramTypes, Type returnType, Location location, boolean isStatic) {
+        this.location = location;
+        this.isStatic = isStatic;
         Preconditions.checkArgument(owner != null, "owner == null");
         this.owner = owner;
         this.name = name;
         this.paramTypes = paramTypes;
         this.returnType = returnType;
-        this.lineNo = lineNo;
+
+        if (!isStatic && !(owner instanceof PyModule)) {
+            this.self = this.localSymbols.createThis(compiler, location);
+        }
     }
 
     @Override
@@ -30,16 +38,15 @@ public class PyFunction implements JvmFunction, Symbol {
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         Type methodType = Type.getMethodType(returnType(compiler), parameterTypes(compiler));
         // TODO
-//        if (Modifier.isStatic(method.getModifiers())) {
-//            compiler.writer.invokeStatic(owner(compiler).type(compiler).getInternalName(), typedName, methodType.getDescriptor(), boxed);
-//            return;
-//        }
-        compiler.writer.invokeVirtual(owner(compiler).type(compiler).getInternalName(), name, methodType.getDescriptor(), boxed);
-    }
-
-    @Override
-    public int lineNo() {
-        return lineNo;
+        if (isStatic || owner instanceof PyModule) {
+            owner.load(mv, compiler, owner.preload(mv, compiler, false), false);
+            compiler.writer.dynamicSetAttr(name);
+        } else if (self != null) {
+            self.load(mv, compiler, self.preload(mv, compiler, false), false);
+            compiler.writer.dynamicSetAttr(name);
+        } else {
+            throw new AssertionError("DEBUG");
+        }
     }
 
     @Override
@@ -55,6 +62,18 @@ public class PyFunction implements JvmFunction, Symbol {
     @Override
     public Type type(PythonCompiler compiler) {
         return returnType;
+    }
+
+    @Override
+    public Location location() {
+        return location;
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!returnClass(compiler).doesInherit(compiler, returnType)) {
+            throw new CompilerException("Incompatible return type (" + compiler.getLocation(this) + ")");
+        }
     }
 
     @Override
@@ -100,12 +119,34 @@ public class PyFunction implements JvmFunction, Symbol {
 
     @Override
     public boolean isStatic() {
-        // TODO implement
-        return false;
+        return isStatic;
     }
 
     @Override
     public JvmClass ownerClass(PythonCompiler compiler) {
         return owner(compiler);
+    }
+
+    @Override
+    public boolean isDynamicCall() {
+        return false;
+    }
+
+    public PyVariable createVariable(PythonCompiler compiler, String name, PyExpr expr, boolean boxed, Location location) {
+        return localSymbols.createVariable(compiler, name, expr, boxed, location);
+    }
+
+    @Deprecated
+    public PyVariable createVariable(PythonCompiler compiler, String name, boolean boxed, Location location) {
+        return localSymbols.createVariable(compiler, name, boxed, location);
+    }
+
+    public PyVariable getVariable(String name) {
+        return localSymbols.get(name);
+    }
+
+    public PyVariable createParam(String name, PyVariable pyVariable) {
+        localSymbols.createParam(name, pyVariable);
+        return pyVariable;
     }
 }

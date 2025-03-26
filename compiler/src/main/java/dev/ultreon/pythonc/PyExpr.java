@@ -8,11 +8,9 @@ public interface PyExpr {
 
     void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed);
 
-    int lineNo();
-
-    default int columnNo() {
-        return -1;
-    }
+    void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location);
 
     Type type(PythonCompiler compiler);
+
+    Location location();
 }

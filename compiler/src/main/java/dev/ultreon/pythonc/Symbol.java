@@ -11,4 +11,8 @@ public interface Symbol extends PyExpr {
     Type type(PythonCompiler compiler);
 
     void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit);
+
+    default boolean isClass() {
+        return false;
+    }
 }

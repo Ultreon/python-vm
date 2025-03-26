@@ -5,26 +5,28 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
-import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
-final class PyVariable implements Symbol {
+public final class PyVariable implements Symbol {
     private final String name;
-    private Type type;
+    private final Type type;
     private final int index;
-    private final int lineNo;
-    private final boolean typeConstant;
     private final Label label;
+    private final Location location;
 
-    PyVariable(String name, Type type, int index, int lineNo, boolean typeConstant, Label label) {
+    PyVariable(String name, int index, Label label, Location location) {
+        this(name, Type.getType(Object.class), index, label, location);
+    }
+
+    PyVariable(String name, Type type, int index, Label label, Location location) {
+        if (type == null) {
+            type = Type.getType(Object.class);
+        }
         this.name = name;
         this.type = type;
         this.index = index;
-        this.lineNo = lineNo;
-        this.typeConstant = typeConstant;
         this.label = label;
+        this.location = location;
     }
 
     @Override
@@ -34,89 +36,67 @@ final class PyVariable implements Symbol {
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        int opcode;
-        compiler.writer.loadObject(index, compiler.writer.boxType(type));
-
-        if (!boxed) {
-            compiler.writer.unbox(type);
+        switch (type.getSort()) {
+            case Type.ARRAY, Type.OBJECT -> compiler.writer.loadObject(index, type);
+            case Type.BOOLEAN -> {
+                compiler.writer.loadBoolean(index);
+                compiler.writer.box(type);
+            }
+            case Type.CHAR -> {
+                compiler.writer.loadChar(index);
+                compiler.writer.box(type);
+            }
+            case Type.DOUBLE -> {
+                compiler.writer.loadDouble(index);
+                compiler.writer.box(type);
+            }
+            case Type.FLOAT -> {
+                compiler.writer.loadFloat(index);
+                compiler.writer.box(type);
+            }
+            case Type.INT -> {
+                compiler.writer.loadInt(index);
+                compiler.writer.box(type);
+            }
+            case Type.LONG -> {
+                compiler.writer.loadLong(index);
+                compiler.writer.box(type);
+            }
+            case Type.SHORT -> {
+                compiler.writer.loadShort(index);
+                compiler.writer.box(type);
+            }
+            case Type.BYTE -> {
+                compiler.writer.loadByte(index);
+                compiler.writer.box(type);
+            }
+            default -> {
+                throw new RuntimeException("Unsupported type: " + type);
+            }
         }
     }
 
     @Override
     public Type type(PythonCompiler compiler) {
-        if (type.equals(Type.LONG_TYPE)) {
-            return Type.LONG_TYPE;
-        } else if (type.equals(Type.DOUBLE_TYPE)) {
-            return Type.DOUBLE_TYPE;
-        } else if (type.equals(Type.INT_TYPE)) {
-            return Type.INT_TYPE;
-        } else if (type.equals(Type.FLOAT_TYPE)) {
-            return Type.FLOAT_TYPE;
-        } else if (type.equals(Type.BOOLEAN_TYPE)) {
-            return Type.BOOLEAN_TYPE;
-        } else if (type.equals(Type.CHAR_TYPE)) {
-            return Type.CHAR_TYPE;
-        } else if (type.equals(Type.BYTE_TYPE)) {
-            return Type.BYTE_TYPE;
-        } else if (type.equals(Type.SHORT_TYPE)) {
-            return Type.SHORT_TYPE;
-        } else if (type.equals(Type.getType(String.class))) {
-            return Type.getType(String.class);
-        } else if (type.equals(Type.getType(byte[].class))) {
-            return Type.getType(byte[].class);
-        } else if (type.equals(Type.getType(List.class))) {
-            return Type.getType(List.class);
-        } else if (type.equals(Type.getType(Map.class))) {
-            return Type.getType(Map.class);
-        } else if (type.equals(Type.getType(Set.class))) {
-            return Type.getType(Set.class);
-        } else if (type.equals(Type.getType(Object[].class))) {
-            return Type.getType(Object[].class);
-        } else if (type.equals(Type.getType(Object.class))) {
-            return Type.getType(Object.class);
-        } else if (type.equals(Type.getType(Class.class))) {
-            return Type.getType(Class.class);
-        }
-        return compiler.typeCheck(type, this);
+        return Type.getType(Object.class);
+    }
+
+    @Override
+    public Location location() {
+        return location;
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        // Nothing
     }
 
     @Override
     public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
-        if (type.getSort() == Type.OBJECT) {
-            visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
-            Type newType = visit.type(compiler);
-            compiler.writer.getContext().pop();
-            if (!type.equals(newType)) {
-                if (typeConstant) {
-                    throw new RuntimeException("Cannot assign " + newType + " to " + type);
-                }
-                type = newType;
-            }
-            mv.visitVarInsn(Opcodes.ASTORE, index);
-        } else if (type.getSort() == Type.ARRAY) {
-            visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
-            Type newType = visit.type(compiler);
-            compiler.writer.getContext().pop();
-            if (!type.equals(newType)) {
-                if (typeConstant) {
-                    throw new RuntimeException("Cannot assign " + newType + " to " + type);
-                }
-                type = newType;
-            }
-            mv.visitVarInsn(Opcodes.ASTORE, index);
-        } else {
-            visit.load(mv, compiler, visit.preload(mv, compiler, false), false);
-            Type newType = visit.type(compiler);
-            if (!type.equals(newType)) {
-                if (typeConstant) {
-                    throw new RuntimeException("Cannot assign " + newType + " to " + type);
-                }
-                type = newType;
-            }
-            compiler.writer.box(type);
-            compiler.writer.getContext().pop();
-            mv.visitVarInsn(Opcodes.ASTORE, index);
-        }
+        Type newType = visit.type(compiler);
+        visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
+        compiler.writer.box(newType);
+        compiler.writer.storeObject(index, newType);
     }
 
     @Override
@@ -125,16 +105,11 @@ final class PyVariable implements Symbol {
     }
 
     public Type type() {
-        return type;
+        return Type.getType(Object.class);
     }
 
     public int index() {
         return index;
-    }
-
-    @Override
-    public int lineNo() {
-        return lineNo;
     }
 
     public Label label() {
@@ -151,31 +126,29 @@ final class PyVariable implements Symbol {
         }
         var that = (PyVariable) obj;
         return Objects.equals(this.name, that.name) &&
-                Objects.equals(this.type, that.type) &&
                 this.index == that.index &&
-                this.lineNo == that.lineNo &&
-                Objects.equals(this.label, that.label);
+                Objects.equals(this.label, that.label) &&
+                Objects.equals(this.location, that.location);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(name, type, index, lineNo, label);
+        return Objects.hash(name, index, label, location);
     }
 
     @Override
     public String toString() {
         return "PyVariable[" +
                 "typedName=" + name + ", " +
-                "type=" + type + ", " +
                 "index=" + index + ", " +
-                "lineNo=" + lineNo + ", " +
-                "label=" + label + ']';
+                "label=" + label + ", " +
+                "location=" + location + ']';
     }
 
     public JvmClass cls(PythonCompiler compiler) {
-        if (!PythonCompiler.classCache.load(compiler, type)) {
-            throw new RuntimeException("Class " + type + " not found");
+        if (!PythonCompiler.classCache.load(compiler, Type.getType(Object.class))) {
+            throw new RuntimeException("Class " + Type.getType(Object.class).getClassName() + " not found");
         }
-        return PythonCompiler.classCache.get(type);
+        return PythonCompiler.classCache.get(Type.getType(Object.class));
     }
 }

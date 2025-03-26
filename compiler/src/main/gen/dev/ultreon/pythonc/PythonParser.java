@@ -3,11 +3,8 @@ package dev.ultreon.pythonc;
 import org.antlr.v4.runtime.atn.*;
 import org.antlr.v4.runtime.dfa.DFA;
 import org.antlr.v4.runtime.*;
-import org.antlr.v4.runtime.misc.*;
 import org.antlr.v4.runtime.tree.*;
 import java.util.List;
-import java.util.Iterator;
-import java.util.ArrayList;
 
 @SuppressWarnings({"all", "warnings", "unchecked", "unused", "cast", "CheckReturnValue", "this-escape"})
 public class PythonParser extends PythonParserBase {
@@ -15556,7 +15553,7 @@ public class PythonParser extends PythonParserBase {
 			enterOuterAlt(_localctx, 1);
 			{
 			setState(2160);
-			if (!(this.isEqualToCurrentTokenText("type"))) throw new FailedPredicateException(this, "this.isEqualToCurrentTokenText(\"type\")");
+			if (!(this.isEqualToCurrentTokenText("type"))) throw new FailedPredicateException(this, "this.isEqualToCurrentTokenText(\"owner\")");
 			setState(2161);
 			match(NAME);
 			}

@@ -12,21 +12,21 @@ def len(obj) -> int:
 
 def print(*args, sep: str = ' ', end: str = '\n', file=None, flush=False):
     joiner = StringJoiner(sep)
-    i = 0
-    len_ = len(args)
-    while i < len_:
-        joiner.add(args[i].toString())
-        i = i + 1
+    # i = 0
+    # len_ = len(args)
+    # while i < len_:
+    #     joiner.add(args[i].toString())
+    #     i = i + 1
 
     # TODO: Add support for file
-    # if file is not None:
-    #     file.write(joiner.toString() + end)
-    #     if flush:
-    #         file.flush()
+    if file is not None:
+        file.write(joiner.toString() + end)
+        if flush:
+            file.flush()
 
     # lmao: str = Objects.toString(joiner.toString() + end)
     lmao: str = "meow"
-    System.out.print(lmao)
+    System.out.print("meow")
     if flush:
         System.out.flush()
 

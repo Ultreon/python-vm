@@ -1,16 +1,12 @@
 package dev.ultreon.pythonc;
 
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.stream.Collectors;
-
-import static org.objectweb.asm.Opcodes.INVOKESTATIC;
-import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
 
 public class JFunction implements JvmFunction {
     public String name;
@@ -22,17 +18,13 @@ public class JFunction implements JvmFunction {
     private JvmClass[] paramClasses;
     private JvmClass returnClass;
     private Type[] paramTypesAsm;
-    private final int lineNo;
-    private final int columnNo;
 
-    public JFunction(String name, Method method, int lineNo, int columnNo) {
+    public JFunction(String name, Method method) {
         this.name = name;
         this.method = method;
         this.owner = method.getDeclaringClass();
         this.paramTypes = method.getParameterTypes();
         this.returnType = method.getReturnType();
-        this.lineNo = lineNo;
-        this.columnNo = columnNo;
     }
 
     @Override
@@ -89,6 +81,11 @@ public class JFunction implements JvmFunction {
     }
 
     @Override
+    public boolean isDynamicCall() {
+        return false;
+    }
+
+    @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
         return null;
     }
@@ -104,16 +101,6 @@ public class JFunction implements JvmFunction {
     }
 
     @Override
-    public int lineNo() {
-        return lineNo;
-    }
-
-    @Override
-    public int columnNo() {
-        return columnNo;
-    }
-
-    @Override
     public String name() {
         return name;
     }
@@ -121,6 +108,17 @@ public class JFunction implements JvmFunction {
     @Override
     public Type type(PythonCompiler compiler) {
         return returnType(compiler);
+    }
+
+    @Override
+    public Location location() {
+        return new Location();
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!returnType.equals(returnClass(compiler)))
+            throw new CompilerException("Expected return type " + returnType + " but got " + returnClass(compiler));
     }
 
     @Override

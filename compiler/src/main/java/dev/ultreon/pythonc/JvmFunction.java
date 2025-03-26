@@ -24,5 +24,17 @@ public interface JvmFunction extends JvmCallable {
 
     boolean isStatic();
 
+    default void expectReturnType(PythonCompiler compiler, Type expectedReturnType, Location location) {
+        if (PythonCompiler.classCache.require(compiler, expectedReturnType).doesInherit(compiler, returnClass(compiler))) {
+            throw new CompilerException("Expected return type " + expectedReturnType + " but got " + returnType(compiler) + " at ", location);
+        }
+    }
+
+    default boolean isAbstract() {
+        throw new UnsupportedOperationException();
+    }
+
     JvmClass ownerClass(PythonCompiler compiler);
+
+    boolean isDynamicCall();
 }

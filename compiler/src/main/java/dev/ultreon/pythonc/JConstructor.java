@@ -16,15 +16,11 @@ public class JConstructor implements JvmFunction, JvmConstructor {
     private JvmClass[] paramClasses;
     private JvmClass returnClass;
     private Type[] paramTypesAsm;
-    private final int lineNo;
-    private final int columnNo;
 
-    public JConstructor(String name, Constructor<?> constructor, int lineNo, int columnNo) {
+    public JConstructor(String name, Constructor<?> constructor) {
         super();
         this.name = name;
         this.constructor = constructor;
-        this.lineNo = lineNo;
-        this.columnNo = columnNo;
         this.owner = constructor.getDeclaringClass();
         this.paramTypes = constructor.getParameterTypes();
     }
@@ -84,6 +80,11 @@ public class JConstructor implements JvmFunction, JvmConstructor {
     }
 
     @Override
+    public boolean isDynamicCall() {
+        return false;
+    }
+
+    @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
         return null;
     }
@@ -99,16 +100,6 @@ public class JConstructor implements JvmFunction, JvmConstructor {
     }
 
     @Override
-    public int lineNo() {
-        return lineNo;
-    }
-
-    @Override
-    public int columnNo() {
-        return columnNo;
-    }
-
-    @Override
     public String name() {
         return name;
     }
@@ -116,6 +107,18 @@ public class JConstructor implements JvmFunction, JvmConstructor {
     @Override
     public Type type(PythonCompiler compiler) {
         return returnType(compiler);
+    }
+
+    @Override
+    public Location location() {
+        return new Location();
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!returnType.doesInherit(compiler, returnClass(compiler))) {
+            throw new CompilerException("Expected return type " + returnType.type(compiler).getClassName() + " but got " + returnClass(compiler).type(compiler).getClassName(), location);
+        }
     }
 
     @Override

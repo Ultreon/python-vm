@@ -4,7 +4,7 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
-public record PyField(Type owner, String name, Type type, int lineNo) implements JvmField, Symbol, JvmOwnable {
+public record PyField(Type owner, String name, Type type, Location location) implements JvmField, Symbol, JvmOwnable {
     public String toString() {
         return name + ": '" + type + "'";
     }
@@ -16,17 +16,12 @@ public record PyField(Type owner, String name, Type type, int lineNo) implements
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        compiler.writer.getField(owner(compiler).getInternalName(), name, type.getDescriptor());
-    }
-
-    @Override
-    public int lineNo() {
-        return 0;
+        compiler.writer.getField(name, type.getDescriptor());
     }
 
     @Override
     public String name() {
-        return "";
+        return name;
     }
 
     @Override
@@ -34,12 +29,19 @@ public record PyField(Type owner, String name, Type type, int lineNo) implements
         return type;
     }
 
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!PythonCompiler.classCache.require(compiler, owner).doesInherit(compiler, returnType)) {
+            throw new RuntimeException("Invalid field type: " + returnType + " for " + compiler.getLocation(this));
+        }
+    }
+
     public JvmClass ownerClass(PythonCompiler compiler) {
         Symbol symbol = PythonCompiler.classCache.require(compiler, owner);
         if (symbol instanceof JvmClass jvmClass) {
             return jvmClass;
         }
-        throw new IllegalStateException("Invalid owner: " + owner + " (" + compiler.getLocation(this) + ")");
+        throw new CompilerException("Invalid owner: " + owner , compiler.getLocation(this));
     }
 
     public JvmClass typeClass(PythonCompiler compiler) {
@@ -47,66 +49,13 @@ public record PyField(Type owner, String name, Type type, int lineNo) implements
         if (symbol instanceof JvmClass jvmClass) {
             return jvmClass;
         }
-        throw new IllegalStateException("Invalid type: " + type);
+        throw new IllegalStateException("Invalid owner: " + type);
     }
 
     @Override
-    public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
-        if (type.getSort() == Type.OBJECT) {
-            if (compiler.definingInstance.type(compiler).equals(ownerClass(compiler).type(compiler))) {
-                compiler.writer.loadThis(compiler, ownerClass(compiler));
-            }
-            visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
-            compiler.writer.putField(owner.getInternalName(), name, type.getDescriptor());
-        } else {
-            visit.load(mv, compiler, visit.preload(mv, compiler, false), false);
-            if (compiler.writer.getContext().pop() != type) {
-                int sort = visit.type(compiler).getSort();
-                if (sort == Type.OBJECT) {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                } else if (sort == Type.ARRAY) {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                } else if (sort == Type.VOID) {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                } else if (sort == Type.LONG) {
-                    if (type.getSort() == Type.DOUBLE) {
-                        mv.visitInsn(Opcodes.D2L);
-                    } else if (type.getSort() == Type.INT) {
-                        mv.visitInsn(Opcodes.L2I);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else if (sort == Type.DOUBLE) {
-                    if (type.getSort() == Type.LONG) {
-                        mv.visitInsn(Opcodes.L2D);
-                    } else if (type.getSort() == Type.INT) {
-                        mv.visitInsn(Opcodes.I2D);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else if (sort == Type.INT) {
-                    if (type.getSort() == Type.LONG) {
-                        mv.visitInsn(Opcodes.I2L);
-                    } else if (type.getSort() == Type.DOUBLE) {
-                        mv.visitInsn(Opcodes.I2D);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else if (sort == Type.FLOAT) {
-                    if (type.getSort() == Type.DOUBLE) {
-                        mv.visitInsn(Opcodes.F2D);
-                    } else if (type.getSort() == Type.INT) {
-                        mv.visitInsn(Opcodes.F2I);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                }
-            }
-
-            mv.visitFieldInsn(Opcodes.PUTFIELD, owner.getDescriptor(), name, type.getDescriptor());
-        }
+    public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr expr) {
+        expr.load(mv, compiler, expr.preload(mv, compiler, true), true);
+        compiler.writer.dynamicSetAttr(name);
     }
 
     @Override

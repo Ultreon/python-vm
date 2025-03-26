@@ -8,12 +8,12 @@ import java.util.Objects;
 import static org.objectweb.asm.Opcodes.ALOAD;
 
 final class Self implements PyExpr {
-    private final int lineNo;
-    private Type type;
+    private final Type type;
+    private final Location location;
 
-    Self(int lineNo, Type type) {
-        this.lineNo = lineNo;
+    Self(Type type, Location location) {
         this.type = type;
+        this.location = location;
     }
 
     @Override
@@ -24,17 +24,22 @@ final class Self implements PyExpr {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         // Use "this"
-        mv.visitVarInsn(ALOAD, 0);
+        compiler.writer.loadThis(compiler, PythonCompiler.classCache.require(compiler, type));
     }
 
     @Override
-    public int lineNo() {
-        return lineNo;
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        typeClass(compiler).expectReturnType(compiler, returnType, location);
     }
 
     @Override
     public Type type(PythonCompiler compiler) {
         return type;
+    }
+
+    @Override
+    public Location location() {
+        return location;
     }
 
     public PyClass typeClass(PythonCompiler compiler) {
@@ -46,18 +51,21 @@ final class Self implements PyExpr {
         if (obj == this) return true;
         if (obj == null || obj.getClass() != this.getClass()) return false;
         var that = (Self) obj;
-        return this.lineNo == that.lineNo;
+        return this.location.equals(that.location);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(lineNo);
+        return Objects.hash(location);
     }
 
     @Override
     public String toString() {
         return "Self[" +
-               "lineNo=" + lineNo + ']';
+               "location=" + location + ']';
     }
 
+    public JvmClass cls(PythonCompiler pythonCompiler) {
+        return typeClass(pythonCompiler);
+    }
 }

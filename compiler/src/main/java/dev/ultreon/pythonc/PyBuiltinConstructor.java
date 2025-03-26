@@ -44,6 +44,11 @@ public class PyBuiltinConstructor implements JvmConstructor {
     }
 
     @Override
+    public boolean isDynamicCall() {
+        return false;
+    }
+
+    @Override
     public JvmClass owner(PythonCompiler compiler) {
         return builtinClass;
     }
@@ -59,11 +64,6 @@ public class PyBuiltinConstructor implements JvmConstructor {
     }
 
     @Override
-    public int lineNo() {
-        return method.lineNo();
-    }
-
-    @Override
     public String name() {
         return "<init>";
     }
@@ -71,6 +71,16 @@ public class PyBuiltinConstructor implements JvmConstructor {
     @Override
     public Type type(PythonCompiler compiler) {
         return method.returnType(compiler);
+    }
+
+    @Override
+    public Location location() {
+        return method.location();
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        method.expectReturnType(compiler, returnType, location);
     }
 
     @Override

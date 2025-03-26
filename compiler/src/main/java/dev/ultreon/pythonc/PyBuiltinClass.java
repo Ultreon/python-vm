@@ -50,11 +50,6 @@ public class PyBuiltinClass implements JvmClass {
     }
 
     @Override
-    public int lineNo() {
-        return 0;
-    }
-
-    @Override
     public String name() {
         return pyName;
     }
@@ -62,6 +57,17 @@ public class PyBuiltinClass implements JvmClass {
     @Override
     public Type type(PythonCompiler compiler) {
         return jvmUnboxed;
+    }
+
+    @Override
+    public Location location() {
+        return new Location("<builtin>", 0, 0, 0, 0);
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!returnType.doesInherit(compiler, this))
+            throw new CompilerException("Expected " + this + " but got " + returnType + " at ", location);
     }
 
     @Override
@@ -91,7 +97,7 @@ public class PyBuiltinClass implements JvmClass {
             throw new RuntimeException("Unknown JVM typedName: " + jvmName.getClassName());
         field = jClass1.field(compiler, name);
         if (field == null)
-            throw new CompilerException("Field '" + name + "' does not exist in class '" + className() + "' (" + compiler.getLocation(this) + ")");
+            throw new CompilerException("Field '" + name + "' does not exist in class '" + className(), compiler.getLocation(this));
         return field;
     }
 
@@ -166,7 +172,7 @@ public class PyBuiltinClass implements JvmClass {
             throw new RuntimeException("Unknown JVM typedName: " + jvmName.getClassName());
         function = jvmJClass.function(compiler, name, paramTypes);
         if (function == null)
-            throw new CompilerException("Function '" + name + "' does not exist in class '" + className() + "' (" + compiler.getLocation(this) + ")");
+            throw new CompilerException("Function '" + name + "' does not exist in class '" + className(), compiler.getLocation(this));
         return function;
     }
 
@@ -197,12 +203,12 @@ public class PyBuiltinClass implements JvmClass {
             throw new RuntimeException("Unknown JVM typedName: " + jvmName.getClassName());
         constructor = jvmJClass.constructor(compiler, paramTypes);
         if (constructor == null)
-            throw new CompilerException("Constructor with paramTypes " + Arrays.stream(paramTypes).map(Type::getClassName).collect(Collectors.joining(", ")) + "C does not exist in class '" + className() + "' (" + compiler.getLocation(this) + ")");
+            throw new CompilerException("Constructor with paramTypes " + Arrays.stream(paramTypes).map(Type::getClassName).collect(Collectors.joining(", ")) + "C does not exist in class '" + className(), compiler.getLocation(this));
         return constructor;
     }
 
     @Override
-    public JvmClass superClass(PythonCompiler compiler) {
+    public JvmClass firstSuperClass(PythonCompiler compiler) {
         if (!PythonCompiler.classCache.load(compiler, jvmName)) {
             throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
         }
@@ -222,7 +228,12 @@ public class PyBuiltinClass implements JvmClass {
         }
         if (!(jvmClass instanceof JClass jvmJClass))
             throw new RuntimeException("Unknown JVM typedName: " + jvmName.getClassName());
-        return jvmJClass.superClass(compiler);
+        return jvmJClass.firstSuperClass(compiler);
+    }
+
+    @Override
+    public JvmClass[] dynamicSuperClasses(PythonCompiler compiler) {
+        return new JvmClass[0];
     }
 
     @Override
@@ -261,7 +272,7 @@ public class PyBuiltinClass implements JvmClass {
                 return methods;
             }
         }
-        JvmClass superClass = superClass(compiler);
+        JvmClass superClass = firstSuperClass(compiler);
         if (superClass != null) {
             return superClass.methods(compiler);
         }
@@ -304,6 +315,14 @@ public class PyBuiltinClass implements JvmClass {
     @Override
     public boolean isArray() {
         return false;
+    }
+
+    @Override
+    public JvmFunction requireFunction(PythonCompiler pythonCompiler, String name, Type[] types) {
+        JvmFunction function = function(pythonCompiler, name, types);
+        if (function == null)
+            throw new CompilerException("Function " + name + " not found in class '" + pyName + "'");
+        return function;
     }
 
     public PyBuiltinClass setAbstract() {

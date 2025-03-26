@@ -12,13 +12,14 @@ import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.stream.Collectors;
 
-final class JClass implements JvmClass {
+public final class JClass implements JvmClass {
     private final String className;
     private final Type asmType;
     private final Class<?> type;
     private String alias;
     private final HashMap<String, JvmField> fields = new HashMap<>();
     private final Map<String, List<JvmFunction>> functions = new HashMap<>();
+    private Location location;
 
     JClass(String className, Class<?> type) {
         this.className = className;
@@ -35,7 +36,7 @@ final class JClass implements JvmClass {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         // Do <typedName>.class
-        compiler.writer.loadClass(Type.getType("L" + className + ";"));
+        compiler.writer.loadClass(Type.getType(type));
     }
 
     public Type asmType() {
@@ -47,11 +48,6 @@ final class JClass implements JvmClass {
     }
 
     @Override
-    public int lineNo() {
-        return 0;
-    }
-
-    @Override
     public String name() {
         return className;
     }
@@ -59,6 +55,18 @@ final class JClass implements JvmClass {
     @Override
     public Type type(PythonCompiler compiler) {
         return asmType;
+    }
+
+    @Override
+    public Location location() {
+        return new Location("<Java>", 0, 0, 0, 0);
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!this.doesInherit(compiler, returnType)) {
+            throw new CompilerException("Expected return type " + returnType + " but got " + this, location);
+        }
     }
 
     @Override
@@ -136,16 +144,16 @@ final class JClass implements JvmClass {
                 continue;
             }
 
-            JConstructor jFunction = new JConstructor("__init__", constructor1, 0, 0);
+            JConstructor jFunction = new JConstructor("__init__", constructor1);
             this.functions.computeIfAbsent("__init__", k -> new ArrayList<>()).add(jFunction);
             return jFunction;
         }
 
-        throw new CompilerException("Constructor not found (" + compiler.getLocation(this) + ")");
+        throw new CompilerException("Constructor with parameters " + Arrays.stream(paramTypes).map(Type::getClassName).collect(Collectors.joining(", ")) + " in class '" + type.getName() + "' not found (" + compiler.getLocation(this) + ")");
     }
 
     @Override
-    public JvmClass superClass(PythonCompiler compiler) {
+    public JvmClass firstSuperClass(PythonCompiler compiler) {
         Class<?> superclass = type.getSuperclass();
         if (superclass == null) {
             return null;
@@ -155,6 +163,11 @@ final class JClass implements JvmClass {
         }
 
         return PythonCompiler.classCache.get(type.getSuperclass());
+    }
+
+    @Override
+    public JvmClass[] dynamicSuperClasses(PythonCompiler compiler) {
+        return new JvmClass[0];
     }
 
     @Override
@@ -174,7 +187,7 @@ final class JClass implements JvmClass {
     public Map<String, List<JvmFunction>> methods(PythonCompiler compiler) {
         this.functions.clear();
         for (Method method : type.getMethods()) {
-            JvmFunction jvmFunction = new JFunction(method.getName(), method, 0, 0);
+            JvmFunction jvmFunction = new JFunction(method.getName(), method);
             if (Modifier.isStatic(method.getModifiers()) && method.getName().equals("__init__")) {
                 this.functions.computeIfAbsent("<init>", k -> new ArrayList<>()).add(jvmFunction);
             } else {
@@ -182,7 +195,7 @@ final class JClass implements JvmClass {
             }
         }
         for (Constructor<?> constructor : type.getConstructors()) {
-            JvmFunction jvmFunction = new JConstructor("__init__", constructor, 0, 0);
+            JvmFunction jvmFunction = new JConstructor("__init__", constructor);
             this.functions.computeIfAbsent("<init>", k -> new ArrayList<>()).add(jvmFunction);
         }
         return functions;
@@ -228,12 +241,12 @@ final class JClass implements JvmClass {
                 }
             }
 
-            JFunction jFunction = new JFunction(name, method1, 0, 0);
+            JFunction jFunction = new JFunction(name, method1);
             this.functions.computeIfAbsent(name, k -> new ArrayList<>()).add(jFunction);
             return jFunction;
         }
 
-        throw new CompilerException("Method '" + name + "' not found with parameters (" + Arrays.stream(paramTypes).map(Type::getClassName).collect(Collectors.joining(", ")) + ") in '" + type.getName() + "' (" + compiler.getLocation(this) + ")");
+        throw new CompilerException("Method '" + name + "' not found with parameters (" + Arrays.stream(paramTypes).map(Type::getClassName).collect(Collectors.joining(", ")) + ") in '" + type.getName(), compiler.getLocation(this));
     }
 
     @Override
@@ -295,5 +308,14 @@ final class JClass implements JvmClass {
     @Override
     public boolean isArray() {
         return type.isArray();
+    }
+
+    @Override
+    public JvmFunction requireFunction(PythonCompiler pythonCompiler, String name, Type[] types) {
+        JvmFunction function = function(pythonCompiler, name, types);
+        if (function == null) {
+            throw new CompilerException("Could not find function '" + name + "' in class '" + type.getName() + "'");
+        }
+        return function;
     }
 }

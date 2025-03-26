@@ -29,6 +29,8 @@ public abstract class AbstractContext implements Context {
 
     @Override
     public Type peek() {
+        if (stack.isEmpty())
+            throw new RuntimeException("Stack is empty");
         return stack.peek();
     }
 

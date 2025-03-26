@@ -5,6 +5,8 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
+import java.util.List;
+
 import static org.objectweb.asm.Opcodes.*;
 
 class PyEval implements PyExpr {
@@ -13,17 +15,19 @@ class PyEval implements PyExpr {
     private final Operator operator;
     private final Object finalValue;
     private final Object finalAddition;
+    private Location location;
 
     public enum Operator {
         ADD, SUB, MUL, DIV, MOD, FLOORDIV, AND, LSHIFT, RSHIFT, OR, XOR, UNARY_NOT, UNARY_PLUS, UNARY_MINUS, POW
     }
 
-    public PyEval(PythonCompiler compiler, ParserRuleContext ctx, Operator operator, Object finalValue, Object finalAddition) {
+    public PyEval(PythonCompiler compiler, ParserRuleContext ctx, Operator operator, Object finalValue, Object finalAddition, Location location) {
         this.compiler = compiler;
         this.ctx = ctx;
         this.operator = operator;
         this.finalValue = finalValue;
         this.finalAddition = finalAddition;
+        this.location = location;
     }
 
     @Override
@@ -33,212 +37,29 @@ class PyEval implements PyExpr {
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        switch (finalValue) {
-            case PyExpr pyExpr -> {
-                loadValue(mv, compiler, pyExpr);
-                if (finalAddition != null) {
-                    if (pyExpr.type(compiler) == Type.INT_TYPE) {
-                        Type type = typeOf(finalAddition, compiler);
-                        if (type == Type.LONG_TYPE) {
-                            compiler.writer.smartCast(Type.LONG_TYPE);
-                        } else if (type == Type.FLOAT_TYPE) {
-                            compiler.writer.smartCast(Type.FLOAT_TYPE);
-                        } else if (type == Type.DOUBLE_TYPE) {
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                        }
-                    } else if (pyExpr.type(compiler) == Type.LONG_TYPE) {
-                        Type type = typeOf(finalAddition, compiler);
-                        if (type == Type.FLOAT_TYPE) {
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            loadAddition(compiler);
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            doOperation(mv);
-                            return;
-                        } else if (type == Type.DOUBLE_TYPE) {
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                        }
-                    } else if (pyExpr.type(compiler) == Type.FLOAT_TYPE) {
-                        Type type = typeOf(finalAddition, compiler);
-                        if (type == Type.DOUBLE_TYPE) {
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                        } else if (type == Type.LONG_TYPE) {
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            loadAddition(compiler);
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            doOperation(mv);
-                            return;
-                        } else if (type == Type.INT_TYPE) {
-                            loadAddition(compiler);
-                            compiler.writer.smartCast(Type.FLOAT_TYPE);
-                            doOperation(mv);
-                            return;
-                        }
-                    } else if (pyExpr.type(compiler) == Type.DOUBLE_TYPE) {
-                        Type type = typeOf(finalAddition, compiler);
-                        if (type == Type.LONG_TYPE) {
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                        } else if (type == Type.INT_TYPE) {
-                            loadAddition(compiler);
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            doOperation(mv);
-                            return;
-                        } else if (type == Type.FLOAT_TYPE) {
-                            loadAddition(compiler);
-                            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                            doOperation(mv);
-                            return;
-                        }
-                    } else if (pyExpr.type(compiler) == Type.BOOLEAN_TYPE) {
-                        loadAddition(compiler);
-                        compiler.writer.smartCast(Type.BOOLEAN_TYPE);
-                        doOperation(mv);
-                        return;
-                    } else if (pyExpr.type(compiler) == Type.CHAR_TYPE) {
-                        loadAddition(compiler);
-                        compiler.writer.smartCast(Type.CHAR_TYPE);
-                        doOperation(mv);
-                        return;
-                    } else if (pyExpr.type(compiler).equals(Type.getType(String.class))) {
-                        loadAddition(compiler);
-                        compiler.writer.smartCast(Type.getType(String.class));
-                        doOperation(mv);
-                        return;
-                    } else if (pyExpr.type(compiler).equals(Type.getType(Object.class))) {
-                        loadAddition(compiler);
-                        compiler.writer.smartCast(Type.getType(Object.class));
-                        doOperation(mv);
-                        return;
-                    } else {
-                        throw new RuntimeException("Unknown type: " + pyExpr.type(compiler).getClassName());
-                    }
-                }
-            }
-            case Integer integer -> {
-                loadConst(mv, compiler, integer);
-                if (finalAddition != null) {
-                    Type type = typeOf(finalAddition, compiler);
-                    if (type == Type.LONG_TYPE) {
-                        mv.visitInsn(I2L);
-                    } else if (type == Type.FLOAT_TYPE) {
-                        mv.visitInsn(I2F);
-                    } else if (type == Type.DOUBLE_TYPE) {
-                        mv.visitInsn(I2D);
-                    }
-                }
-            }
-            case Long aLong -> {
-                loadConst(mv, compiler, aLong);
-                if (finalAddition != null) {
-                    Type type = typeOf(finalAddition, compiler);
-                    if (type == Type.FLOAT_TYPE) {
-                        mv.visitInsn(L2D);
-                        loadAddition(compiler);
-                        mv.visitInsn(F2D);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.DOUBLE_TYPE) {
-                        mv.visitInsn(L2D);
-                    }
-                }
-            }
-            case Float aFloat -> {
-                loadConst(mv, compiler, aFloat);
-
-                if (finalAddition != null) {
-                    Type type = typeOf(finalAddition, compiler);
-                    if (type == Type.DOUBLE_TYPE) {
-                        mv.visitInsn(F2D);
-                    } else if (type == Type.LONG_TYPE) {
-                        mv.visitInsn(F2D);
-                        loadAddition(compiler);
-                        mv.visitInsn(L2D);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.INT_TYPE) {
-                        loadAddition(compiler);
-                        mv.visitInsn(I2F);
-                        doOperation(mv);
-                        return;
-                    }
-                }
-            }
-            case Double aDouble -> {
-                loadConst(mv, compiler, aDouble);
-
-                if (finalAddition != null) {
-                    Type type = typeOf(finalAddition, compiler);
-                    if (type == Type.LONG_TYPE) {
-                        loadAddition(compiler);
-                        compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.INT_TYPE) {
-                        loadAddition(compiler);
-                        compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.FLOAT_TYPE) {
-                        loadAddition(compiler);
-                        compiler.writer.smartCast(Type.DOUBLE_TYPE);
-                        doOperation(mv);
-                        return;
-                    }
-                }
-            }
-            case String s -> loadConst(mv, compiler, s);
-            case Boolean aBoolean -> {
-                loadConst(mv, compiler, aBoolean);
-
-                if (finalAddition != null) {
-                    Type type = typeOf(finalAddition, compiler);
-                    if (type == Type.INT_TYPE) {
-                        loadAddition(compiler);
-                        mv.visitInsn(I2F);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.LONG_TYPE) {
-                        loadAddition(compiler);
-                        mv.visitInsn(L2D);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.FLOAT_TYPE) {
-                        loadAddition(compiler);
-                        mv.visitInsn(F2D);
-                        doOperation(mv);
-                        return;
-                    }
-                }
-            }
-            case Character aChar -> {
-                loadConst(mv, compiler, aChar);
-
-                if (finalAddition != null) {
-                    Type type = typeOf(finalAddition, compiler);
-                    if (type == Type.INT_TYPE) {
-                        loadAddition(compiler);
-                        mv.visitInsn(I2F);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.LONG_TYPE) {
-                        loadAddition(compiler);
-                        mv.visitInsn(L2D);
-                        doOperation(mv);
-                        return;
-                    } else if (type == Type.FLOAT_TYPE) {
-                        loadAddition(compiler);
-                        mv.visitInsn(F2D);
-                        doOperation(mv);
-                        return;
-                    }
-                }
-            }
-            case Unit unit -> throw new RuntimeException("unit not supported for:\n" + ctx.getText());
-            default -> throw new RuntimeException("No supported matching loadExpr found for:\n" + ctx.getText());
-        }
         if (finalAddition != null) {
+            loadValue(mv, compiler, expr(finalValue));
             loadAddition(compiler);
-            doOperation(mv);
+            doOperation(mv, compiler);
+            return;
         }
+        loadValue(mv, compiler, expr(finalValue));
+    }
+
+    private PyExpr expr(Object finalValue) {
+        return switch (finalValue) {
+            case PyExpr expr -> expr;
+            case Byte aByte -> new PyConstant(aByte, location);
+            case Short aShort -> new PyConstant(aShort, location);
+            case Integer anInt -> new PyConstant(anInt, location);
+            case Long aLong -> new PyConstant(aLong, location);
+            case Float aFloat -> new PyConstant(aFloat, location);
+            case Double aDouble -> new PyConstant(aDouble, location);
+            case String s -> new PyConstant(s, location);
+            case Boolean aBoolean -> new PyConstant(aBoolean, location);
+            case Character aChar -> new PyConstant(aChar, location);
+            case null, default -> throw new RuntimeException("No supported matching expr found for:\n" + ctx.getText());
+        };
     }
 
     private void loadConst(MethodVisitor mv, PythonCompiler compiler, Object aChar) {
@@ -248,53 +69,40 @@ class PyEval implements PyExpr {
         }
     }
 
-    private void loadValue(MethodVisitor mv, PythonCompiler compiler, PyExpr pyExpr) {
+    private Type loadValue(MethodVisitor mv, PythonCompiler compiler, PyExpr pyExpr) {
         pyExpr.load(mv, compiler, pyExpr.preload(mv, compiler, false), false);
+
+        return pyExpr.type(compiler);
+    }
+
+    private Type loadAddition(PythonCompiler compiler) {
+        PyExpr pyExpr = compiler.loadExpr(ctx, finalAddition);
         if (this.operator == Operator.POW) {
             compiler.writer.smartCast(Type.DOUBLE_TYPE);
         }
+
+        return pyExpr.type(compiler);
     }
 
-    private void loadAddition(PythonCompiler compiler) {
-        compiler.loadExpr(ctx, finalAddition);
-        if (this.operator == Operator.POW) {
-            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-        }
-    }
-
-    private void doOperation(MethodVisitor mv) {
-        if (operator == Operator.ADD) {
-            compiler.writer.addValues();
-        } else if (operator == Operator.SUB) {
-            compiler.writer.subtractValues();
-        } else if (operator == Operator.MUL) {
-            compiler.writer.multiplyValues();
-        } else if (operator == Operator.DIV) {
-            compiler.writer.divideValues();
-        } else if (operator == Operator.MOD) {
-            compiler.writer.modValues();
-        } else if (operator == Operator.AND) {
-            compiler.writer.andValues();
-        } else if (operator == Operator.OR) {
-            compiler.writer.orValues();
-        } else if (operator == Operator.XOR) {
-            compiler.writer.xorValues();
-        } else if (operator == Operator.LSHIFT) {
-            compiler.writer.leftShiftValues();
-        } else if (operator == Operator.RSHIFT) {
-            compiler.writer.rightShiftValues();
-        } else if (operator == Operator.FLOORDIV) {
-            compiler.writer.floorDivideValues();
-        } else if (operator == Operator.POW) {
-            compiler.writer.powValues();
-        } else if (operator == Operator.UNARY_NOT) {
-            compiler.writer.notValue();
-        } else if (operator == Operator.UNARY_MINUS) {
-            compiler.writer.negateValue();
-        } else if (operator == Operator.UNARY_PLUS) {
-            compiler.writer.positiveValue();
-        } else {
-            throw new RuntimeException("No supported matching operator found for:\n" + ctx.getText());
+    private void doOperation(MethodVisitor mv, PythonCompiler compiler) {
+        switch (operator) {
+            case ADD -> compiler.writer.dynamicAdd();
+            case SUB -> compiler.writer.dynamicSub();
+            case MUL -> compiler.writer.dynamicMul();
+            case DIV -> compiler.writer.dynamicDiv();
+            case MOD -> compiler.writer.dynamicMod();
+            case AND -> compiler.writer.dynamicAnd();
+            case OR -> compiler.writer.dynamicOr();
+            case XOR -> compiler.writer.dynamicXor();
+            case LSHIFT -> compiler.writer.dynamicLShift();
+            case RSHIFT -> compiler.writer.dynamicRShift();
+            case FLOORDIV -> compiler.writer.dynamicFloorDiv();
+            case POW -> compiler.writer.dynamicPow();
+            case UNARY_NOT -> compiler.writer.dynamicNot();
+            case UNARY_MINUS -> compiler.writer.dynamicNeg();
+            case UNARY_PLUS -> compiler.writer.dynamicPos();
+            case null, default ->
+                    throw new RuntimeException("No supported matching operator found for:\n" + ctx.getText());
         }
     }
 
@@ -326,8 +134,14 @@ class PyEval implements PyExpr {
     }
 
     @Override
-    public int lineNo() {
-        return ctx.getStop().getLine();
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        Type type = type(compiler);
+        if (type == Type.VOID_TYPE) {
+            return;
+        }
+        if (!returnType.doesInherit(compiler, PythonCompiler.classCache.require(compiler, type))) {
+            throw new CompilerException("Expected " + returnType + " but got " + type, location);
+        }
     }
 
     @Override
@@ -369,7 +183,11 @@ class PyEval implements PyExpr {
         }
 
         if (finalValue instanceof PyExpr expr) {
-            return expr.type(compiler);
+            Type type = expr.type(compiler);
+            if (type == null) {
+                throw new RuntimeException("No type for: " + expr.getClass().getName());
+            }
+            return type;
         } else if (finalValue instanceof Integer integer) {
             return Type.INT_TYPE;
         } else if (finalValue instanceof Long l) {
@@ -390,11 +208,16 @@ class PyEval implements PyExpr {
             return Type.getType(String.class);
         } else if (finalValue instanceof Unit u) {
             return Type.VOID_TYPE;
-        } else if (finalValue == None.Instance) {
+        } else if (finalValue == None.None) {
             return Type.VOID_TYPE;
         }
 
-        throw new RuntimeException("No supported matching type found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching owner found for:\n" + ctx.getText());
+    }
+
+    @Override
+    public Location location() {
+        return location;
     }
 
     private static @Nullable Type castInt(Type type) {

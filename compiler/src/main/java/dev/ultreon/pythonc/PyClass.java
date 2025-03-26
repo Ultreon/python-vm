@@ -16,22 +16,22 @@ public class PyClass implements JvmClass, PyCompileClass {
     public final Type owner;
     public final Map<String, PyField> fields;
     public final Map<String, List<JvmFunction>> methods;
-    private final int lineNo;
-    private final int columnNo;
-    private final List<? extends JvmClass> superClasses = new ArrayList<>();
     private final Path path;
+    private Type[] dynamicSuperTypes;
+    private JvmClass[] dynamicSuperClasses;
+    private final Location location;
 
-    public PyClass(Path path, String name, int lineNo, int columnNo) {
+    public PyClass(Path path, String name, Location location, Type... superClasses) {
         this.name = name;
+        this.location = location;
         String internalNamePrefix = path.toString().replace(File.separatorChar, '/');
         Type owner = Type.getObjectType(internalNamePrefix + '/' + name);
         this.path = path;
         this.className = owner.getClassName();
         this.owner = owner;
-        this.lineNo = lineNo;
-        this.columnNo = columnNo;
         this.fields = new LinkedHashMap<>();
         this.methods = new LinkedHashMap<>();
+        this.dynamicSuperTypes = superClasses;
     }
 
     public String owner(PythonCompiler compiler) {
@@ -45,12 +45,7 @@ public class PyClass implements JvmClass, PyCompileClass {
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        throw new UnsupportedOperationException(PythonCompiler.E_NOT_ALLOWED);
-    }
-
-    @Override
-    public int lineNo() {
-        return lineNo;
+        compiler.writer.loadClass(this);
     }
 
     @Override
@@ -71,6 +66,17 @@ public class PyClass implements JvmClass, PyCompileClass {
     @Override
     public Type type(PythonCompiler compiler) {
         return owner;
+    }
+
+    @Override
+    public Location location() {
+        return location;
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!returnType.doesInherit(compiler, this))
+            throw new CompilerException("Expected " + this + " but got " + returnType + " at ", location);
     }
 
     @Override
@@ -105,7 +111,7 @@ public class PyClass implements JvmClass, PyCompileClass {
             return true;
         }
 
-        for (JvmClass jvmClass : superClasses) {
+        for (JvmClass jvmClass : dynamicSuperClasses(compiler)) {
             if (jvmClass.doesInherit(compiler, type)) {
                 return true;
             }
@@ -121,9 +127,26 @@ public class PyClass implements JvmClass, PyCompileClass {
     }
 
     @Override
-    public @Nullable JvmFunction function(PythonCompiler compiler, String name, Type[] paramTypes) {
-        for (JvmFunction function : methods.get(name)) {
-            if (Arrays.equals(function.parameterTypes(compiler), paramTypes)) {
+    public boolean doesInherit(PythonCompiler compiler, JvmClass checkAgainst) {
+        if (this.type(compiler).equals(Type.getType(Object.class))) return true;
+        if (this.equals(checkAgainst)) return true;
+        JvmClass superClass = firstSuperClass(compiler);
+        if (superClass == null) return false;
+        if (superClass.equals(checkAgainst)) return true;
+        for (JvmClass anInterface : dynamicSuperClasses(compiler)) {
+            if (anInterface == null) continue;
+            if (anInterface.equals(checkAgainst)) return true;
+            if (anInterface.doesInherit(compiler, checkAgainst)) return true;
+        }
+        return superClass.doesInherit(compiler, checkAgainst);
+    }
+
+    @Override
+    public @Nullable JvmFunction function(PythonCompiler compiler, String name, Type[] argTypes) {
+        List<JvmFunction> jvmFunctions = methods.get(name);
+        if (jvmFunctions == null) return null;
+        for (JvmFunction function : jvmFunctions) {
+            if (canAgreeWithParameters(compiler, function, argTypes)) {
                 return function;
             }
         }
@@ -146,8 +169,8 @@ public class PyClass implements JvmClass, PyCompileClass {
     }
 
     @Override
-    public JvmClass superClass(PythonCompiler compiler) {
-        for (JvmClass superClass : superClasses) {
+    public JvmClass firstSuperClass(PythonCompiler compiler) {
+        for (JvmClass superClass : dynamicSuperClasses(compiler)) {
             if (superClass instanceof JClass jClass) {
                 if (!jClass.getType().isInterface()) {
                     return jClass;
@@ -160,8 +183,27 @@ public class PyClass implements JvmClass, PyCompileClass {
     }
 
     @Override
-    public int columnNo() {
-        return columnNo;
+    public JvmClass[] dynamicSuperClasses(PythonCompiler compiler) {
+        if (dynamicSuperTypes == null) {
+            return new JvmClass[0];
+        }
+
+        if (dynamicSuperClasses != null) {
+            return dynamicSuperClasses;
+        }
+
+        List<JvmClass> superClasses = new ArrayList<>();
+        for (Type superType : dynamicSuperTypes) {
+            if (!(PythonCompiler.classCache.load(compiler, superType))) {
+                throw new CompilerException("Class '" + superType.getClassName() + "' not found (" + compiler.getLocation(this) + ")");
+            }
+
+            superClasses.add(PythonCompiler.classCache.get(superType));
+        }
+
+        JvmClass[] array = superClasses.toArray(JvmClass[]::new);
+        this.dynamicSuperClasses = array;
+        return array;
     }
 
     @Override
@@ -198,7 +240,20 @@ public class PyClass implements JvmClass, PyCompileClass {
     }
 
     @Override
+    public JvmFunction requireFunction(PythonCompiler pythonCompiler, String name, Type[] types) {
+        JvmFunction function = function(pythonCompiler, name, types);
+        if (function == null) {
+            return PythonCompiler.expectations.expectFunction(pythonCompiler, this, name, types, false, false, location);
+        }
+        return function;
+    }
+
+    @Override
     public Path getOutputPath() {
         return path;
+    }
+
+    public boolean isModule() {
+        return false;
     }
 }

@@ -37,7 +37,7 @@ public abstract class PythonLexerBase extends Lexer {
     // A list where tokens are waiting to be loaded into the token stream
     private LinkedList<Token> pendingTokens;
 
-    // last pending token types
+    // last pending token parameters
     private int previousPendingTokenType;
     private int lastPendingTokenTypeFromDefaultChannel;
 
@@ -348,7 +348,7 @@ public abstract class PythonLexerBase extends Lexer {
     }
 
     private void addPendingToken(final Token tkn) {
-        // save the last pending token type because the pendingTokens linked list can be empty by the nextToken()
+        // save the last pending token owner because the pendingTokens linked list can be empty by the nextToken()
         this.previousPendingTokenType = tkn.getType();
         if (tkn.getChannel() == Token.DEFAULT_CHANNEL) {
             this.lastPendingTokenTypeFromDefaultChannel = this.previousPendingTokenType;

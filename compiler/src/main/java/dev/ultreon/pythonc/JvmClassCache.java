@@ -13,7 +13,7 @@ public class JvmClassCache {
     }
 
     public void init(PythonCompiler compiler) {
-        for (PyBuiltinClass pyBuiltinClass : compiler.builtinClasses) {
+        for (PyBuiltinClass pyBuiltinClass : compiler.builtins.getClasses()) {
             byType.put(compiler.writer.unboxType(pyBuiltinClass.type(compiler)), pyBuiltinClass);
             byType.put(compiler.writer.boxType(pyBuiltinClass.type(compiler)), pyBuiltinClass);
 
@@ -84,14 +84,15 @@ public class JvmClassCache {
 
     public JvmClass require(PythonCompiler compiler, Type type) {
         if (!(load(compiler, type))) {
-            throw new CompilerException("Class '" + type.getClassName() + "' not found");
+            return PythonCompiler.expectations.expectClass(compiler, type.getClassName().substring(0, type.getClassName().lastIndexOf('.')), type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1));
         }
         return get(type);
     }
 
     public JvmClass require(PythonCompiler compiler, Class<?> type) {
         if (!(load(compiler, type))) {
-            throw new CompilerException("Class '" + type.getName() + "' not found");
+//            throw new CompilerException("Class '" + type.getName() + "' not found");
+            return PythonCompiler.expectations.expectClass(compiler, type.getPackageName(), type.getSimpleName());
         }
         return get(type);
     }

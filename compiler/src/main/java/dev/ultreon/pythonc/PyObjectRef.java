@@ -3,7 +3,7 @@ package dev.ultreon.pythonc;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-record PyObjectRef(String name, int lineNo) implements Symbol {
+record PyObjectRef(String name, Location location) implements Symbol {
 
     @Override
     public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
@@ -62,7 +62,7 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
                     case ImportedField importedField -> {
 
                     }
-                    default -> throw new CompilerException("Symbol '" + name + "' invalid type: " + compiler.symbols.get(name).getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
+                    default -> throw new CompilerException("Symbol '" + name + "' invalid owner: " + compiler.symbols.get(name).getClass().getSimpleName() , compiler.getLocation(this));
                 }
             }
             case JvmFunction jvmFunction -> {
@@ -74,7 +74,7 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
                 return jvmField.preload(mv, compiler, false);
             }
             default ->
-                    throw new CompilerException("Symbol '" + name + "' invalid type: " + compiler.symbols.get(name).getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
+                    throw new CompilerException("Symbol '" + name + "' invalid owner: " + compiler.symbols.get(name).getClass().getSimpleName() , compiler.getLocation(this));
         }
 
         return null;
@@ -130,13 +130,11 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
                         jclass.load(mv, compiler, jclass.preload(mv, compiler, false), false);
                     }
                     case ImportedField importedField -> importedField.load(mv, compiler, importedField.preload(mv, compiler, false), false);
-                    default -> throw new CompilerException("Symbol '" + name + "' invalid type: " + importSymbol.symbol.getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
+                    default -> throw new CompilerException("Symbol '" + name + "' invalid owner: " + importSymbol.symbol.getClass().getSimpleName() , compiler.getLocation(this));
                 }
             }
-            case JvmConstructor jvmConstructor -> {
-                // Set variable to "<typedName>.class"
-                jvmConstructor.load(mv, compiler, preloaded, false);
-            }
+            case JvmConstructor jvmConstructor -> // Set variable to "<typedName>.class"
+                    jvmConstructor.load(mv, compiler, preloaded, false);
             case JvmFunction jvmFunction -> {
                 // Set variable to "<typedName>.class"
                 if (!jvmFunction.isStatic()) {
@@ -148,12 +146,10 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
                 }
                 jvmFunction.load(mv, compiler, preloaded, false);
             }
-            case JvmField jvmField -> {
-                // Set variable to "<typedName>.class"
-                jvmField.load(mv, compiler, preloaded, false);
-            }
+            case JvmField jvmField -> // Set variable to "<typedName>.class"
+                    jvmField.load(mv, compiler, preloaded, false);
             default ->
-                    throw new CompilerException("Symbol '" + name + "' invalid type: " + compiler.symbols.get(name).getClass().getSimpleName() + " (" + compiler.getLocation(this) + ")");
+                    throw new CompilerException("Symbol '" + name + "' invalid owner: " + compiler.symbols.get(name).getClass().getSimpleName() , compiler.getLocation(this));
         }
     }
 
@@ -163,6 +159,14 @@ record PyObjectRef(String name, int lineNo) implements Symbol {
             throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")");
         }
         return compiler.symbols.get(name).type(compiler);
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (compiler.symbols.get(name) == null) {
+            throw new CompilerException("Symbol '" + name + "' not found (" + compiler.getLocation(this) + ")", location);
+        }
+        compiler.symbols.get(name).expectReturnType(compiler, returnType, location);
     }
 
     @Override

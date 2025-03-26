@@ -28,15 +28,11 @@ public class JField implements JvmField {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         if (Modifier.isStatic(field.getModifiers())) {
-            compiler.writer.getStatic(jClass.type(compiler).getInternalName(), name, type1.getDescriptor());
+            compiler.writer.loadClass(jClass);
+            compiler.writer.dynamicGetAttr(name);
             return;
         }
-        compiler.writer.getField(jClass.type(compiler).getInternalName(), name, type1.getDescriptor());
-    }
-
-    @Override
-    public int lineNo() {
-        return 0;
+        compiler.writer.dynamicGetAttr(name);
     }
 
     @Override
@@ -46,7 +42,19 @@ public class JField implements JvmField {
 
     @Override
     public Type type(PythonCompiler compiler) {
-        return type1;
+        return Type.getType(field.getType());
+    }
+
+    @Override
+    public Location location() {
+        return new Location("<Java>", 0, 0, 0, 0);
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        if (!typeClass(compiler).doesInherit(compiler, returnType)) {
+            throw new CompilerException("Expected " + typeClass(compiler).type(compiler) + " but got " + returnType.type(compiler), location);
+        }
     }
 
     @Override
@@ -54,12 +62,7 @@ public class JField implements JvmField {
         visit.load(mv, compiler, visit.preload(mv, compiler, false), false);
         compiler.writer.cast(compiler.writer.boxType(type(compiler)));
         compiler.writer.smartCast(type(compiler));
-
-        if (Modifier.isStatic(field.getModifiers())) {
-            mv.visitFieldInsn(Opcodes.PUTSTATIC, jClass.type(compiler).getInternalName(), name, type1.getDescriptor());
-            return;
-        }
-        mv.visitFieldInsn(Opcodes.PUTFIELD, jClass.type(compiler).getInternalName(), name, type1.getDescriptor());
+        compiler.writer.dynamicSetAttr(name);
     }
 
     @Override

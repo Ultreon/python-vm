@@ -1,8 +1,10 @@
 package dev.ultreon.pythonc;
 
-import org.objectweb.asm.Label;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
+import org.objectweb.asm.*;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.objectweb.asm.Opcodes.*;
 
@@ -66,6 +68,9 @@ public class JvmWriter {
         }
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitMethodInsn(INVOKESPECIAL, owner, name, signature, isInterface);
+        if (methodType.getReturnType().getSort() != Type.VOID) {
+            context.push(methodType.getReturnType());
+        }
     }
 
     public void newInstance(String owner, String name, String signature, boolean isInterface, Runnable paramInit) {
@@ -79,7 +84,7 @@ public class JvmWriter {
         invokeSpecial(owner, "<init>", signature, isInterface);
     }
 
-    public void newObject(Type objectType) {
+    private void newObject(Type objectType) {
         Context context = getContext();
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitTypeInsn(NEW, objectType.getInternalName());
@@ -138,63 +143,102 @@ public class JvmWriter {
         context.push(returnType);
     }
 
-    public void invokeDynamic(String owner, String name, String signature, boolean isInterface) {
+    private void invokeDynamic(String interaction, String signature, Object... values) {
         Context context = getContext();
+
         Type methodType = Type.getMethodType(signature);
         Type[] argumentTypes = methodType.getArgumentTypes();
-        context.pop();
-        for (Type arg : argumentTypes) {
+        for (int i = argumentTypes.length - 1; i >= 0; i--) {
+            Type arg = argumentTypes[i];
             Type pop = context.pop();
-            getClassSymbol(pop.getClassName());
         }
 
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        mv.visitMethodInsn(INVOKEDYNAMIC, owner, name, signature, isInterface);
+        mv.visitInvokeDynamicInsn(interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> switch (o) {
+            case String s -> "Ljava/lang/String;";
+            case Integer i -> "I";
+            case Long l -> "J";
+            case Double d -> "D";
+            case Float f -> "F";
+            case Boolean b -> "Z";
+            case Character c -> "C";
+            case Byte b -> "B";
+            case Short s -> "S";
+            default -> throw new AssertionError("Unexpected value: " + o);
+        }).collect(Collectors.joining("")) + ")Ljava/lang/invoke/CallSite;", false), values);
+
         Type returnType = methodType.getReturnType();
-        if (returnType.equals(Type.VOID_TYPE)) return;
+        if (returnType.getSort() == Type.VOID) return;
         context.push(returnType);
+    }
+
+    public void dynamicCall(String name, String signature) {
+        invokeDynamic(name, "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__call__");
+    }
+
+    public void dynamicGetAttr(String name) {
+        invokeDynamic(name, "(Ljava/lang/Object;)Ljava/lang/Object;", "__getattr__");
+    }
+
+    public void dynamicSetAttr(String name) {
+        invokeDynamic(name, "(Ljava/lang/Object;Ljava/lang/Object;)V", "__setattr__");
+    }
+
+    public void dynamicDelAttr(String name) {
+        invokeDynamic(name, "(Ljava/lang/Object;)V", "__delattr__");
+    }
+
+    public void dynamicGetItem(String name) {
+        invokeDynamic(name, "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", "__getitem__");
+    }
+
+    public void dynamicSetItem(String name) {
+        invokeDynamic(name, "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V", "__setitem__");
     }
 
     public void getStatic(String owner, String name, String descriptor) {
         Context context = getContext();
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         Type type = Type.getType(descriptor);
-        mv.visitFieldInsn(GETSTATIC, owner, name, type.getDescriptor());
+        pushClass(Type.getObjectType(owner));
+        dynamicGetAttr(name);
         context.push(type);
     }
 
-    public void putStatic(String owner, String name, String descriptor) {
+    public void putStatic(String owner, String name, String descriptor, PyExpr expr) {
         Context context = getContext();
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        Type type = Type.getType(descriptor);
-        cast(type);
-        context.pop();
-        mv.visitFieldInsn(PUTSTATIC, owner, name, type.getDescriptor());
+        Type ownerType = Type.getObjectType(owner);
+        pushClass(ownerType);
+        expr.load(mv, pc, expr.preload(mv, pc, false), false);
+        dynamicSetAttr(name);
     }
 
-    public void getField(String owner, String name, String descriptor) {
-        Context context = getContext();
+    private void pushClass(Type ownerType) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        Type type = Type.getType(descriptor);
-        context.pop();
-        mv.visitFieldInsn(GETFIELD, owner, name, type.getDescriptor());
-        context.push(type);
+        mv.visitLdcInsn(ownerType);
+        getContext().push(Type.getType(Class.class));
     }
 
-    public void putField(String owner, String name, String descriptor) {
+    public void getField(String name, String descriptor) {
         Context context = getContext();
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        Type type = Type.getType(descriptor);
-        context.pop();
-        context.pop();
-        mv.visitFieldInsn(PUTFIELD, owner, name, type.getDescriptor());
+        dynamicGetAttr(name);
+        cast(Type.getType(descriptor));
+    }
+
+    public void putField(String owner, String name, String descriptor, PyExpr parent, PyExpr expr) {
+        Context context = getContext();
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        parent.load(mv, pc, parent.preload(mv, pc, false), false);
+        expr.load(mv, pc, expr.preload(mv, pc, false), false);
+        dynamicSetAttr(name);
     }
 
     public void loadConstant(String name) {
         Context context = getContext();
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitLdcInsn(name);
-        context.push(Type.getType("Ljava/lang/String;"));
     }
 
     public void loadConstant(int value) {
@@ -256,6 +300,7 @@ public class JvmWriter {
     public void loadClass(Type type) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitLdcInsn(type);
+        getContext().push(Type.getType("Ljava/lang/Class;"));
     }
 
     public void storeInt(int index) {
@@ -446,7 +491,7 @@ public class JvmWriter {
             mv.visitInsn(FADD);
             context.push(Type.FLOAT_TYPE);
         } else if (left.equals(Type.getType(String.class)) && right.equals(Type.getType(String.class))) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/String", "concat", "(Ljava/lang/String;)Ljava/lang/String;", false);
+            invokeVirtual("java/lang/String", "concat", "(Ljava/lang/String;)Ljava/lang/String;", false);
             context.push(Type.getType(String.class));
         } else {
             throw new RuntimeException("Unsupported addition between " + left + " and " + right);
@@ -711,16 +756,16 @@ public class JvmWriter {
 
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "floorDiv", "(II)I", false);
+            invokeStatic("java/lang/Math", "floorDiv", "(II)I", false);
             context.push(Type.INT_TYPE);
         } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "floorDiv", "(JI)J", false);
+            invokeStatic("java/lang/Math", "floorDiv", "(JI)J", false);
             context.push(Type.LONG_TYPE);
         } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "floorDiv", "(JI)J", false);
+            invokeStatic("java/lang/Math", "floorDiv", "(JI)J", false);
             context.push(Type.LONG_TYPE);
         } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "floorDiv", "(JJ)J", false);
+            invokeStatic("java/lang/Math", "floorDiv", "(JJ)J", false);
             context.push(Type.LONG_TYPE);
         } else {
             throw new RuntimeException("Unsupported floorDiv between " + left + " and " + right);
@@ -734,7 +779,7 @@ public class JvmWriter {
 
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         if (left == Type.DOUBLE_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "pow", "(DD)D", false);
+            invokeStatic("java/lang/Math", "pow", "(DD)D", false);
             context.push(Type.DOUBLE_TYPE);
         } else {
             throw new RuntimeException("Unsupported pow between " + left + " and " + right);
@@ -854,31 +899,34 @@ public class JvmWriter {
         mv.visitJumpInsn(Opcodes.GOTO, endLabel);
     }
 
-    public void cast(Type type) {
+    public void cast(Type to) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         Context context = getContext();
-        Type pop = context.pop();
-        if (type.getSort() == Type.OBJECT) {
-            if (!pop.equals(type)) {
-                if (pop.equals(Type.BYTE_TYPE)) invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-                if (pop.equals(Type.SHORT_TYPE))
+        Type from = context.peek();
+        if (to.getSort() == Type.OBJECT) {
+            if (!from.equals(to)) {
+                if (from.equals(Type.BYTE_TYPE)) invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                if (from.equals(Type.SHORT_TYPE))
                     invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-                if (pop.equals(Type.CHAR_TYPE))
+                if (from.equals(Type.CHAR_TYPE))
                     invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-                if (pop.equals(Type.INT_TYPE))
+                if (from.equals(Type.INT_TYPE))
                     invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-                if (pop.equals(Type.LONG_TYPE)) invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-                if (pop.equals(Type.FLOAT_TYPE))
+                if (from.equals(Type.LONG_TYPE)) invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                if (from.equals(Type.FLOAT_TYPE))
                     invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-                if (pop.equals(Type.DOUBLE_TYPE))
+                if (from.equals(Type.DOUBLE_TYPE))
                     invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-                if (pop.equals(Type.BOOLEAN_TYPE))
+                if (from.equals(Type.BOOLEAN_TYPE))
                     invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
-                mv.visitTypeInsn(CHECKCAST, type.getInternalName());
+                context.pop();
+                checkCast(to);
+                context.push(to);
             }
-        } else switch (type.getSort()) {
+        } else switch (to.getSort()) {
             case Type.BOOLEAN -> {
-                switch (pop.getSort()) {
+                context.pop();
+                switch (from.getSort()) {
                     case Type.BOOLEAN, Type.INT -> {
                         // do nothing
                     }
@@ -888,11 +936,24 @@ public class JvmWriter {
                     case Type.LONG -> mv.visitInsn(L2I);
                     case Type.FLOAT -> mv.visitInsn(F2I);
                     case Type.DOUBLE -> mv.visitInsn(D2I);
-                    default -> throw new RuntimeException("Unsupported cast to " + type);
+                    default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
+
+                // check if bool != 0 -> true else false
+                Label trueLabel = new Label();
+                Label falseLabel = new Label();
+                mv.visitJumpInsn(Opcodes.IFNE, trueLabel);
+                mv.visitInsn(Opcodes.ICONST_0);
+                mv.visitJumpInsn(Opcodes.GOTO, falseLabel);
+                mv.visitLabel(trueLabel);
+                mv.visitInsn(Opcodes.ICONST_1);
+                mv.visitLabel(falseLabel);
+
+                context.push(Type.BOOLEAN_TYPE);
             }
             case Type.INT -> {
-                switch (pop.getSort()) {
+                context.pop();
+                switch (from.getSort()) {
                     case Type.INT -> {
                         // do nothing
                     }
@@ -902,11 +963,13 @@ public class JvmWriter {
                     case Type.LONG -> mv.visitInsn(I2L);
                     case Type.FLOAT -> mv.visitInsn(F2I);
                     case Type.DOUBLE -> mv.visitInsn(D2I);
-                    default -> throw new RuntimeException("Unsupported cast to " + type);
+                    default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
+                context.push(Type.INT_TYPE);
             }
             case Type.LONG -> {
-                switch (pop.getSort()) {
+                context.pop();
+                switch (from.getSort()) {
                     case Type.INT -> mv.visitInsn(I2L);
                     case Type.BYTE -> mv.visitInsn(I2B);
                     case Type.SHORT -> mv.visitInsn(I2S);
@@ -916,47 +979,50 @@ public class JvmWriter {
                     }
                     case Type.FLOAT -> mv.visitInsn(F2L);
                     case Type.DOUBLE -> mv.visitInsn(D2L);
-                    default -> throw new RuntimeException("Unsupported cast to " + type);
+                    default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
+                context.push(Type.LONG_TYPE);
             }
             case Type.FLOAT -> {
-                switch (pop.getSort()) {
-                    case Type.INT -> mv.visitInsn(I2F);
-                    case Type.BYTE -> mv.visitInsn(I2B);
-                    case Type.SHORT -> mv.visitInsn(I2S);
-                    case Type.CHAR -> mv.visitInsn(I2C);
+                context.pop();
+                switch (from.getSort()) {
+                    case Type.INT, Type.CHAR, Type.SHORT, Type.BYTE -> mv.visitInsn(I2F);
                     case Type.LONG -> mv.visitInsn(L2F);
                     case Type.FLOAT -> {
                         // do nothing
                     }
                     case Type.DOUBLE -> mv.visitInsn(D2F);
-                    default -> throw new RuntimeException("Unsupported cast to " + type);
+                    default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
+                context.push(Type.FLOAT_TYPE);
             }
             case Type.DOUBLE -> {
-                switch (pop.getSort()) {
-                    case Type.INT -> mv.visitInsn(I2D);
-                    case Type.BYTE -> mv.visitInsn(I2B);
-                    case Type.SHORT -> mv.visitInsn(I2S);
-                    case Type.CHAR -> mv.visitInsn(I2C);
+                context.pop();
+                switch (from.getSort()) {
+                    case Type.INT, Type.CHAR, Type.SHORT, Type.BYTE -> mv.visitInsn(I2D);
                     case Type.LONG -> mv.visitInsn(L2D);
                     case Type.FLOAT -> mv.visitInsn(F2D);
                     case Type.DOUBLE -> {
                         // do nothing
                     }
-                    default -> throw new RuntimeException("Unsupported cast from " + pop + " to " + type);
+                    default -> throw new RuntimeException("Unsupported cast from " + from + " to " + to);
                 }
+                context.push(Type.DOUBLE_TYPE);
             }
             case Type.ARRAY -> {
-                if (!pop.equals(type)) {
-                    if (pop.getSort() != Type.ARRAY && pop.getSort() != Type.OBJECT) {
-                        throw new RuntimeException("Unsupported cast from " + pop + " to " + type);
+                if (!from.equals(to)) {
+                    if (from.getSort() != Type.ARRAY && from.getSort() != Type.OBJECT) {
+                        throw new RuntimeException("Unsupported cast from " + from + " to " + to);
                     }
                 }
             }
-            default -> throw new RuntimeException("Unsupported cast to " + type);
+            default -> throw new RuntimeException("Unsupported cast to " + to);
         }
-        context.push(type);
+    }
+
+    private void checkCast(Type to) {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        mv.visitTypeInsn(CHECKCAST, to.getInternalName());
     }
 
     public void dup() {
@@ -1034,9 +1100,11 @@ public class JvmWriter {
         getContext().push(Type.SHORT_TYPE);
     }
 
-    public void lineNumber(int line, Label label) {
+    public void lineNumber(int line) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-//        mv.visitLineNumber(line, label);
+        if (mv == null) {
+            return;
+        }
     }
 
     public void jumpIfEqual(Label label) {
@@ -1133,33 +1201,36 @@ public class JvmWriter {
         } else if (to.getSort() == Type.OBJECT) {
             if (from == Type.DOUBLE_TYPE) {
                 if (to.getInternalName().equals("java/lang/Double")) {
-                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+                    invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
                 } else {
                     smartCast(from, boxType(to));
                 }
             } else if (from == Type.FLOAT_TYPE && to.getInternalName().equals("java/lang/Float")) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+                invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
             } else if (from == Type.LONG_TYPE && to.getInternalName().equals("java/lang/Long")) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
             } else if (from == Type.INT_TYPE && to.getInternalName().equals("java/lang/Integer")) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+                invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
             } else if (from == Type.BOOLEAN_TYPE && to.getInternalName().equals("java/lang/Boolean")) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+                invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
             } else if (from == Type.CHAR_TYPE && to.getInternalName().equals("java/lang/Character")) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+                invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
             } else if (from == Type.BYTE_TYPE && to.getInternalName().equals("java/lang/Byte")) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
             } else if (from == Type.SHORT_TYPE && to.getInternalName().equals("java/lang/Short")) {
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+                invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
             } else if (!from.equals(to)) {
-                throw new RuntimeException("Cannot smart cast " + from + " to " + to);
+                if (PythonCompiler.classCache.require(pc, to).doesInherit(pc, PythonCompiler.classCache.require(pc, from))) {
+                    return;
+                }
+                throw new RuntimeException("Cannot smart cast " + from.getClassName() + " to " + to.getClassName());
             }
         } else if (to.getSort() == Type.ARRAY) {
             if (!from.equals(to)) {
-                throw new RuntimeException("Cannot smart cast " + from + " to " + to);
+                throw new RuntimeException("Cannot smart cast " + from.getClassName() + " to " + to.getClassName());
             }
         } else {
-            throw new RuntimeException("Cannot smart cast " + from + " to " + to);
+            throw new RuntimeException("Cannot smart cast " + from.getClassName() + " to " + to.getClassName());
         }
     }
 
@@ -1209,51 +1280,47 @@ public class JvmWriter {
 
     public void box(Type type) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        Type pop = getContext().pop();
-        smartCast(pop, type);
+        smartCast(type);
         if (type == Type.DOUBLE_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
+            invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
         } else if (type == Type.FLOAT_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+            invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
         } else if (type == Type.LONG_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+            invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
         } else if (type == Type.INT_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+            invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
         } else if (type == Type.BOOLEAN_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+            invokeStatic("java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
         } else if (type == Type.CHAR_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+            invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
         } else if (type == Type.BYTE_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+            invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
         } else if (type == Type.SHORT_TYPE) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+            invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
         }
-        getContext().push(boxType(type));
     }
 
     public void unbox(Type type) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        Type pop = getContext().pop();
-        smartCast(pop, type);
+        Type pop = getContext().peek();
+        cast(boxType(type));
         if (type == Type.DOUBLE_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Double", "doubleValue", "()D", false);
+            invokeVirtual("java/lang/Double", "doubleValue", "()D", false);
         } else if (type == Type.FLOAT_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Float", "floatValue", "()F", false);
+            invokeVirtual("java/lang/Float", "floatValue", "()F", false);
         } else if (type == Type.LONG_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Long", "longValue", "()J", false);
+            invokeVirtual("java/lang/Long", "longValue", "()J", false);
         } else if (type == Type.INT_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false);
+            invokeVirtual("java/lang/Integer", "intValue", "()I", false);
         } else if (type == Type.BOOLEAN_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+            invokeVirtual("java/lang/Boolean", "booleanValue", "()Z", false);
         } else if (type == Type.CHAR_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);
+            invokeVirtual("java/lang/Character", "charValue", "()C", false);
         } else if (type == Type.BYTE_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Byte", "byteValue", "()B", false);
+            invokeVirtual("java/lang/Byte", "byteValue", "()B", false);
         } else if (type == Type.SHORT_TYPE) {
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Short", "shortValue", "()S", false);
+            invokeVirtual("java/lang/Short", "shortValue", "()S", false);
         }
-
-        getContext().push(type);
     }
 
     public void jumpIfNotEqual(Label label) {
@@ -1311,9 +1378,13 @@ public class JvmWriter {
         mv.visitJumpInsn(Opcodes.IFGE, label);
     }
 
-    public void localVariable(String name, String desc, String signature, Label start, Label end, int index) {
+    public void localVariable(String name, String desc, String signature, int line, Label start, Label end, int index) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitLocalVariable(name, desc, signature, start, end, index);
+
+        Label label = new Label();
+        mv.visitLabel(label);
+        mv.visitLineNumber(line, label);
     }
 
     public void end() {
@@ -1431,7 +1502,7 @@ public class JvmWriter {
         mv.visitInsn(ICONST_0);
         getContext().push(Type.INT_TYPE);
     }
-    
+
     public void pushOneInt() {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitInsn(ICONST_1);
@@ -1443,7 +1514,7 @@ public class JvmWriter {
         mv.visitInsn(ICONST_0);
         getContext().push(Type.BOOLEAN_TYPE);
     }
-    
+
     public void pushTrue() {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitInsn(ICONST_1);
@@ -1506,42 +1577,56 @@ public class JvmWriter {
 
     public void loadConstant(Object value) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (value instanceof Integer) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.INT_TYPE);
-        } else if (value instanceof Long) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.LONG_TYPE);
-        } else if (value instanceof Float) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.FLOAT_TYPE);
-        } else if (value instanceof Double) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.DOUBLE_TYPE);
-        } else if (value instanceof String) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.getType(String.class));
-        } else if (value instanceof Character) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.CHAR_TYPE);
-        } else if (value instanceof Byte) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.BYTE_TYPE);
-        } else if (value instanceof Short) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.SHORT_TYPE);
-        } else if (value instanceof Boolean) {
-            mv.visitLdcInsn(value);
-            getContext().push(Type.BOOLEAN_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported constant type: " + value.getClass());
+        switch (value) {
+            case Integer i -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.INT_TYPE);
+            }
+            case Long l -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.LONG_TYPE);
+            }
+            case Float v -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.FLOAT_TYPE);
+            }
+            case Double v -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.DOUBLE_TYPE);
+            }
+            case String s -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.getType(String.class));
+            }
+            case Character c -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.CHAR_TYPE);
+            }
+            case Byte b -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.BYTE_TYPE);
+            }
+            case Short i -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.SHORT_TYPE);
+            }
+            case Boolean b -> {
+                mv.visitLdcInsn(value);
+                getContext().push(Type.BOOLEAN_TYPE);
+            }
+            case null, default -> {
+                if (value != null) {
+                    throw new RuntimeException("Unsupported constant owner: " + value.getClass());
+                }
+            }
         }
     }
 
     public void smartCast(Type to) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        Type pop = getContext().pop();
+        Type pop = getContext().peek();
         smartCast(pop, to);
+        getContext().pop(pop);
         getContext().push(to);
     }
 
@@ -1551,22 +1636,221 @@ public class JvmWriter {
         getContext().push(type.type(compiler));
     }
 
-    public void loadSuper() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        mv.visitVarInsn(ALOAD, 1);
-        getContext().push(Type.getType(Object.class));
-    }
-
-    public void loadNull() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        mv.visitInsn(ACONST_NULL);
-        getContext().push(Type.getType(Object.class));
-    }
-
     public void pushNull() {
-
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitInsn(ACONST_NULL);
         getContext().push(Type.getType(Object.class));
+    }
+
+    public void createArray(List<PyExpr> arguments, Type type) {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        pushStackByte(arguments.size());
+        newArray(type);
+        for (int i = 0, argumentsSize = arguments.size(); i < argumentsSize; i++) {
+            PyExpr argument = arguments.get(i);
+            dup();
+            pushStackByte(i);
+            argument.load(mv, pc, argument.preload(mv, pc, false), false);
+            if (argument.type(pc).getSort() != Type.OBJECT && argument.type(pc).getSort() != Type.ARRAY) {
+                box(argument.type(pc));
+            }
+            if (!argument.type(pc).equals(type)) {
+                cast(type);
+            }
+
+            arrayStoreObject(type);
+        }
+    }
+
+    public void dynamicBuiltinCall(String name, String signature) {
+        invokeDynamic(name, "([Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__builtincall__", signature);
+    }
+
+    public void dynamicBuiltinGetAttr(String name) {
+        invokeDynamic(name, "()Ljava/lang/Object;", "__builtingetattr__");
+    }
+
+    public void dynamicBuiltinSetAttr(String name) {
+        invokeDynamic(name, "(Ljava/lang/Object;)V", "__builtinsetattr__");
+    }
+
+    public void dynamicBuiltinDelAttr(String name) {
+        invokeDynamic(name, "()V", "__builtindelattr__");
+    }
+
+    public void dynamicBuiltinHasAttr(String name) {
+        invokeDynamic(name, "()Z", "__builtinhasattr__");
+    }
+
+    public void dynamicAdd() {
+        invokeDynamic("__add__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicSub() {
+        invokeDynamic("__sub__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicMul() {
+        invokeDynamic("__mul__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicDiv() {
+        invokeDynamic("__div__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicMod() {
+        invokeDynamic("__mod__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicPow() {
+        invokeDynamic("__pow__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicFloorDiv() {
+        invokeDynamic("__floordiv__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicAnd() {
+        invokeDynamic("__and__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicOr() {
+        invokeDynamic("__or__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicXor() {
+        invokeDynamic("__xor__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicLShift() {
+        invokeDynamic("__lshift__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicRShift() {
+        invokeDynamic("__rshift__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicNot() {
+        invokeDynamic("__not__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicNeg() {
+        invokeDynamic("__neg__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicPos() {
+        invokeDynamic("__pos__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicIn() {
+        invokeDynamic("__contains__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicNotIn() {
+        invokeDynamic("__contains__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+        invokeDynamic("__not__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicIs() {
+        invokeDynamic("__is__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicIsNot() {
+        invokeDynamic("__isnot__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicStr() {
+        invokeDynamic("__str__", "(Ljava/lang/Object;)Ljava/lang/String;");
+    }
+
+    public void dynamicRepr() {
+        invokeDynamic("__repr__", "(Ljava/lang/Object;)Ljava/lang/String;");
+    }
+
+    public void dynamicBool() {
+        invokeDynamic("__bool__", "(Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicLen() {
+        invokeDynamic("__len__", "(Ljava/lang/Object;)I");
+    }
+
+    public void dynamicIter() {
+        invokeDynamic("__iter__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicNext() {
+        invokeDynamic("__next__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicGetItem() {
+        invokeDynamic("__getitem__", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void dynamicSetItem() {
+        invokeDynamic("__setitem__", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)V");
+    }
+
+    public void dynamicDelItem() {
+        invokeDynamic("__delitem__", "(Ljava/lang/Object;Ljava/lang/Object;)V");
+    }
+
+    public void dynamicEq() {
+        invokeDynamic("__eq__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicNe() {
+        invokeDynamic("__ne__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicLt() {
+        invokeDynamic("__lt__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicLe() {
+        invokeDynamic("__le__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicGt() {
+        invokeDynamic("__gt__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void dynamicGe() {
+        invokeDynamic("__ge__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
+    }
+
+    public void returnValue(Type type) {
+        Context context = getContext();
+        if (!context.needsPop()) {
+            throw new RuntimeException("No value to return");
+        }
+
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        if (type.equals(Type.VOID_TYPE)) {
+            mv.visitInsn(RETURN);
+            return;
+        }
+
+        Type boxedType = boxType(type);
+        cast(boxedType);
+        if (!boxedType.equals(type)) unbox(type);
+        context.pop();
+
+        switch (type.getSort()) {
+            case Type.BYTE, Type.SHORT, Type.INT, Type.CHAR, Type.BOOLEAN -> mv.visitInsn(IRETURN);
+            case Type.LONG -> mv.visitInsn(LRETURN);
+            case Type.FLOAT -> mv.visitInsn(FRETURN);
+            case Type.DOUBLE -> mv.visitInsn(DRETURN);
+            case Type.OBJECT -> mv.visitInsn(ARETURN);
+            default -> throw new RuntimeException("Unknown return type: " + type);
+        }
+    }
+
+    public void loadClass(JvmClass jvmClass) {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        Type type = jvmClass.type(pc);
+        mv.visitLdcInsn(type);
+        Context context = getContext();
+        context.push(type);
     }
 }

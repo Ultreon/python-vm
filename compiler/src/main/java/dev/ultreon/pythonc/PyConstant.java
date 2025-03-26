@@ -1,18 +1,18 @@
 package dev.ultreon.pythonc;
 
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Type;
+import org.objectweb.asm.Opcodes;
 
 import java.util.Objects;
 
 final class PyConstant implements PyExpr {
     private final Object value;
-    private final int lineNo;
+    private final Location location;
     public final Type type;
 
-    PyConstant(Object value, int lineNo) {
+    PyConstant(Object value, Location location) {
         this.value = value;
-        this.lineNo = lineNo;
+        this.location = location;
         type = switch (this.value) {
             case String s -> Type.STRING;
             case Integer i -> Type.INTEGER;
@@ -23,7 +23,8 @@ final class PyConstant implements PyExpr {
             case Short s -> Type.SHORT;
             case Long l -> Type.LONG;
             case Character c -> Type.CHARACTER;
-            default -> throw new RuntimeException("No supported matching type found for:\n" + this.value);
+            case None n -> Type.NONE;
+            default -> throw new RuntimeException("No supported matching owner found for:\n" + this.value);
         };
     }
 
@@ -36,7 +37,8 @@ final class PyConstant implements PyExpr {
         BYTE(org.objectweb.asm.Type.BYTE_TYPE),
         SHORT(org.objectweb.asm.Type.SHORT_TYPE),
         LONG(org.objectweb.asm.Type.LONG_TYPE),
-        CHARACTER(org.objectweb.asm.Type.CHAR_TYPE);
+        CHARACTER(org.objectweb.asm.Type.CHAR_TYPE),
+        NONE(org.objectweb.asm.Type.getType(Object.class));
 
         public final org.objectweb.asm.Type type;
 
@@ -52,9 +54,8 @@ final class PyConstant implements PyExpr {
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        mv.visitLdcInsn(value);
-        Context context = compiler.getContext(Context.class);
-        context.push(type.type);
+        if (value == None.None) compiler.writer.pushNull();
+        else compiler.writer.loadConstant(value);
     }
 
     public Object value() {
@@ -62,8 +63,11 @@ final class PyConstant implements PyExpr {
     }
 
     @Override
-    public int lineNo() {
-        return lineNo;
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        JvmClass require = PythonCompiler.classCache.require(compiler, type(compiler));
+        if (!returnType.doesInherit(compiler, require)) {
+            throw new CompilerException("Expected return type " + returnType.type(compiler).getInternalName() + " but found " + require.type(compiler).getInternalName(), location);
+        }
     }
 
     @Override
@@ -72,20 +76,25 @@ final class PyConstant implements PyExpr {
     }
 
     @Override
+    public Location location() {
+        return location;
+    }
+
+    @Override
     public boolean equals(Object obj) {
         if (obj == this) return true;
         if (obj == null || obj.getClass() != this.getClass()) return false;
         var that = (PyConstant) obj;
-        return Objects.equals(this.value, that.value) && this.lineNo == that.lineNo;
+        return Objects.equals(this.value, that.value) && this.location.equals(that.location);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(value, lineNo);
+        return Objects.hash(value, location);
     }
 
     @Override
     public String toString() {
-        return "PyConstant[" + "value=" + value + ", " + "lineNo=" + lineNo + ']';
+        return "PyConstant[" + "value=" + value + ", " + "lineNo=" + location + ']';
     }
 }

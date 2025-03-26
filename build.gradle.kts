@@ -80,9 +80,15 @@ tasks.jar {
     finalizedBy(":testing:compileJava", "sourcesJar")
 
     inputs.files(file("build/libs/example-1.0.jar"))
+    inputs.files(file("build/libs/pylib-1.0.jar"))
+    inputs.files(file("pylib/build/libs/pylib-1.0.jar"))
 
     group = "python-vm"
     from(zipTree("build/libs/example-1.0.jar"))
+    from(zipTree("build/libs/pylib-1.0.jar"))
+    from(zipTree("pylib/build/libs/pylib-1.0.jar"))
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 tasks.register<Jar>("sourcesJar") {

@@ -4,8 +4,8 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
 public class PyConstructor extends PyFunction implements JvmConstructor {
-    public PyConstructor(PyClass owner, Type[] paramTypes, Type returnType, int lineNo) {
-        super(owner, "<init>", paramTypes, returnType, lineNo);
+    public PyConstructor(PythonCompiler compiler, PyClass owner, Type[] paramTypes, Type returnType, Location location) {
+        super(compiler, owner, "<init>", paramTypes, returnType, location, false);
     }
 
     @Override
@@ -41,10 +41,5 @@ public class PyConstructor extends PyFunction implements JvmConstructor {
     @Override
     public JvmClass returnClass(PythonCompiler compiler) {
         return owner(compiler);
-    }
-
-    @Override
-    public boolean isStatic() {
-        return false;
     }
 }

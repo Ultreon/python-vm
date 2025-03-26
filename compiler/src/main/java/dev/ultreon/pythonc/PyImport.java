@@ -6,10 +6,12 @@ import org.objectweb.asm.Type;
 public class PyImport implements Symbol {
     private final String alias;
     final Symbol symbol;
+    private Location location;
 
-    public PyImport(String alias, Symbol symbol) {
+    public PyImport(String alias, Symbol symbol, Location location) {
         this.alias = alias;
         this.symbol = symbol;
+        this.location = location;
     }
 
     @Override
@@ -23,11 +25,6 @@ public class PyImport implements Symbol {
     }
 
     @Override
-    public int lineNo() {
-        return symbol.lineNo();
-    }
-
-    @Override
     public String name() {
         return alias;
     }
@@ -35,6 +32,16 @@ public class PyImport implements Symbol {
     @Override
     public Type type(PythonCompiler compiler) {
         return symbol.type(compiler);
+    }
+
+    @Override
+    public Location location() {
+        return location;
+    }
+
+    @Override
+    public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
+        symbol.expectReturnType(compiler, returnType, location);
     }
 
     @Override
@@ -50,22 +57,24 @@ public class PyImport implements Symbol {
         switch (symbol) {
             case PyBuiltinFunction builtinFunction -> {
                 paramInit.run();
-                compiler.writer.invokeStatic(builtinFunction.mapOwner.getInternalName(), builtinFunction.name, signature, false);
+                compiler.writer.dynamicBuiltinCall(builtinFunction.name, signature);
             }
-            case PyBuiltinClass builtinMethod -> compiler.writer.newInstance(builtinMethod.extName.getInternalName(), "<init>", signature, false, paramInit);
-            case PyObjectRef(String name, int lineNo) -> {
+            case PyBuiltinClass builtinMethod -> {
+                paramInit.run();
+                compiler.writer.dynamicBuiltinCall("\uffffinit\uffff", signature);
+            }
+            case PyObjectRef(String name, Location location) -> {
                 Symbol symbol = compiler.symbols.get(name);
                 switch (symbol) {
                     case PyBuiltinFunction func -> {
                         paramInit.run();
-                        compiler.writer.invokeStatic(func.mapOwner.getInternalName(), func.name, signature, false);
+                        compiler.writer.dynamicBuiltinCall(func.name, signature);
                     }
-                    case PyBuiltinClass builtinClass ->
-                            compiler.writer.newInstance(builtinClass.extName.getInternalName(), "<init>", signature, false, paramInit);
+                    case PyBuiltinClass builtinClass -> compiler.writer.dynamicBuiltinCall("\uffffinit\uffff", signature);
                     case PyImport importSymbol -> importSymbol.invoke(mv, compiler, signature, callArgs, paramInit);
                     case PyObjectRef pyObjectRef -> throw new CompilerException("Unsupported call to PyObjectRef");
                     case null, default ->
-                            throw new CompilerException("Unsupported object reference call to " + name + " (type: " + symbol.getClass() + ")");
+                            throw new CompilerException("Unsupported object reference call to " + name + " (owner: " + symbol.getClass() + ")");
                 }
             }
             case PyClass cls -> {
@@ -91,7 +100,7 @@ public class PyImport implements Symbol {
                 compiler.writer.invokeStatic(importedField.typeClass(compiler).type(compiler).getInternalName(), "__call__", signature, false);
             }
             default -> {
-                throw new CompilerException("Unsupported call to " + symbol + " (type: " + symbol.getClass() + ")");
+                throw new CompilerException("Unsupported call to " + symbol + " (owner: " + symbol.getClass() + ")");
             }
         }
     }
@@ -100,7 +109,7 @@ public class PyImport implements Symbol {
         if (symbol instanceof JvmClass cls) {
             return cls.field(compiler, name);
         } else {
-            throw new CompilerException("Unsupported call to " + symbol + " (type: " + symbol.getClass() + ")");
+            throw new CompilerException("Unsupported call to " + symbol + " (owner: " + symbol.getClass() + ")");
         }
     }
 
@@ -111,7 +120,7 @@ public class PyImport implements Symbol {
             }
             return cls.function(compiler, name, paramTypes);
         } else {
-            throw new CompilerException("Unsupported call to " + symbol + " (type: " + symbol.getClass() + ")");
+            throw new CompilerException("Unsupported call to " + symbol + " (owner: " + symbol.getClass() + ")");
         }
     }
 }

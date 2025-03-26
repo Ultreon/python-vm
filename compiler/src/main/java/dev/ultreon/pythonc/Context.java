@@ -2,6 +2,8 @@ package dev.ultreon.pythonc;
 
 import org.objectweb.asm.Type;
 
+import java.util.Objects;
+
 public interface Context {
 
     boolean needsPop();
@@ -14,6 +16,8 @@ public interface Context {
 
     default void pop(Type type) {
         Type pop = pop();
-        if (!pop.equals(type)) throw new RuntimeException("Expected " + type + " but got " + pop);
+        if (!Objects.equals(pop.getSort(), type.getSort())) {
+            throw new RuntimeException("Expected " + type + " but got " + pop);
+        }
     }
 }

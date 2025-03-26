@@ -13,6 +13,9 @@ public interface PyCompileClass extends JvmClass {
             return false;
         }
         for (int i = 0; i < input.length; i++) {
+            if (types[i] == null) {
+                return true;
+            }
             if (!types[i].equals(input[i])) {
                 throw new CompilerException("Constructor parameter " + i + " is invalid (" + compiler.getLocation(this) + ")");
             }
@@ -30,4 +33,6 @@ public interface PyCompileClass extends JvmClass {
 
         return true;
     }
+
+    boolean isModule();
 }
