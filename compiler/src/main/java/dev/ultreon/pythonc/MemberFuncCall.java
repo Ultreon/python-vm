@@ -7,8 +7,8 @@ import java.util.Arrays;
 
 public class MemberFuncCall implements PyExpr {
     private final PyExpr parent;
-    private final String name;
-    private final PyExpr[] arguments;
+    public final String name;
+    public final PyExpr[] arguments;
     private final Location location;
 
     public MemberFuncCall(PyExpr parent, String name, PyExpr[] arguments, Location location) {
@@ -47,7 +47,7 @@ public class MemberFuncCall implements PyExpr {
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         compiler.writer.createArray(Arrays.asList(arguments), Type.getType(Object.class));
-        compiler.writer.invokeStatic("java/util/Map", "of", "()Ljava/util/Map;", true);
+        compiler.writer.createKwargs();
         compiler.writer.dynamicCall(name, "([Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;");
     }
 

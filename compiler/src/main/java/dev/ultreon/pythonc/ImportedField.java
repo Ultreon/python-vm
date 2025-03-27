@@ -12,7 +12,8 @@ record ImportedField(String name, Type type, String owner, Location location) im
 
     @Override
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-        compiler.writer.getStatic(owner, name, type.getDescriptor());
+        compiler.writer.loadClass(ownerClass(compiler));
+        compiler.writer.dynamicGetAttr(name);
     }
 
     @Override
@@ -29,57 +30,13 @@ record ImportedField(String name, Type type, String owner, Location location) im
 
     @Override
     public void set(MethodVisitor mv, PythonCompiler compiler, PyExpr visit) {
+        compiler.writer.loadClass(ownerClass(compiler));
         if (type.getSort() == Type.OBJECT) {
             visit.load(mv, compiler, visit.preload(mv, compiler, true), true);
             compiler.writer.dynamicSetAttr(name);
         } else {
             visit.load(mv, compiler, visit.preload(mv, compiler, false), false);
-            if (compiler.writer.getContext().pop() != type) {
-                int sort = visit.type(compiler).getSort();
-                if (sort == Type.OBJECT) {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                } else if (sort == Type.ARRAY) {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                } else if (sort == Type.VOID) {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                } else if (sort == Type.LONG) {
-                    if (type.getSort() == Type.DOUBLE) {
-                        mv.visitInsn(Opcodes.D2L);
-                    } else if (type.getSort() == Type.INT) {
-                        mv.visitInsn(Opcodes.L2I);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else if (sort == Type.DOUBLE) {
-                    if (type.getSort() == Type.LONG) {
-                        mv.visitInsn(Opcodes.L2D);
-                    } else if (type.getSort() == Type.INT) {
-                        mv.visitInsn(Opcodes.I2D);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else if (sort == Type.INT) {
-                    if (type.getSort() == Type.LONG) {
-                        mv.visitInsn(Opcodes.I2L);
-                    } else if (type.getSort() == Type.DOUBLE) {
-                        mv.visitInsn(Opcodes.I2D);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else if (sort == Type.FLOAT) {
-                    if (type.getSort() == Type.DOUBLE) {
-                        mv.visitInsn(Opcodes.F2D);
-                    } else if (type.getSort() == Type.INT) {
-                        mv.visitInsn(Opcodes.F2I);
-                    } else {
-                        throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                    }
-                } else {
-                    throw new RuntimeException("Cannot smart cast " + visit.type(compiler) + " to " + type);
-                }
-            }
-
-            mv.visitFieldInsn(Opcodes.PUTFIELD, owner, name, type.getDescriptor());
+            compiler.writer.dynamicSetAttr(name);
         }
     }
 

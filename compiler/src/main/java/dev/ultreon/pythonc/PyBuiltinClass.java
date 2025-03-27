@@ -7,8 +7,6 @@ import org.objectweb.asm.Type;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static dev.ultreon.pythonc.FuncCall.E_CLASS_NOT_IN_CP;
-
 public class PyBuiltinClass implements JvmClass {
     public final Type jvmName;
     public final Type jvmUnboxed;
@@ -79,20 +77,20 @@ public class PyBuiltinClass implements JvmClass {
     public @Nullable JvmField field(PythonCompiler compiler, String name) {
         boolean load = PythonCompiler.classCache.load(compiler, extName);
         if (!load)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(extName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + extName.getClassName());
         JvmClass extClass = PythonCompiler.classCache.get(extName);
         if (extClass == null)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(extName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + extName.getClassName());
         if (!(extClass instanceof JClass jClass))
             throw new RuntimeException("Unknown JVM typedName: " + extName.getClassName());
         JvmField field = jClass.field(compiler, name);
         if (field != null) return field;
         boolean load1 = PythonCompiler.classCache.load(compiler, jvmName);
         if (!load1)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + jvmName.getClassName());
         JvmClass jvmClass = PythonCompiler.classCache.get(jvmName);
         if (jvmClass == null)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + jvmName.getClassName());
         if (!(jvmClass instanceof JClass jClass1))
             throw new RuntimeException("Unknown JVM typedName: " + jvmName.getClassName());
         field = jClass1.field(compiler, name);
@@ -128,7 +126,7 @@ public class PyBuiltinClass implements JvmClass {
             boolean equals = jvmName.getClassName().equals(type.getClassName());
             if (!equals) {
                 if (!PythonCompiler.classCache.load(compiler, type))
-                    throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(type.getClassName(), compiler.getLocation(this)));
+                    throw new CompilerException("Can't find class: " + type.getClassName());
                 if (type.getSort() == Type.INT || type.getSort() == Type.LONG) {
                     if (this.pyName.equals("int")) return true;
                 } else if (type.getSort() == Type.FLOAT || type.getSort() == Type.DOUBLE) {
@@ -136,11 +134,11 @@ public class PyBuiltinClass implements JvmClass {
                 }
                 JvmClass jvmClass = PythonCompiler.classCache.get(type);
                 if (jvmClass == null)
-                    throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(type.getClassName(), compiler.getLocation(this)));
+                    throw new CompilerException("Can't find class: " + type.getClassName());
                 if (jvmClass instanceof JClass jClass) {
                     Class<?> type1 = jClass.getType();
                     if (type1 == null)
-                        throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(type.getClassName(), compiler.getLocation(this)));
+                        throw new CompilerException("Can't find class: " + type.getClassName());
                     equals = this.doesInherit(compiler, jClass);
                 }
             }
@@ -185,20 +183,20 @@ public class PyBuiltinClass implements JvmClass {
     public @Nullable JvmConstructor constructor(PythonCompiler compiler, Type[] paramTypes) {
         boolean load = PythonCompiler.classCache.load(compiler, extName);
         if (!load)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(extName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Extension class not found: " + extName.getClassName());
         JvmClass extClass = PythonCompiler.classCache.get(extName);
         if (extClass == null)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(extName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Extension class not found: " + extName.getClassName());
         if (!(extClass instanceof JClass extJClass))
             throw new RuntimeException("Unknown JVM typedName: " + extName.getClassName());
         JvmConstructor constructor = extJClass.constructor(compiler, paramTypes);
         if (constructor != null) return constructor;
         boolean load1 = PythonCompiler.classCache.load(compiler, jvmName);
         if (!load1)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("JVM class not found: " + extName.getClassName());
         JvmClass jvmClass = PythonCompiler.classCache.get(jvmName);
         if (jvmClass == null)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("JVM class not found: " + extName.getClassName());
         if (!(jvmClass instanceof JClass jvmJClass))
             throw new RuntimeException("Unknown JVM typedName: " + jvmName.getClassName());
         constructor = jvmJClass.constructor(compiler, paramTypes);
@@ -210,19 +208,19 @@ public class PyBuiltinClass implements JvmClass {
     @Override
     public JvmClass firstSuperClass(PythonCompiler compiler) {
         if (!PythonCompiler.classCache.load(compiler, jvmName)) {
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + jvmName.getClassName());
         }
 
         JvmClass jvmClass = PythonCompiler.classCache.get(jvmName);
         if (jvmClass == null)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + jvmName.getClassName());
         if (jvmClass instanceof PyBuiltinClass builtinClass) {
             if (jvmClass == this) {
                 try {
                     Class<?> type = Class.forName(jvmName.getClassName());
                     return type.getSuperclass() == null ? null : PythonCompiler.classCache.require(compiler, type.getSuperclass());
                 } catch (ClassNotFoundException e) {
-                    throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+                    throw new CompilerException("Can't find class: " + jvmName.getClassName());
                 }
             }
         }
@@ -239,12 +237,12 @@ public class PyBuiltinClass implements JvmClass {
     @Override
     public JvmClass[] interfaces(PythonCompiler compiler) {
         if (!PythonCompiler.classCache.load(compiler, jvmName)) {
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + jvmName.getClassName());
         }
 
         JvmClass jvmClass = PythonCompiler.classCache.get(jvmName);
         if (jvmClass == null)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Can't find class: " + jvmName.getClassName());
         if (jvmClass instanceof PyBuiltinClass builtinClass) {
             if (jvmClass == this) {
                 try {
@@ -255,7 +253,7 @@ public class PyBuiltinClass implements JvmClass {
                     }
                     return interfaces.toArray(new JvmClass[0]);
                 } catch (ClassNotFoundException e) {
-                    throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(jvmName.getClassName(), compiler.getLocation(this)));
+                    throw new CompilerException("Can't find class: " + jvmName.getClassName());
                 }
             }
         }
@@ -288,10 +286,10 @@ public class PyBuiltinClass implements JvmClass {
     private JvmClass extClass(PythonCompiler compiler) {
         boolean load = PythonCompiler.classCache.load(compiler, extName);
         if (!load)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(extName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Extension class not found: " + extName.getClassName());
         JvmClass extClass = PythonCompiler.classCache.get(extName);
         if (extClass == null)
-            throw new CompilerException(E_CLASS_NOT_IN_CP.formatted(extName.getClassName(), compiler.getLocation(this)));
+            throw new CompilerException("Extension class not found: " + extName.getClassName());
         if (!(extClass instanceof JClass jvmJClass))
             throw new RuntimeException("Unknown JVM typedName: " + extName.getClassName());
         return jvmJClass;

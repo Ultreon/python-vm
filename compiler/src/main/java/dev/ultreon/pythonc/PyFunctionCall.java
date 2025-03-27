@@ -28,21 +28,11 @@ public class PyFunctionCall implements PyExpr {
         if (jvmFunction.isStatic()) {
             if (jvmFunction instanceof PyBuiltinFunction) {
                 compiler.writer.createArray(arguments, Type.getType(Object.class));
-                compiler.writer.invokeStatic("java/util/Map", "of", "()Ljava/util/Map;", true);
+                compiler.writer.createKwargs();
                 compiler.writer.dynamicBuiltinCall(jvmFunction.name(), "([Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;");
                 return;
             }
-            if (jvmFunction.isDynamicCall()) {
-                compiler.writer.createArray(arguments, Type.getType(Object.class));
-                compiler.writer.invokeStatic("java/util/Map", "of", "()Ljava/util/Map;", true);
-
-                compiler.writer.invokeStatic(jvmFunction.owner(compiler).type(compiler).getInternalName(), jvmFunction.name(), "([Ljava/lang/Object;Ljava/util/Map;)" + jvmFunction.returnType(compiler).getDescriptor(), boxed);
-                return;
-            }
-            for (PyExpr argument : arguments) {
-                argument.load(mv, compiler, argument.preload(mv, compiler, boxed), boxed);
-            }
-            compiler.writer.invokeStatic(jvmFunction.owner(compiler).type(compiler).getInternalName(), jvmFunction.name(), "(" + Arrays.stream(jvmFunction.parameterTypes(compiler)).map(Type::getDescriptor).collect(Collectors.joining("")) + ")" + jvmFunction.returnType(compiler).getDescriptor(), boxed);
+            compiler.writer.dynamicCall(jvmFunction.ownerClass(compiler), arguments);
         } else {
             throw new CompilerException("Function is not static", location);
         }

@@ -2,8 +2,10 @@ package dev.ultreon.pythonc;
 
 import org.objectweb.asm.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.objectweb.asm.Opcodes.*;
@@ -41,6 +43,7 @@ public class JvmWriter {
         return pc.getClassSymbol(className);
     }
 
+    @Deprecated
     public void invokeStatic(String owner, String name, String signature, boolean isInterface) {
         Context context = getContext();
         Type methodType = Type.getMethodType(signature);
@@ -73,6 +76,7 @@ public class JvmWriter {
         }
     }
 
+    @Deprecated
     public void newInstance(String owner, String name, String signature, boolean isInterface, Runnable paramInit) {
         Context context = getContext();
         Type methodType = Type.getMethodType(signature);
@@ -82,6 +86,16 @@ public class JvmWriter {
         dup();
         paramInit.run();
         invokeSpecial(owner, "<init>", signature, isInterface);
+    }
+
+    public void newInstance(JvmClass owner, List<PyExpr> arguments) {
+        Context context = getContext();
+        Type methodType = Type.getMethodType("()V");
+        Type[] argumentTypes = methodType.getArgumentTypes();
+        List<PyExpr> args = new ArrayList<>();
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        JvmConstructor constructor = owner.constructor(pc, arguments.stream().map(expr -> expr.type(pc)).toArray(Type[]::new));
+        dynamicCall(owner, arguments);
     }
 
     private void newObject(Type objectType) {
@@ -151,6 +165,10 @@ public class JvmWriter {
         for (int i = argumentTypes.length - 1; i >= 0; i--) {
             Type arg = argumentTypes[i];
             Type pop = context.pop();
+
+            if (arg.getSort() != pop.getSort()) {
+                throw new RuntimeException("Expected " + pop.getClassName() + " to be " + arg.getClassName());
+            }
         }
 
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
@@ -442,458 +460,6 @@ public class JvmWriter {
         cast(type);
     }
 
-    public void addValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(IADD);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LADD);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LADD);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LADD);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DADD);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(DADD);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DADD);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(DADD);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DADD);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FADD);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(FADD);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FADD);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(FADD);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FADD);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left.equals(Type.getType(String.class)) && right.equals(Type.getType(String.class))) {
-            invokeVirtual("java/lang/String", "concat", "(Ljava/lang/String;)Ljava/lang/String;", false);
-            context.push(Type.getType(String.class));
-        } else {
-            throw new RuntimeException("Unsupported addition between " + left + " and " + right);
-        }
-    }
-
-    public void subtractValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(ISUB);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LSUB);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LSUB);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LSUB);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DSUB);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(DSUB);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DSUB);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(DSUB);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DSUB);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FSUB);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(FSUB);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FSUB);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(FSUB);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FSUB);
-            context.push(Type.FLOAT_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported subtraction between " + left + " and " + right);
-        }
-    }
-
-    public void multiplyValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(IMUL);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LMUL);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LMUL);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LMUL);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DMUL);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(DMUL);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DMUL);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(DMUL);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DMUL);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FMUL);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(FMUL);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FMUL);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(FMUL);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FMUL);
-            context.push(Type.FLOAT_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported multiplication between " + left + " and " + right);
-        }
-    }
-
-    public void divideValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(IDIV);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LDIV);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LDIV);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LDIV);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DDIV);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(DDIV);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DDIV);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.DOUBLE_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(DDIV);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DDIV);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FDIV);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(FDIV);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FDIV);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.FLOAT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(FDIV);
-            context.push(Type.FLOAT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.FLOAT_TYPE) {
-            mv.visitInsn(FDIV);
-            context.push(Type.FLOAT_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported division between " + left + " and " + right);
-        }
-    }
-
-    public void modValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(IREM);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LREM);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LREM);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LREM);
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported modulus between " + left + " and " + right);
-        }
-    }
-
-    public void andValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(IAND);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LAND);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LAND);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LAND);
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported and between " + left + " and " + right);
-        }
-    }
-
-    public void orValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(IOR);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LOR);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LOR);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LOR);
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported or between " + left + " and " + right);
-        }
-    }
-
-    public void xorValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(IXOR);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LXOR);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LXOR);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(LXOR);
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported xor between " + left + " and " + right);
-        }
-    }
-
-    public void floorDivideValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            invokeStatic("java/lang/Math", "floorDiv", "(II)I", false);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            invokeStatic("java/lang/Math", "floorDiv", "(JI)J", false);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            invokeStatic("java/lang/Math", "floorDiv", "(JI)J", false);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            invokeStatic("java/lang/Math", "floorDiv", "(JJ)J", false);
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported floorDiv between " + left + " and " + right);
-        }
-    }
-
-    public void powValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.DOUBLE_TYPE && right == Type.DOUBLE_TYPE) {
-            invokeStatic("java/lang/Math", "pow", "(DD)D", false);
-            context.push(Type.DOUBLE_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported pow between " + left + " and " + right);
-        }
-    }
-
-    public void notValue() {
-        Context context = getContext();
-        Type value = context.pop();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (value == Type.INT_TYPE) {
-            mv.visitInsn(ICONST_M1); // Push -1
-            mv.visitInsn(IXOR);      // Perform value ^ -1
-            context.push(Type.INT_TYPE);
-        } else if (value == Type.LONG_TYPE) {
-            mv.visitLdcInsn(-1L); // Push -1 as a long
-            mv.visitInsn(LXOR);   // Perform value ^ -1
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported not for " + value);
-        }
-    }
-
-    public void positiveValue() {
-        Context context = getContext();
-        Type pop = context.pop();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (pop == Type.BOOLEAN_TYPE) {
-            // Assume boolean value is on the stack (1 for true, 0 for false)
-            Label isFalse = new Label();
-            Label end = new Label();
-
-            mv.visitJumpInsn(IFEQ, isFalse); // If value == 0 (false), jump
-            mv.visitInsn(ICONST_1);  // Push 1 for true
-            mv.visitJumpInsn(GOTO, end);
-            mv.visitLabel(isFalse);
-            mv.visitInsn(ICONST_0);  // Push 0 for false
-            mv.visitLabel(end);
-
-            context.push(Type.INT_TYPE);
-        } else {
-            context.push(pop);
-        }
-    }
-
-    public void negateValue() {
-        Context context = getContext();
-        Type value = context.pop();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (value == Type.INT_TYPE) {
-            mv.visitInsn(INEG);
-            context.push(Type.INT_TYPE);
-        } else if (value == Type.LONG_TYPE) {
-            mv.visitInsn(LNEG);
-            context.push(Type.LONG_TYPE);
-        } else if (value == Type.DOUBLE_TYPE) {
-            mv.visitInsn(DNEG);
-            context.push(Type.DOUBLE_TYPE);
-        } else if (value == Type.FLOAT_TYPE) {
-            mv.visitInsn(FNEG);
-            context.push(Type.FLOAT_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported negate for " + value);
-        }
-    }
-
-    public void leftShiftValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(ISHL);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LSHL);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(L2I);
-            mv.visitInsn(LSHL);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(L2I);
-            mv.visitInsn(LSHL);
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported left shift between " + left + " and " + right);
-        }
-    }
-
-    public void rightShiftValues() {
-        Context context = getContext();
-        Type left = context.pop();
-        Type right = context.pop();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        if (left == Type.INT_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(ISHR);
-            context.push(Type.INT_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.INT_TYPE) {
-            mv.visitInsn(LSHR);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.INT_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(L2I);
-            mv.visitInsn(LSHR);
-            context.push(Type.LONG_TYPE);
-        } else if (left == Type.LONG_TYPE && right == Type.LONG_TYPE) {
-            mv.visitInsn(L2I);
-            mv.visitInsn(LSHR);
-            context.push(Type.LONG_TYPE);
-        } else {
-            throw new RuntimeException("Unsupported right shift between " + left + " and " + right);
-        }
-    }
-
     public void jump(Label endLabel) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitJumpInsn(Opcodes.GOTO, endLabel);
@@ -905,14 +471,16 @@ public class JvmWriter {
         Type from = context.peek();
         if (to.getSort() == Type.OBJECT) {
             if (!from.equals(to)) {
-                if (from.equals(Type.BYTE_TYPE)) invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+                if (from.equals(Type.BYTE_TYPE))
+                    invokeStatic("java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
                 if (from.equals(Type.SHORT_TYPE))
                     invokeStatic("java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
                 if (from.equals(Type.CHAR_TYPE))
                     invokeStatic("java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
                 if (from.equals(Type.INT_TYPE))
                     invokeStatic("java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-                if (from.equals(Type.LONG_TYPE)) invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+                if (from.equals(Type.LONG_TYPE))
+                    invokeStatic("java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
                 if (from.equals(Type.FLOAT_TYPE))
                     invokeStatic("java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
                 if (from.equals(Type.DOUBLE_TYPE))
@@ -936,6 +504,10 @@ public class JvmWriter {
                     case Type.LONG -> mv.visitInsn(L2I);
                     case Type.FLOAT -> mv.visitInsn(F2I);
                     case Type.DOUBLE -> mv.visitInsn(D2I);
+                    case Type.OBJECT -> {
+                        mv.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
+                        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+                    }
                     default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
 
@@ -963,6 +535,10 @@ public class JvmWriter {
                     case Type.LONG -> mv.visitInsn(I2L);
                     case Type.FLOAT -> mv.visitInsn(F2I);
                     case Type.DOUBLE -> mv.visitInsn(D2I);
+                    case Type.OBJECT -> {
+                        mv.visitTypeInsn(CHECKCAST, "java/lang/Integer");
+                        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false);
+                    }
                     default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
                 context.push(Type.INT_TYPE);
@@ -979,6 +555,10 @@ public class JvmWriter {
                     }
                     case Type.FLOAT -> mv.visitInsn(F2L);
                     case Type.DOUBLE -> mv.visitInsn(D2L);
+                    case Type.OBJECT -> {
+                        mv.visitTypeInsn(CHECKCAST, "java/lang/Long");
+                        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Long", "longValue", "()J", false);
+                    }
                     default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
                 context.push(Type.LONG_TYPE);
@@ -992,6 +572,10 @@ public class JvmWriter {
                         // do nothing
                     }
                     case Type.DOUBLE -> mv.visitInsn(D2F);
+                    case Type.OBJECT -> {
+                        mv.visitTypeInsn(CHECKCAST, "java/lang/Float");
+                        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Float", "floatValue", "()F", false);
+                    }
                     default -> throw new RuntimeException("Unsupported cast to " + to);
                 }
                 context.push(Type.FLOAT_TYPE);
@@ -1004,6 +588,10 @@ public class JvmWriter {
                     case Type.FLOAT -> mv.visitInsn(F2D);
                     case Type.DOUBLE -> {
                         // do nothing
+                    }
+                    case Type.OBJECT -> {
+                        mv.visitTypeInsn(CHECKCAST, "java/lang/Double");
+                        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Double", "doubleValue", "()D", false);
                     }
                     default -> throw new RuntimeException("Unsupported cast from " + from + " to " + to);
                 }
@@ -1100,18 +688,20 @@ public class JvmWriter {
         getContext().push(Type.SHORT_TYPE);
     }
 
-    public void lineNumber(int line) {
+    public void lineNumber(int line, Label label) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         if (mv == null) {
             return;
         }
+
+        mv.visitLineNumber(line, label);
     }
 
     public void jumpIfEqual(Label label) {
         Context context = getContext();
         Type pop = context.pop();
         smartCast(pop, getContext().peek());
-        context.pop();
+        context.pop(Type.BOOLEAN_TYPE);
 
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitJumpInsn(Opcodes.IFEQ, label);
@@ -1381,10 +971,6 @@ public class JvmWriter {
     public void localVariable(String name, String desc, String signature, int line, Label start, Label end, int index) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         mv.visitLocalVariable(name, desc, signature, start, end, index);
-
-        Label label = new Label();
-        mv.visitLabel(label);
-        mv.visitLineNumber(line, label);
     }
 
     public void end() {
@@ -1625,7 +1211,8 @@ public class JvmWriter {
     public void smartCast(Type to) {
         var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
         Type pop = getContext().peek();
-        smartCast(pop, to);
+        if ((pop.getSort() != Type.OBJECT && pop.getSort() != Type.ARRAY) || (to.getSort() != Type.OBJECT && to.getSort() != Type.ARRAY)) smartCast(pop, to);
+        else cast(to);
         getContext().pop(pop);
         getContext().push(to);
     }
@@ -1651,10 +1238,10 @@ public class JvmWriter {
             dup();
             pushStackByte(i);
             argument.load(mv, pc, argument.preload(mv, pc, false), false);
-            if (argument.type(pc).getSort() != Type.OBJECT && argument.type(pc).getSort() != Type.ARRAY) {
+            if (getContext().peek().getSort() != Type.OBJECT && argument.type(pc).getSort() != Type.ARRAY) {
                 box(argument.type(pc));
             }
-            if (!argument.type(pc).equals(type)) {
+            if (!getContext().peek().equals(type)) {
                 cast(type);
             }
 
@@ -1819,6 +1406,18 @@ public class JvmWriter {
         invokeDynamic("__ge__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
     }
 
+    private void dynamicCall() {
+        invokeDynamic("__call__", "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;");
+    }
+
+    public void dynamicCall(PyExpr owner, List<PyExpr> arguments) {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        owner.load(mv, pc, owner.preload(mv, pc, false), false);
+        createArray(arguments, Type.getType(Object.class));
+        createKwargs();
+        dynamicCall();
+    }
+
     public void returnValue(Type type) {
         Context context = getContext();
         if (!context.needsPop()) {
@@ -1852,5 +1451,65 @@ public class JvmWriter {
         mv.visitLdcInsn(type);
         Context context = getContext();
         context.push(type);
+    }
+
+    public void createKwargs() {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        mv.visitMethodInsn(INVOKESTATIC, "java/util/Collections", "emptyMap", "()Ljava/util/Map;", false);
+        Context context = getContext();
+        context.push(Type.getType(Map.class));
+    }
+
+    public void writeArgs(List<PyExpr> arguments, Type[] types) {
+        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        for (int i = 0, argumentsSize = arguments.size(); i < argumentsSize; i++) {
+            PyExpr argument = arguments.get(i);
+            argument.load(mv, pc, argument.preload(mv, pc, false), false);
+            if (types[i] == null || types[i].getSort() == Type.OBJECT) {
+                if (argument.type(pc).getSort() != Type.ARRAY && argument.type(pc).getSort() != Type.OBJECT) {
+                    pc.writer.box(argument.type(pc));
+                }
+            }
+
+            if (types[i] != null) {
+                if (types[i].getSort() != Type.OBJECT && types[i].getSort() != Type.ARRAY) {
+                    pc.writer.unbox(types[i]);
+                }
+                pc.writer.cast(types[i]);
+            } else {
+                pc.writer.cast(Type.getType(Object.class));
+            }
+        }
+    }
+
+    public void loadValue(int index, Type type) {
+        switch (type.getSort()) {
+            case Type.BYTE, Type.SHORT, Type.INT, Type.CHAR, Type.BOOLEAN -> {
+                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                mv.visitVarInsn(ILOAD, index);
+                getContext().push(type);
+            }
+            case Type.LONG -> {
+                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                mv.visitVarInsn(LLOAD, index);
+                getContext().push(type);
+            }
+            case Type.FLOAT -> {
+                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                mv.visitVarInsn(FLOAD, index);
+                getContext().push(type);
+            }
+            case Type.DOUBLE -> {
+                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                mv.visitVarInsn(DLOAD, index);
+                getContext().push(type);
+            }
+            case Type.OBJECT, Type.ARRAY -> {
+                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                mv.visitVarInsn(ALOAD, index);
+                getContext().push(type);
+            }
+            default -> throw new RuntimeException("Unknown type: " + type);
+        }
     }
 }

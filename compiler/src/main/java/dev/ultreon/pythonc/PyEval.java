@@ -5,10 +5,6 @@ import org.checkerframework.checker.nullness.qual.Nullable;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-import java.util.List;
-
-import static org.objectweb.asm.Opcodes.*;
-
 class PyEval implements PyExpr {
     private final PythonCompiler compiler;
     private final ParserRuleContext ctx;
@@ -39,11 +35,15 @@ class PyEval implements PyExpr {
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         if (finalAddition != null) {
             loadValue(mv, compiler, expr(finalValue));
-            loadAddition(compiler);
+            compiler.writer.cast(Type.getType(Object.class));
+            loadValue(mv, compiler, expr(finalAddition));
+            compiler.writer.cast(Type.getType(Object.class));
             doOperation(mv, compiler);
             return;
         }
         loadValue(mv, compiler, expr(finalValue));
+        compiler.writer.cast(Type.getType(Object.class));
+        doOperation(mv, compiler);
     }
 
     private PyExpr expr(Object finalValue) {
@@ -75,15 +75,6 @@ class PyEval implements PyExpr {
         return pyExpr.type(compiler);
     }
 
-    private Type loadAddition(PythonCompiler compiler) {
-        PyExpr pyExpr = compiler.loadExpr(ctx, finalAddition);
-        if (this.operator == Operator.POW) {
-            compiler.writer.smartCast(Type.DOUBLE_TYPE);
-        }
-
-        return pyExpr.type(compiler);
-    }
-
     private void doOperation(MethodVisitor mv, PythonCompiler compiler) {
         switch (operator) {
             case ADD -> compiler.writer.dynamicAdd();
@@ -101,8 +92,10 @@ class PyEval implements PyExpr {
             case UNARY_NOT -> compiler.writer.dynamicNot();
             case UNARY_MINUS -> compiler.writer.dynamicNeg();
             case UNARY_PLUS -> compiler.writer.dynamicPos();
-            case null, default ->
-                    throw new RuntimeException("No supported matching operator found for:\n" + ctx.getText());
+            case null -> {
+
+            }
+            default -> throw new RuntimeException("No supported matching operator found for:\n" + ctx.getText());
         }
     }
 

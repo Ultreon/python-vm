@@ -1,7 +1,9 @@
 package org.python._internal;
 
-import java.lang.invoke.*;
-import java.lang.reflect.Method;
+import java.lang.invoke.CallSite;
+import java.lang.invoke.ConstantCallSite;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Map;
 import java.util.Set;
 
@@ -117,6 +119,12 @@ public class DynamicCalls {
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }
+        } else if (name.equals("__div__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__div__", MethodType.methodType(Object.class, Object.class, Object.class)));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
         } else if (name.equals("__lshift__")) {
             try {
                 return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__lshift__", MethodType.methodType(Object.class, Object.class, Object.class)));
@@ -180,6 +188,18 @@ public class DynamicCalls {
         } else if (name.equals("__ge__")) {
             try {
                 return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__ge__", MethodType.methodType(Object.class, Object.class, Object.class)));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } else if (name.equals("__call__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__call__", MethodType.methodType(Object.class, Object.class, Object[].class, Map.class)));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } else if (name.equals("__not__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__not__", MethodType.methodType(Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }

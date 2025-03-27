@@ -97,8 +97,7 @@ record PyObjectRef(String name, Location location) implements Symbol {
             }
             case PyObjectRef objectRef -> {
                 // Set variable to "<typedName>.class"
-                compiler.writer.loadConstant(name);
-                compiler.writer.invokeStatic("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;", false);
+                compiler.writer.loadConstant(compiler.imports.get(objectRef.name).type(compiler));
 
                 // Set variable
                 compiler.writer.storeInt(compiler.currentVariableIndex++);
@@ -116,8 +115,7 @@ record PyObjectRef(String name, Location location) implements Symbol {
                     }
                     case PyObjectRef objectRef -> {
                         // Set variable to "<typedName>.class"
-                        compiler.writer.loadConstant(name);
-                        compiler.writer.invokeStatic("java/lang/Class", "forName", "(Ljava/lang/String;)Ljava/lang/Class;", false);
+                        compiler.writer.loadConstant(compiler.imports.get(objectRef.name).type(compiler));
 
                         // Set variable
                         compiler.writer.storeInt(compiler.currentVariableIndex++);

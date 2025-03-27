@@ -19,12 +19,10 @@ public class PyModule implements JvmClass, PyCompileClass {
     public final Map<String, List<JvmFunction>> methods;
     private Location location;
 
-    public PyModule(Path path, Location location) {
+    public PyModule(Path path, String name, Location location) {
         this.path = path;
         this.location = location;
-        String internalNamePre = path.toString().replace(File.pathSeparatorChar, '/');
-        String internalName = internalNamePre.substring(0, internalNamePre.length() - ".py".length()) + "Py";
-        this.owner = Type.getObjectType(Character.toUpperCase(internalName.charAt(0)) + internalName.substring(1, internalName.length()));
+        this.owner = Type.getObjectType(name);
         this.fields = new LinkedHashMap<>();
         this.methods = new LinkedHashMap<>();
     }

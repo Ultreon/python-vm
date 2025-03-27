@@ -29,7 +29,7 @@ public class PyLocalVariables {
 
         Object preloaded = expr.preload(mv, compiler, false);
         expr.load(mv, compiler, preloaded, boxed);
-        compiler.writer.box(expr.type(compiler));
+        compiler.writer.box(compiler.writer.getContext().peek());
         compiler.writer.storeObject(currentVariableIndex, Type.getType(Object.class));
         currentVariableIndex++;
 

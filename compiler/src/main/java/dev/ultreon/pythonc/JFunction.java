@@ -94,10 +94,11 @@ public class JFunction implements JvmFunction {
     public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
         Type methodType = Type.getMethodType(returnType(compiler), parameterTypes(compiler));
         if (Modifier.isStatic(method.getModifiers())) {
-            compiler.writer.invokeStatic(owner(compiler).type(compiler).getInternalName(), name, methodType.getDescriptor(), boxed);
+            compiler.writer.loadClass(Type.getType(owner));
+            compiler.writer.dynamicCall(name, methodType.getDescriptor());
             return;
         }
-        compiler.writer.invokeVirtual(owner(compiler).type(compiler).getInternalName(), name, methodType.getDescriptor(), boxed);
+        compiler.writer.dynamicCall(name, methodType.getDescriptor());
     }
 
     @Override

@@ -474,6 +474,7 @@ public class ClassUtils {
     public static Object not(Object self) {
         if (self instanceof PyObject) return ((PyObject) self).__not__();
         if (self instanceof Boolean) return !((Boolean) self);
+        if (isInt(self)) return ~((Number) self).longValue();
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __not__()");
     }
 

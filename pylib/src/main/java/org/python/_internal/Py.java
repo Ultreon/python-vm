@@ -33,6 +33,26 @@ public class Py {
         return ClassUtils.call(attribute, args, kwargs);
     }
 
+    public static Object __not__(Object self) {
+        return ClassUtils.not(self);
+    }
+
+    public static Object __neg__(Object self) {
+        return ClassUtils.neg(self);
+    }
+
+    public static Object __pos__(Object self) {
+        return ClassUtils.pos(self);
+    }
+
+    public static Object __abs__(Object self) {
+        return ClassUtils.abs(self);
+    }
+
+    public static Object __bool__(Object self) {
+        return ClassUtils.getBool(self);
+    }
+
     public static Object __doc__(Object[] args, Map<String, Object> kwargs) {
         return "";
     }
@@ -99,6 +119,14 @@ public class Py {
 
     public static Object __div__(Object self, Object other) {
         return ClassUtils.div(self, other);
+    }
+
+    public static Object __floordiv__(Object self, Object other) {
+        return ClassUtils.floordiv(self, other);
+    }
+
+    public static Object __truediv__(Object self, Object other) {
+        return ClassUtils.truediv(self, other);
     }
 
     public static Object __mod__(Object self, Object other) {

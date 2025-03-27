@@ -4,11 +4,11 @@ from java.lang import Runnable, System, Long, Exception, Long
 from java.util import Objects
 from java.util import Random
 
-# STRING = "Hello, world!"
+STRING = "Hello, world!"
 
-# HASHCODE = Objects.hashCode("Hello, world!")
-# INTEGER = 42
-# FLOAT = 3.14
+HASHCODE = Objects.hashCode("Hello, world!")
+INTEGER = 42
+FLOAT = 3.14
 
 
 class Testing(ActionListener):
@@ -52,16 +52,21 @@ TEST_CLASS = TestClass(3, 6)
 def init():
     print(Objects.hashCode("Hello, world!"))
 
-    # print(HASHCODE)
-    # print(INTEGER)
-    # print(FLOAT)
-    # print(STRING)
+    print(HASHCODE)
+    print(INTEGER)
+    print(FLOAT)
+    print(STRING)
 
-    # number = 3.141592653589793
+    number = 3.141592653589793
 
     testing = Testing()
     frame = testing.frame
-    frame.hello_world = "Hello, world!"
+    frame.hello = "Hello Señor"
+
+    hello = "Hello World"
+
+    print("Frame says:", frame.hello)
+    print("Me says:", hello)
 
     test_class = TestClass(1, 2)
     test_class.run()
@@ -79,9 +84,7 @@ def init():
     listeners = button.getActionListeners()
     print(listeners)
 
-    # print("Hey there!", number)
-
-    # Exception("Hello, world!").printStackTrace()
+    print("Hey there!", number)
 
     # if number != 3.14:
     #     print("Lucky!")
@@ -123,60 +126,60 @@ def init():
     # else:
     #     print("Unlucky!")
 
-    # value = 10 * 3.14
-    # print(value)
-    #
-    # value = 10 + 3.14
-    # print(value)
-    #
-    # value = 10 - number
-    # print(value)
-    #
-    # value = 10 / number
-    # print(value)
-    #
-    # value = 104
-    # print(value)
-    #
-    # # Floor division
-    # value = 10 // 3
-    # print(value)
-    #
-    # # Modulo
-    # value = 10 % 3
-    # print(value)
-    #
-    # # Exponentiation
-    # value = 10 ** 3
-    # print(value)
-    #
-    # # Bitwise AND
-    # value = 10 & 3
-    # print(value)
-    #
-    # # Bitwise OR
-    # value = 10 | 3
-    # print(value)
-    #
-    # # Bitwise XOR
-    # value = 10 ^ 3
-    # print(value)
-    #
-    # # Bitwise NOT
-    # value = ~10
-    # print(value)
-    #
-    # # Bitwise left shift
-    # value = 10 << 3
-    # print(value)
-    #
-    # # Bitwise right shift
-    # value = 10 >> 3
-    # print(value)
-    #
-    # another_value = None
-    # print(another_value)
-    #
+    value = 10 * 3.14
+    print(value)
+
+    value = 10 + 3.14
+    print(value)
+
+    value = 10 - number
+    print(value)
+
+    value = 10 / number
+    print(value)
+
+    value = 104
+    print(value)
+
+    # Floor division
+    value = 10 // 3
+    print(value)
+
+    # Modulo
+    value = 10 % 3
+    print(value)
+
+    # Exponentiation
+    value = 10 ** 3
+    print(value)
+
+    # Bitwise AND
+    value = 10 & 3
+    print(value)
+
+    # Bitwise OR
+    value = 10 | 3
+    print(value)
+
+    # Bitwise XOR
+    value = 10 ^ 3
+    print(value)
+
+    # Bitwise NOT
+    value = ~10
+    print(value)
+
+    # Bitwise left shift
+    value = 10 << 3
+    print(value)
+
+    # Bitwise right shift
+    value = 10 >> 3
+    print(value)
+
+    another_value = None
+    print(another_value)
+
     # i = 0
     # while i < 10:
     #     print(i)
@@ -184,7 +187,7 @@ def init():
     #     i = i + 1
     # else:
     #     print("Done!")
-    #
+
     # i = 0
     # while i < 10:
     #     print(i)
@@ -195,8 +198,4 @@ def init():
     #         break
     # else:
     #     print("Done!")
-
-# def init():
-#     name = "lol"
-#     name = 3
 

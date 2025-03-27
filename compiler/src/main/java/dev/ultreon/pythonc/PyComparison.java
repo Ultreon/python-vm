@@ -55,45 +55,45 @@ class PyComparison implements PyExpr {
                 }
                 case Integer s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.INT_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case Float s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.FLOAT_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case Long s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.LONG_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case Double s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.DOUBLE_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case Character s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.CHAR_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case Byte s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.BYTE_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case Short s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.SHORT_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case Boolean s -> {
                     compiler.writer.loadConstant(s);
-                    compiler.writer.box(Type.BOOLEAN_TYPE);
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case PyExpr expr -> {
                     expr.load(mv, compiler, expr.preload(mv, compiler, false), false);
-                    compiler.writer.box(expr.type(compiler));
+                    compiler.writer.cast(Type.getType(Object.class));
                 }
                 case null, default -> throw new UnsupportedOperationException("Not implemented: " + visit.getClass());
             }
 
             Context context = compiler.getContext(Context.class);
-            context.push(Type.BOOLEAN_TYPE);
+            context.push(Type.getType(Object.class));
 
             switch (comparator) {
                 case EQ -> compiler.writer.dynamicEq();

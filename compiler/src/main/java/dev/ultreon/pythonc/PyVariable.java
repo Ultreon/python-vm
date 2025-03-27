@@ -2,7 +2,6 @@ package dev.ultreon.pythonc;
 
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 
 import java.util.Objects;
@@ -40,35 +39,35 @@ public final class PyVariable implements Symbol {
             case Type.ARRAY, Type.OBJECT -> compiler.writer.loadObject(index, type);
             case Type.BOOLEAN -> {
                 compiler.writer.loadBoolean(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             case Type.CHAR -> {
                 compiler.writer.loadChar(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             case Type.DOUBLE -> {
                 compiler.writer.loadDouble(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             case Type.FLOAT -> {
                 compiler.writer.loadFloat(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             case Type.INT -> {
                 compiler.writer.loadInt(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             case Type.LONG -> {
                 compiler.writer.loadLong(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             case Type.SHORT -> {
                 compiler.writer.loadShort(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             case Type.BYTE -> {
                 compiler.writer.loadByte(index);
-                compiler.writer.box(type);
+                compiler.writer.cast(Type.getType(Object.class));
             }
             default -> {
                 throw new RuntimeException("Unsupported type: " + type);

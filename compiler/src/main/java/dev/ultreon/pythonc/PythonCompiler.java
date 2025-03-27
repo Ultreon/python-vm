@@ -229,7 +229,6 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             System.out.println();
         }
 
-        if (tree instanceof ParserRuleContext context) writer.lineNumber(context.getStart().getLine());
         Object visit = super.visit(tree);
         if (visit == null) {
             String simpleName = tree.getClass().getSimpleName();
@@ -266,28 +265,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 case List<?> list -> {
                     for (Object o : list) {
                         switch (o) {
-                            case FuncCall funcCall -> {
-                                if (mv == null) {
-                                    throw new RuntimeException("Not writing a method:\n" + ctx.getText());
-                                }
-
-                                funcCall.write(mv, this);
-
-                                Type type = funcCall.type(this);
-                                if (type.equals(Type.VOID_TYPE)) {
-                                    continue;
-                                }
-
-                                writer.pop();
-                            }
                             case List<?> list1 -> {
                                 for (Object o1 : list1) {
-                                    if (o1 instanceof FuncCall funcCall) {
+                                    if (o1 instanceof MemberFuncCall funcCall) {
                                         if (mv == null) {
                                             throw new RuntimeException("Not writing a method:\n" + ctx.getText());
                                         }
 
-                                        funcCall.write(mv, this);
+                                        MethodVisitor mv = this.mv == null ? rootInitMv : this.mv;
+                                        funcCall.load(mv, this, funcCall.preload(mv, this, false), false);
                                         Type type = funcCall.type(this);
                                         if (type.equals(Type.VOID_TYPE)) {
                                             continue;
@@ -435,9 +421,11 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         // Jump to loop start
         writer.jump(loopStart);
+        writer.lineNumber(ctx.start.getLine(), loopStart);
 
         if (elseBlock != null) {
             writer.label(elseBlock);
+            writer.lineNumber(ctx.else_block().start.getLine(), elseBlock);
 
             // region Else(block)
             PythonParser.BlockContext elseBlockContext = ctx.else_block().block();
@@ -452,6 +440,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         // Loop end:
         writer.label(loopEnd);
+        writer.lineNumber(ctx.stop.getLine(), loopEnd);
 
         return Unit.Instance;
     }
@@ -466,6 +455,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Label elifLabel = null;
         if (elifStmtContext != null) {
             elifLabel = new Label();
+            writer.lineNumber(elifStmtContext.start.getLine(), elifLabel);
         }
 
         IfStatementContext context = new IfStatementContext(elifLabel, endLabel);
@@ -481,11 +471,8 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         throw new RuntimeException("Not writing a method:\n" + ctx.getText());
                     }
                     writer.loadConstant(pyConstant.value());
-                    writer.box(Type.BOOLEAN_TYPE);
-                    writer.cast(Type.getType(Object.class));
+                    writer.smartCast(Type.BOOLEAN_TYPE);
                     writer.pushTrue();
-                    writer.box(Type.BOOLEAN_TYPE);
-                    writer.cast(Type.getType(Object.class));
                 }
                 case PyExpr pyExpr -> {
                     if (mv == null) {
@@ -498,15 +485,13 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         writer.cast(Type.getType(Boolean.class));
                         writer.unbox(Type.BOOLEAN_TYPE);
                         writer.pushTrue();
-                        writer.unbox(Type.BOOLEAN_TYPE);
                     } else if (type != Type.BOOLEAN_TYPE) {
                         throw new RuntimeException("Expected boolean, got " + type.getClassName());
                     } else {
                         pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
-                        writer.box(Type.BOOLEAN_TYPE);
-                        writer.cast(Type.getType(Object.class));
-                        writer.pushTrue();
+                        writer.cast(Type.getType(Boolean.class));
                         writer.unbox(Type.BOOLEAN_TYPE);
+                        writer.pushTrue();
                     }
                 }
                 case Boolean b -> {
@@ -559,11 +544,13 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         writer.label(elseLabel); // Mark the else label (jumped here if the condition is false)
         PythonParser.Else_blockContext elseBlockContext = ctx.else_block();
         if (elseBlockContext != null) {
+            writer.lineNumber(elseBlockContext.start.getLine(), elseLabel);
             visit(elseBlockContext);
         }
 
         // End label to exit if-else
         writer.label(endLabel);
+        writer.lineNumber(ctx.stop.getLine(), endLabel);
         this.popContext();
 
         return Unit.Instance;
@@ -595,15 +582,18 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         // Handle elif chain
         if (nextLabel != null) {
             writer.label(nextLabel);
+            writer.lineNumber(ctx.start.getLine(), nextLabel);
             visit(ctx.elif_stmt());
         }
 
         // Else block
         if (elseLabel != null) {
             writer.label(elseLabel);
+            writer.lineNumber(ctx.else_block().start.getLine(), elseLabel);
             visit(ctx.else_block());
         }
 
+        writer.lineNumber(ctx.stop.getLine(), elseLabel);
         writer.label(endLabel);
 
         return Unit.Instance;
@@ -798,8 +788,10 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         endLabel = new Label();
         endLabel.info = 100000;
+        writer.lineNumber(ctx.stop.getLine(), endLabel);
         startLabel = new Label();
         startLabel.info = 0;
+        writer.lineNumber(ctx.start.getLine(), startLabel);
 
         try {
             if (mv != rootInitMv) mv.visitCode();
@@ -811,6 +803,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             Label blockStart = new Label();
             FunctionContext functionContext = new FunctionContext();
             pushContext(functionContext);
+            writer.lineNumber(ctx.start.getLine(), blockStart);
 
             visit(block);
             definingFunction = oldDefiningFunction;
@@ -1172,10 +1165,10 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             if (visit instanceof List<?> list) {
                 for (int i = 0, listSize = list.size(); i < listSize; i++) {
                     Object o = list.get(i);
-                    if (o instanceof FuncCall func) {
+                    if (o instanceof MemberFuncCall func) {
                         var arguments = func.arguments;
                         if (arguments != null) {
-                            Symbol symbol = imports.get(func.name());
+                            Symbol symbol = imports.get(func.name);
                             Type owner = func.owner(this);
                             if (owner == null) {
                                 imports.get("implements");
@@ -1496,6 +1489,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         flags.set(F_CPL_ASSIGN);
         try {
             curLabel = new Label();
+            writer.lineNumber(ctx.start.getLine(), curLabel);
             TerminalNode name1 = ctx.NAME();
             @Nullable String name = name1 == null ? null : name1.getText();
 
@@ -1635,17 +1629,62 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         throw new RuntimeException("Type for variable assignment wasn't found.");
                     }
 
-                    FieldVisitor fieldVisitor = cv.visitField(ACC_PUBLIC + ACC_STATIC, name, type.getDescriptor(), null, null);
-                    fieldVisitor.visitEnd();
-
                     symbols.put(name, new ImportedField(name, type, getName(), getLocation(ctx)));
 
                     if (cv == rootCw) {
+                        MethodVisitor getterMethod = cv.visitMethod(ACC_PUBLIC + ACC_STATIC, getterName(name), "()" + type.getDescriptor(), null, null);
+                        @Nullable final String finalName = name;
+                        swapMv(getterMethod, () -> {
+                            if (definingModule != null) {
+                                writer.loadClass(definingModule);
+                            } else {
+                                throw new RuntimeException("Not in root class");
+                            }
+                            writer.dynamicGetAttr(finalName);
+                            writer.returnValue(type);
+                        });
+                        getterMethod.visitMaxs(0, 0);
+                        getterMethod.visitEnd();
+
+                        MethodVisitor setterMethod = cv.visitMethod(ACC_PUBLIC + ACC_STATIC, setterName(name), "(" + type.getDescriptor() + ")V", null, null);
+                        swapMv(setterMethod, () -> {
+                            mv.visitParameter("val", 0);
+                            if (definingModule != null) {
+                                writer.loadClass(definingModule);
+                            } else {
+                                throw new RuntimeException("Not in root class");
+                            }
+                            writer.loadValue(0, type);
+                            writer.cast(Type.getType(Object.class));
+                            writer.dynamicSetAttr(finalName);
+                            writer.returnVoid();
+                        });
+                        setterMethod.visitMaxs(0, 0);
+                        setterMethod.visitEnd();
+
                         MethodVisitor rootInitMv1 = rootInitMv;
-                        loadConstant(ctx, visit1, rootInitMv1);
-                        Context context = getContext(Context.class);
-                        context.pop();
-                        rootInitMv1.visitFieldInsn(PUTSTATIC, getName(), name, type.getDescriptor());
+                        swapMv(rootInitMv1, () -> {
+                            if (definingModule != null) {
+                                writer.loadClass(definingModule);
+                            } else {
+                                throw new RuntimeException("Not in root class");
+                            }
+                            switch (visit1) {
+                                case PyExpr pyExpr -> pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
+                                case String string -> writer.loadConstant(string);
+                                case Byte byteValue -> writer.loadConstant(byteValue);
+                                case Short shortValue -> writer.loadConstant(shortValue);
+                                case Integer integer -> writer.loadConstant(integer);
+                                case Boolean booleanValue -> writer.loadConstant(booleanValue);
+                                case Long longValue -> writer.loadConstant(longValue);
+                                case Float floatValue -> writer.loadConstant(floatValue);
+                                case Double doubleValue -> writer.loadConstant(doubleValue);
+                                case Character charValue -> writer.loadConstant(charValue);
+                                default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
+                            }
+                            writer.cast(Type.getType(Object.class));
+                            writer.dynamicSetAttr(finalName);
+                        });
                     } else {
                         throw new RuntimeException("Not in root class");
                     }
@@ -1698,7 +1737,6 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     }
                 } else {
                     Type type = switch (visit1) {
-                        case FuncCall funcCall -> funcCall.type(this);
                         case Symbol symbol -> symbol.type(this);
                         case Boolean booleanValue -> Type.BOOLEAN_TYPE;
                         case String stringValue -> Type.getType(String.class);
@@ -1806,6 +1844,23 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         } finally {
             flags.clear(F_CPL_ASSIGN);
         }
+    }
+
+    private void swapMv(MethodVisitor methodVisitor, Runnable func) {
+        MethodVisitor oldMv = mv;
+        mv = methodVisitor;
+        func.run();
+        mv = oldMv;
+    }
+
+    private String getterName(@Nullable String name) {
+        if (name == null) return null;
+        return name;
+    }
+
+    private String setterName(@Nullable String name) {
+        if (name == null) return null;
+        return name;
     }
 
     @Override
@@ -2366,6 +2421,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_MINUS;
             if (shouldNotCreateEval()) {
+                if (value != null) {
+                    return value;
+                }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
             return new PyEval(this, ctx, operator, finalValue, null, getLocation(ctx));
@@ -2383,6 +2441,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_PLUS;
             if (shouldNotCreateEval()) {
+                if (value != null) {
+                    return value;
+                }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
             return new PyEval(this, ctx, operator, finalValue, null, getLocation(ctx));
@@ -2400,6 +2461,9 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             Object finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_NOT;
             if (shouldNotCreateEval()) {
+                if (value != null) {
+                    return value;
+                }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
             return new PyEval(this, ctx, operator, finalValue, null, getLocation(ctx));
@@ -2554,13 +2618,13 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                                                 if (primary == null) {
                                                     throw new RuntimeException("primary not supported for:\n" + ctx.getText());
                                                 }
-                                                yield new FuncCall((PyExpr) parent, (List<PyExpr>) visit(argumentsContext), name, getLocation(ctx));
+                                                yield new MemberFuncCall((PyExpr) parent, name, ((List<PyExpr>) visit(argumentsContext)).toArray(PyExpr[]::new), getLocation(ctx));
                                             } else {
                                                 PythonParser.PrimaryContext primary = ctx.primary();
                                                 if (primary == null) {
                                                     throw new RuntimeException("primary not supported for:\n" + ctx.getText());
                                                 }
-                                                yield new FuncCall((PyExpr) parent, List.of(), name, getLocation(ctx));
+                                                yield new MemberFuncCall((PyExpr) parent, name, new PyExpr[0], getLocation(ctx));
                                             }
                                         }
 
@@ -2577,13 +2641,13 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                                         if (primary == null) {
                                             throw new RuntimeException("primary not supported for:\n" + ctx.getText());
                                         }
-                                        return new FuncCall((PyExpr) parent, (List<PyExpr>) visit(argumentsContext), name, getLocation(ctx));
+                                        return new MemberFuncCall((PyExpr) parent, name, ((List<PyExpr>) visit(argumentsContext)).toArray(PyExpr[]::new), getLocation(ctx));
                                     } else {
                                         PythonParser.PrimaryContext primary = ctx.primary();
                                         if (primary == null) {
                                             throw new RuntimeException("primary not supported for:\n" + ctx.getText());
                                         }
-                                        return new FuncCall((PyExpr) parent, List.of(), name, getLocation(ctx));
+                                        return new MemberFuncCall((PyExpr) parent, name, new PyExpr[0], getLocation(ctx));
                                     }
                                 }
 
@@ -2592,10 +2656,10 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                                     if (arguments == null) {
                                         throw new RuntimeException("arguments not supported for:\n" + ctx.getText());
                                     }
-                                    return new FuncCall((PyExpr) parent, (List<PyExpr>) visit(arguments), name, getLocation(ctx));
+                                    return new MemberFuncCall((PyExpr) parent, name, ((List<PyExpr>) visit(arguments)).toArray(PyExpr[]::new), getLocation(ctx));
                                 }
                                 if (memberContext == MemberContext.FUNCTION) {
-                                    List<PyExpr> arguments = (List<PyExpr>) visit(this.callArgs);
+                                    List<PyExpr> arguments;
                                     if (argumentsContext == null) {
                                         arguments = List.of();
                                     } else {
@@ -2635,12 +2699,6 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         } else if (memberContext == MemberContext.FUNCTION) {
                             List<PyExpr> arguments = (List<PyExpr>) visit(this.callArgs);
                             return new MemberFuncCall(jvmField, name, arguments.toArray(PyExpr[]::new), getLocation(ctx.NAME()));
-                        }
-                    }
-                    case FuncCall funcCall -> {
-                        if (memberContext == MemberContext.FUNCTION) {
-                            List<PyExpr> arguments = (List<PyExpr>) visit(this.callArgs);
-                            return new MemberFuncCall(funcCall, name, arguments.toArray(PyExpr[]::new), getLocation(ctx.NAME()));
                         }
                     }
                     case Self self -> {
@@ -2931,7 +2989,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         rootCw.visit(V1_8, ACC_PUBLIC, getName(), null, "java/lang/Object", new String[]{"org/python/_internal/PyModule"});
         cv = rootCw;
 
-        definingModule = new PyModule(pathOfFile.resolve(fileName + ".py"), getLocation(ctx));
+        definingModule = new PyModule(pathOfFile.resolve(fileName + ".py"), getName(), getLocation(ctx));
         PyCompileClass oldCompilingClass = compilingClass;
         compilingClass = definingModule;
         classCache.add(this, definingModule);
@@ -3077,61 +3135,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         mv.visitInsn(ATHROW);
     }
 
-    int createVariable(String name, String type, PyExpr expr, boolean boxed, Location location) {
-        mv.visitLineNumber(expr.location().lineStart(), new Label());
-
-        Symbol symbol = symbols.get(type);
-        if (symbol == null) {
-            throw new CompilerException("Symbol '" + type + "' not found ", getLocation(expr));
-        }
-        Type type1 = symbol.type(this);
-        int computationalType = 1;
-        if (type1 == null) {
-            type1 = switch (type) {
-                case "str" -> Type.getType(String.class);
-                case "int", "jlong" -> Type.getType(boxed ? Long.class : long.class);
-                case "float", "jfloat" -> Type.getType(boxed ? Float.class : float.class);
-                case "bool", "jboolean" -> Type.getType(boxed ? Boolean.class : boolean.class);
-                case "bytes", "bytearray" -> Type.getType(byte[].class);
-                case "list" -> Type.getType(List.class);
-                case "dict" -> Type.getType(Map.class);
-                case "set" -> Type.getType(Set.class);
-                case "tuple" -> Type.getType(Object[].class);
-                case "object" -> Type.getType(Object.class);
-                case "type" -> Type.getType(Class.class);
-                case "jint" -> Type.getType(boxed ? Integer.class : int.class);
-                case "jbyte" -> Type.getType(boxed ? Byte.class : byte.class);
-                case "jchar" -> Type.getType(boxed ? Character.class : char.class);
-                case "jdouble" -> Type.getType(boxed ? Double.class : double.class);
-                case "jshort" -> Type.getType(boxed ? Short.class : short.class);
-                case "None" -> throw new RuntimeException("None not supported");
-                case "NoneType" -> throw new RuntimeException("NoneType not supported");
-                default -> {
-                    if (imports.get(type) == null) {
-                        throw typeNotFound(type, expr);
-                    }
-
-                    yield imports.get(type).type(this);
-                }
-            };
-        }
-
-        Object preloaded = expr.preload(mv, this, false);
-        expr.load(mv, this, preloaded, boxed);
-
-        Label label = new Label();
-        symbols.put(name, new PyVariable(name, currentVariableIndex, label, location));
-//        writer.label(label);
-        mv.visitLocalVariable(name, type1.getDescriptor(), null, endLabel, endLabel, currentVariableIndex);
-        mv.visitLineNumber(expr.location().lineStart(), label);
-
-        writer.box(writer.unboxType(type1));
-        writer.storeObject(currentVariableIndex, Type.getType(Object.class));
-
-        return currentVariableIndex++;
-    }
-
-    PyVariable createVariable(String name, Type type, PyExpr expr, boolean boxed, Location location) {
+    public PyVariable createVariable(String name, Type type, PyExpr expr, boolean boxed, Location location) {
         if (definingFunction == null) {
             throw new RuntimeException("Defining function is null");
         }

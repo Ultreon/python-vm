@@ -11,6 +11,8 @@ import java.awt.*;
 
 public class Main {
     public static void main(String[] args) {
+        String string = HelloPy.STRING();
+        System.out.println("YEET: " + string);
         HelloPy.init();
 
 //        TestClass testClass = new TestClass(3, 5);

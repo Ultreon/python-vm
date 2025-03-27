@@ -31,18 +31,7 @@ public class PyClassConstruction implements PyExpr {
         if (constructor == null) {
             throw new CompilerException("No constructor found for " + jvmClass + " with parameters " + Arrays.stream(paramTypes).map(Type::getClassName).collect(Collectors.joining(", ")), location);
         }
-        compiler.writer.newInstance(jvmClass.type(compiler).getInternalName(), "<init>", "(" + Arrays.stream(constructor.parameterTypes(compiler)).map(type -> type == null ? "Ljava/lang/Object;" : type.getDescriptor()).collect(Collectors.joining("")) + ")V", false, () -> {
-            Type[] types = constructor.parameterTypes(compiler);
-            for (int i = 0, argumentsSize = arguments.size(); i < argumentsSize; i++) {
-                PyExpr argument = arguments.get(i);
-                argument.load(mv, compiler, argument.preload(mv, compiler, boxed), boxed);
-                if (types[i] == null || types[i].getSort() == Type.OBJECT) {
-                    if (argument.type(compiler).getSort() != Type.ARRAY && argument.type(compiler).getSort() != Type.OBJECT) {
-                        compiler.writer.box(argument.type(compiler));
-                    }
-                }
-            }
-        });
+        compiler.writer.newInstance(jvmClass, arguments);
     }
 
     @Override

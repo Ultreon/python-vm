@@ -3,6 +3,8 @@ package dev.ultreon.pythonc;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
+import java.util.List;
+
 public class PyImport implements Symbol {
     private final String alias;
     final Symbol symbol;
@@ -53,55 +55,42 @@ public class PyImport implements Symbol {
         return alias;
     }
 
-    public void invoke(MethodVisitor mv, PythonCompiler compiler, String signature, Object callArgs, Runnable paramInit) {
+    public void invoke(MethodVisitor mv, PythonCompiler compiler, String signature, List<PyExpr> callArgs) {
         switch (symbol) {
             case PyBuiltinFunction builtinFunction -> {
-                paramInit.run();
+                compiler.writer.writeArgs(callArgs, builtinFunction.parameterTypes(compiler));
                 compiler.writer.dynamicBuiltinCall(builtinFunction.name, signature);
             }
             case PyBuiltinClass builtinMethod -> {
-                paramInit.run();
+                compiler.writer.writeArgs(callArgs, builtinMethod.constructor(compiler, callArgs.stream().map(expr -> expr.type(compiler)).toArray(Type[]::new)).parameterTypes(compiler));
                 compiler.writer.dynamicBuiltinCall("\uffffinit\uffff", signature);
             }
             case PyObjectRef(String name, Location location) -> {
                 Symbol symbol = compiler.symbols.get(name);
                 switch (symbol) {
                     case PyBuiltinFunction func -> {
-                        paramInit.run();
+                        compiler.writer.writeArgs(callArgs, func.parameterTypes(compiler));
                         compiler.writer.dynamicBuiltinCall(func.name, signature);
                     }
-                    case PyBuiltinClass builtinClass -> compiler.writer.dynamicBuiltinCall("\uffffinit\uffff", signature);
-                    case PyImport importSymbol -> importSymbol.invoke(mv, compiler, signature, callArgs, paramInit);
+                    case PyBuiltinClass builtinClass -> {
+                        JvmConstructor constructor = builtinClass.constructor(compiler, callArgs.stream().map(expr -> expr.type(compiler)).toArray(Type[]::new));
+                        if (constructor == null) {
+                            throw new CompilerException("Unsupported call to " + name + " (owner: " + symbol.getClass() + ")");
+                        }
+                        compiler.writer.writeArgs(callArgs, constructor.parameterTypes(compiler));
+                    }
+                    case PyImport importSymbol -> importSymbol.invoke(mv, compiler, signature, callArgs);
                     case PyObjectRef pyObjectRef -> throw new CompilerException("Unsupported call to PyObjectRef");
                     case null, default ->
                             throw new CompilerException("Unsupported object reference call to " + name + " (owner: " + symbol.getClass() + ")");
                 }
             }
-            case PyClass cls -> {
-                paramInit.run();
-                compiler.writer.newInstance(cls.owner.getInternalName(), "<init>", signature, false, paramInit);
-            }
-            case PyFunction func -> {
-                paramInit.run();
-                compiler.writer.invokeStatic(func.owner(compiler).type(compiler).getInternalName(), func.name(), signature, false);
-            }
-            case JClass jClass -> {
-                paramInit.run();
-                compiler.writer.newInstance(jClass.type(compiler).getInternalName(), "<init>", signature, false, paramInit);
-            }
-            case PyField field -> {
-                paramInit.run();
-                field.load(mv, compiler, field.preload(mv, compiler, false), false);
-                compiler.writer.invokeStatic(field.typeClass(compiler).type(compiler).getInternalName(), "__call__", signature, false);
-            }
-            case ImportedField importedField -> {
-                paramInit.run();
-                importedField.load(mv, compiler, importedField.preload(mv, compiler, false), false);
-                compiler.writer.invokeStatic(importedField.typeClass(compiler).type(compiler).getInternalName(), "__call__", signature, false);
-            }
-            default -> {
-                throw new CompilerException("Unsupported call to " + symbol + " (owner: " + symbol.getClass() + ")");
-            }
+            case PyClass cls -> compiler.writer.newInstance(cls, callArgs);
+            case PyFunction func -> compiler.writer.dynamicCall(func.owner(compiler), callArgs);
+            case JClass jClass -> compiler.writer.newInstance(jClass, callArgs);
+            case PyField field -> compiler.writer.dynamicCall(field, callArgs);
+            case ImportedField importedField -> compiler.writer.dynamicCall(importedField, callArgs);
+            default -> throw new CompilerException("Unsupported call to " + symbol + " (owner: " + symbol.getClass() + ")");
         }
     }
 
