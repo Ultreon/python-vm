@@ -3,16 +3,16 @@ package dev.ultreon.test;
 import example.HelloPy;
 //import example.TestButton;
 //import example.TestClass;
-import example.TestButton;
-import example.Testing;
+//import example.TestButton;
+//import example.Testing;
 //import example.Testing;
 
 import java.awt.*;
 
 public class Main {
     public static void main(String[] args) {
-        String string = HelloPy.STRING();
-        System.out.println("YEET: " + string);
+//        String string = HelloPy.getString();
+//        System.out.println("YEET: " + string);
         HelloPy.init();
 
 //        TestClass testClass = new TestClass(3, 5);
@@ -23,14 +23,14 @@ public class Main {
         Frame frame = new Frame();
 //        TestButton btn = new TestButton();
 
-        TestButton btn = new TestButton(3, 5);
-        long sum = btn.sum();
+//        TestButton btn = new TestButton(3, 5);
+//        long sum = btn.sum();
 
-        System.out.println(sum);
+//        System.out.println(sum);
 
-        Testing testing = new Testing();
-        Frame o = (Frame) testing.__getattr__("frame");
-        o.setVisible(true);
+//        Testing testing = new Testing();
+//        Frame o = (Frame) testing.__getattr__("frame");
+//        o.setVisible(true);
 //        frame.add(btn);
 
 //        System.out.println("a1 = " + a1);

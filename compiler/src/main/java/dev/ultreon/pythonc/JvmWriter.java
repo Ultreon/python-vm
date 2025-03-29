@@ -1,17 +1,21 @@
 package dev.ultreon.pythonc;
 
+import dev.ultreon.pythonc.classes.JvmClass;
+import dev.ultreon.pythonc.classes.LangClass;
+import dev.ultreon.pythonc.expr.ConstantExpr;
+import dev.ultreon.pythonc.expr.MemberExpression;
+import dev.ultreon.pythonc.expr.PyExpression;
+import org.jetbrains.annotations.NotNull;
 import org.objectweb.asm.*;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.objectweb.asm.Opcodes.*;
 
 public class JvmWriter {
     public final PythonCompiler pc;
+    private Location lastLocation = new Location();
 
     public JvmWriter(PythonCompiler pythonCompiler) {
         this.pc = pythonCompiler;
@@ -26,11 +30,11 @@ public class JvmWriter {
         return context;
     }
 
-    public LoopContext getLoopContext() {
+    public LoopContext getLoopContext(Location location) {
         for (int i = pc.contextStack.size() - 1; i >= 0; i--) {
             Context context = pc.contextStack.get(i);
             if (context instanceof FunctionContext) {
-                throw new CompilerException("Not inside a loop or loop is outside of function.");
+                throw new CompilerException("Not inside a loop or loop is outside of function.", location);
             }
             if (context instanceof LoopContext) {
                 return (LoopContext) context;
@@ -39,12 +43,11 @@ public class JvmWriter {
         throw new RuntimeException("No loop context found");
     }
 
-    public JvmClass getClassSymbol(String className) {
+    public dev.ultreon.pythonc.classes.JvmClass getClassSymbol(String className) {
         return pc.getClassSymbol(className);
     }
 
-    @Deprecated
-    public void invokeStatic(String owner, String name, String signature, boolean isInterface) {
+    private void invokeStatic(String owner, String name, String signature, boolean isInterface) {
         Context context = getContext();
         Type methodType = Type.getMethodType(signature);
         Type[] argumentTypes = methodType.getArgumentTypes();
@@ -53,14 +56,14 @@ public class JvmWriter {
             getClassSymbol(pop.getClassName());
         }
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitMethodInsn(INVOKESTATIC, owner, name, signature, isInterface);
         Type returnType = methodType.getReturnType();
         if (returnType.equals(Type.VOID_TYPE)) return;
         context.push(returnType);
     }
 
-    public void invokeSpecial(String owner, String name, String signature, boolean isInterface) {
+    private void invokeSpecial(String owner, String name, String signature, boolean isInterface) {
         Context context = getContext();
         Type methodType = Type.getMethodType(signature);
         Type[] argumentTypes = methodType.getArgumentTypes();
@@ -69,38 +72,54 @@ public class JvmWriter {
             Type pop = context.pop();
             getClassSymbol(pop.getClassName());
         }
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitMethodInsn(INVOKESPECIAL, owner, name, signature, isInterface);
         if (methodType.getReturnType().getSort() != Type.VOID) {
             context.push(methodType.getReturnType());
         }
     }
 
+    private void invokeSpecial(Type owner, String name, Type signature, boolean isInterface) {
+        if (signature.getSort() != Type.METHOD) throw new IllegalStateException("Not a method signature!");
+
+        Context context = getContext();
+        Type[] argumentTypes = signature.getArgumentTypes();
+        context.pop();
+        for (Type arg : argumentTypes) {
+            Type pop = context.pop();
+            getClassSymbol(pop.getClassName());
+        }
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitMethodInsn(INVOKESPECIAL, owner.getInternalName(), name, signature.getDescriptor(), isInterface);
+        if (signature.getReturnType().getSort() != Type.VOID) {
+            context.push(signature.getReturnType());
+        }
+    }
+
     @Deprecated
-    public void newInstance(String owner, String name, String signature, boolean isInterface, Runnable paramInit) {
+    private void newInstance(String owner, String name, String signature, boolean isInterface, Runnable paramInit) {
         Context context = getContext();
         Type methodType = Type.getMethodType(signature);
         Type[] argumentTypes = methodType.getArgumentTypes();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         newObject(Type.getObjectType(owner));
         dup();
         paramInit.run();
         invokeSpecial(owner, "<init>", signature, isInterface);
     }
 
-    public void newInstance(JvmClass owner, List<PyExpr> arguments) {
+    public void newInstance(JvmClass owner, List<PyExpression> arguments) {
         Context context = getContext();
         Type methodType = Type.getMethodType("()V");
         Type[] argumentTypes = methodType.getArgumentTypes();
-        List<PyExpr> args = new ArrayList<>();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        JvmConstructor constructor = owner.constructor(pc, arguments.stream().map(expr -> expr.type(pc)).toArray(Type[]::new));
+        List<PyExpression> args = new ArrayList<>();
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         dynamicCall(owner, arguments);
     }
 
     private void newObject(Type objectType) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitTypeInsn(NEW, objectType.getInternalName());
         context.push(objectType);
     }
@@ -109,7 +128,7 @@ public class JvmWriter {
         Context context = getContext();
         Type pop = context.pop();
         getClassSymbol(pop.getClassName());
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(ATHROW);
     }
 
@@ -117,7 +136,7 @@ public class JvmWriter {
         Context context = getContext();
         Type pop = context.pop();
         getClassSymbol(pop.getClassName());
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(ARETURN);
     }
 
@@ -133,8 +152,29 @@ public class JvmWriter {
         if (!PythonCompiler.isInstanceOf(pc, pop1, owner)) {
             throw new RuntimeException("Expected " + pop1.getInternalName() + " to be " + owner);
         }
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitMethodInsn(INVOKEVIRTUAL, owner, name, signature, isInterface);
+        Type returnType = methodType.getReturnType();
+        if (returnType.equals(Type.VOID_TYPE)) return;
+        context.push(returnType);
+    }
+
+    public void invokeVirtual(Type owner, String name, Type signature, boolean isInterface) {
+        if (signature.getSort() != Type.METHOD) throw new IllegalStateException("Not a method signature!");
+
+        Context context = getContext();
+        Type methodType = Type.getMethodType(signature);
+        Type[] argumentTypes = methodType.getArgumentTypes();
+        for (Type arg : argumentTypes) {
+            Type pop = context.pop();
+            getClassSymbol(pop.getClassName());
+        }
+        Type pop1 = context.pop();
+        if (!PythonCompiler.isInstanceOf(pc, pop1, owner.getInternalName())) {
+            throw new RuntimeException("Expected " + pop1.getInternalName() + " to be " + owner);
+        }
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitMethodInsn(INVOKEVIRTUAL, owner.getInternalName(), name, signature.getDescriptor(), isInterface);
         Type returnType = methodType.getReturnType();
         if (returnType.equals(Type.VOID_TYPE)) return;
         context.push(returnType);
@@ -150,7 +190,7 @@ public class JvmWriter {
             getClassSymbol(pop.getClassName());
         }
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitMethodInsn(INVOKEINTERFACE, owner, name, signature, isInterface);
         Type returnType = methodType.getReturnType();
         if (returnType.equals(Type.VOID_TYPE)) return;
@@ -171,7 +211,7 @@ public class JvmWriter {
             }
         }
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInvokeDynamicInsn(interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> switch (o) {
             case String s -> "Ljava/lang/String;";
             case Integer i -> "I";
@@ -190,8 +230,62 @@ public class JvmWriter {
         context.push(returnType);
     }
 
+    private void magicInvokeDynamic(String interaction, String signature, Object... values) {
+        Context context = getContext();
+
+        Type methodType = Type.getMethodType(signature);
+
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitInvokeDynamicInsn(interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> switch (o) {
+            case String s -> "Ljava/lang/String;";
+            case Integer i -> "I";
+            case Long l -> "J";
+            case Double d -> "D";
+            case Float f -> "F";
+            case Boolean b -> "Z";
+            case Character c -> "C";
+            case Byte b -> "B";
+            case Short s -> "S";
+            default -> throw new AssertionError("Unexpected value: " + o);
+        }).collect(Collectors.joining("")) + ")Ljava/lang/invoke/CallSite;", false), values);
+
+        Type returnType = methodType.getReturnType();
+        if (returnType.getSort() == Type.VOID) return;
+        context.push(returnType);
+    }
+
+    private void hiddenInvokeDynamic(String interaction, String signature, Object... values) {
+        Context context = getContext();
+
+        Type methodType = Type.getMethodType(signature);
+
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitInvokeDynamicInsn(interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> switch (o) {
+            case String s -> "Ljava/lang/String;";
+            case Integer i -> "I";
+            case Long l -> "J";
+            case Double d -> "D";
+            case Float f -> "F";
+            case Boolean b -> "Z";
+            case Character c -> "C";
+            case Byte b -> "B";
+            case Short s -> "S";
+            default -> throw new AssertionError("Unexpected value: " + o);
+        }).collect(Collectors.joining("")) + ")Ljava/lang/invoke/CallSite;", false), values);
+    }
+
     public void dynamicCall(String name, String signature) {
         invokeDynamic(name, "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__call__");
+    }
+
+    public void dynamicCall(PyExpression owner, String name, List<PyExpression> arguments) {
+        owner.write(pc, this);
+        createArgs(arguments);
+        invokeDynamic(name, "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__call__");
+    }
+
+    public void createArgs(List<PyExpression> arguments) {
+        createArray(arguments, Type.getType(Object.class));
     }
 
     public void dynamicGetAttr(String name) {
@@ -216,113 +310,114 @@ public class JvmWriter {
 
     public void getStatic(String owner, String name, String descriptor) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         Type type = Type.getType(descriptor);
         pushClass(Type.getObjectType(owner));
         dynamicGetAttr(name);
         context.push(type);
     }
 
-    public void putStatic(String owner, String name, String descriptor, PyExpr expr) {
+    public void putStatic(String owner, String name, String descriptor, PyExpression expr) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         Type ownerType = Type.getObjectType(owner);
         pushClass(ownerType);
-        expr.load(mv, pc, expr.preload(mv, pc, false), false);
+        expr.write(pc, this);
         dynamicSetAttr(name);
     }
 
     private void pushClass(Type ownerType) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(ownerType);
-        getContext().push(Type.getType(Class.class));
+        getContext().push(Type.getType(java.lang.Class.class));
     }
 
     public void getField(String name, String descriptor) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         dynamicGetAttr(name);
         cast(Type.getType(descriptor));
     }
 
-    public void putField(String owner, String name, String descriptor, PyExpr parent, PyExpr expr) {
+    public void putField(String owner, String name, String descriptor, PyExpression parent, PyExpression expr) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        parent.load(mv, pc, parent.preload(mv, pc, false), false);
-        expr.load(mv, pc, expr.preload(mv, pc, false), false);
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        parent.write(pc, this);
+        expr.write(pc, this);
         dynamicSetAttr(name);
     }
 
-    public void loadConstant(String name) {
+    public void loadConstant(String text) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        mv.visitLdcInsn(name);
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitLdcInsn(text);
+        context.push(Type.getType(String.class));
     }
 
     public void loadConstant(int value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.INT_TYPE);
     }
 
     public void loadConstant(long value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.LONG_TYPE);
     }
 
     public void loadConstant(float value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.FLOAT_TYPE);
     }
 
     public void loadConstant(double value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.DOUBLE_TYPE);
     }
 
     public void loadConstant(char value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.CHAR_TYPE);
     }
 
     public void loadConstant(boolean value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.BOOLEAN_TYPE);
     }
 
     public void loadConstant(byte value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.BYTE_TYPE);
     }
 
     public void loadConstant(short value) {
         Context context = getContext();
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(value);
         context.push(Type.SHORT_TYPE);
     }
 
     public void loadClass(Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(type);
         getContext().push(Type.getType("Ljava/lang/Class;"));
     }
 
     public void storeInt(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ISTORE, index);
         Type pop = getContext().pop();
         if (!pop.equals(Type.INT_TYPE)) {
@@ -331,13 +426,13 @@ public class JvmWriter {
     }
 
     public void loadInt(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ILOAD, index);
         getContext().push(Type.INT_TYPE);
     }
 
     public void storeLong(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(LSTORE, index);
         Type pop = getContext().pop();
         if (!pop.equals(Type.LONG_TYPE)) {
@@ -346,13 +441,13 @@ public class JvmWriter {
     }
 
     public void loadLong(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(LLOAD, index);
         getContext().push(Type.LONG_TYPE);
     }
 
     public void storeFloat(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(FSTORE, index);
         Type pop = getContext().pop();
         if (!pop.equals(Type.FLOAT_TYPE)) {
@@ -361,13 +456,13 @@ public class JvmWriter {
     }
 
     public void loadFloat(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(FLOAD, index);
         getContext().push(Type.FLOAT_TYPE);
     }
 
     public void storeDouble(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(DSTORE, index);
         Type pop = getContext().pop();
         if (!pop.equals(Type.DOUBLE_TYPE)) {
@@ -376,13 +471,13 @@ public class JvmWriter {
     }
 
     public void loadDouble(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(DLOAD, index);
         getContext().push(Type.DOUBLE_TYPE);
     }
 
     public void storeChar(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ISTORE, index);
         Type pop = getContext().pop();
         if (!pop.equals(Type.CHAR_TYPE)) {
@@ -391,13 +486,13 @@ public class JvmWriter {
     }
 
     public void loadChar(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ILOAD, index);
         getContext().push(Type.CHAR_TYPE);
     }
 
     public void storeBoolean(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         cast(Type.BOOLEAN_TYPE);
         mv.visitVarInsn(ISTORE, index);
         Type pop = getContext().pop();
@@ -407,14 +502,14 @@ public class JvmWriter {
     }
 
     public void loadBoolean(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ILOAD, index);
         cast(Type.BOOLEAN_TYPE);
         getContext().push(Type.BOOLEAN_TYPE);
     }
 
     public void storeByte(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         cast(Type.BYTE_TYPE);
         mv.visitVarInsn(ISTORE, index);
         Type pop = getContext().pop();
@@ -424,14 +519,14 @@ public class JvmWriter {
     }
 
     public void loadByte(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ILOAD, index);
         cast(Type.BYTE_TYPE);
         getContext().push(Type.BYTE_TYPE);
     }
 
     public void storeShort(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         cast(Type.SHORT_TYPE);
         mv.visitVarInsn(ISTORE, index);
         Type pop = getContext().pop();
@@ -441,32 +536,32 @@ public class JvmWriter {
     }
 
     public void loadShort(int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ILOAD, index);
         cast(Type.SHORT_TYPE);
         getContext().push(Type.SHORT_TYPE);
     }
 
     public void storeObject(int index, Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ASTORE, index);
         getContext().pop();
     }
 
     public void loadObject(int index, Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ALOAD, index);
         getContext().push(Type.getType(Object.class));
         cast(type);
     }
 
     public void jump(Label endLabel) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitJumpInsn(Opcodes.GOTO, endLabel);
     }
 
     public void cast(Type to) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         Context context = getContext();
         Type from = context.peek();
         if (to.getSort() == Type.OBJECT) {
@@ -609,20 +704,31 @@ public class JvmWriter {
     }
 
     private void checkCast(Type to) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitTypeInsn(CHECKCAST, to.getInternalName());
     }
 
     public void dup() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(DUP);
 
         Context context = getContext();
         context.push(context.peek());
     }
 
+    public void secretDup() {
+        // Did anybody say secret dupe glitch? Oh wait...
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitInsn(DUP);
+    }
+
+    public void secretPop() {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitInsn(POP);
+    }
+
     public void pop() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(POP);
 
         Context context = getContext();
@@ -630,7 +736,7 @@ public class JvmWriter {
     }
 
     public void swap() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(SWAP);
 
         Context context = getContext();
@@ -641,7 +747,7 @@ public class JvmWriter {
     }
 
     public void dup2() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(DUP2);
 
         Context context = getContext();
@@ -650,7 +756,7 @@ public class JvmWriter {
     }
 
     public void dup2_x1() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(DUP2_X1);
 
         Context context = getContext();
@@ -662,7 +768,7 @@ public class JvmWriter {
     }
 
     public void dup2_x2() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(DUP2_X2);
 
         Context context = getContext();
@@ -675,21 +781,21 @@ public class JvmWriter {
     }
 
     public void pushStackByte(int i) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitIntInsn(BIPUSH, i);
 
         getContext().push(Type.BYTE_TYPE);
     }
 
     public void pushStackShort(int i) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitIntInsn(SIPUSH, i);
 
         getContext().push(Type.SHORT_TYPE);
     }
 
     public void lineNumber(int line, Label label) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         if (mv == null) {
             return;
         }
@@ -703,12 +809,12 @@ public class JvmWriter {
         smartCast(pop, getContext().peek());
         context.pop(Type.BOOLEAN_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitJumpInsn(Opcodes.IFEQ, label);
     }
 
     public void smartCast(Type from, Type to) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         if (to == Type.DOUBLE_TYPE) {
             if (from == Type.LONG_TYPE) {
                 mv.visitInsn(L2D);
@@ -869,7 +975,7 @@ public class JvmWriter {
     }
 
     public void box(Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         smartCast(type);
         if (type == Type.DOUBLE_TYPE) {
             invokeStatic("java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
@@ -891,7 +997,7 @@ public class JvmWriter {
     }
 
     public void unbox(Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         Type pop = getContext().peek();
         cast(boxType(type));
         if (type == Type.DOUBLE_TYPE) {
@@ -920,7 +1026,7 @@ public class JvmWriter {
         smartCast(pop, getContext().peek());
         context.pop();
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitJumpInsn(Opcodes.IFNE, label);
     }
 
@@ -931,7 +1037,7 @@ public class JvmWriter {
         smartCast(pop, getContext().peek());
         context.pop();
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitJumpInsn(Opcodes.IFLT, label);
     }
 
@@ -942,7 +1048,7 @@ public class JvmWriter {
         smartCast(pop, getContext().peek());
         context.pop();
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitJumpInsn(Opcodes.IFLE, label);
     }
 
@@ -953,7 +1059,7 @@ public class JvmWriter {
         smartCast(pop, getContext().peek());
         context.pop();
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitJumpInsn(Opcodes.IFGT, label);
     }
 
@@ -964,23 +1070,23 @@ public class JvmWriter {
         smartCast(pop, getContext().peek());
         context.pop();
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitJumpInsn(Opcodes.IFGE, label);
     }
 
     public void localVariable(String name, String desc, String signature, int line, Label start, Label end, int index) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLocalVariable(name, desc, signature, start, end, index);
     }
 
     public void end() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitMaxs(0, 0);
         mv.visitEnd();
     }
 
     public void newArray(Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         Context context = getContext();
         Type pop = context.pop();
         if (pop != Type.INT_TYPE && pop != Type.SHORT_TYPE && pop != Type.BYTE_TYPE)
@@ -991,7 +1097,7 @@ public class JvmWriter {
     }
 
     public void arrayStoreObject(Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         cast(type);
         mv.visitInsn(AASTORE);
 
@@ -1002,12 +1108,12 @@ public class JvmWriter {
     }
 
     public void label(Label label) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLabel(label);
     }
 
     public void returnVoid() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(RETURN);
     }
 
@@ -1015,7 +1121,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.INT_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(IRETURN);
     }
 
@@ -1023,7 +1129,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.SHORT_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(IRETURN);
     }
 
@@ -1031,7 +1137,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.BYTE_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(IRETURN);
     }
 
@@ -1039,7 +1145,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.CHAR_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(IRETURN);
     }
 
@@ -1047,7 +1153,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.BOOLEAN_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(IRETURN);
     }
 
@@ -1055,7 +1161,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.FLOAT_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(FRETURN);
     }
 
@@ -1063,7 +1169,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.DOUBLE_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(DRETURN);
     }
 
@@ -1071,7 +1177,7 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.LONG_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(LRETURN);
     }
 
@@ -1079,90 +1185,90 @@ public class JvmWriter {
         Context context = getContext();
         context.pop(Type.FLOAT_TYPE);
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(FRETURN);
     }
 
     public void pushZeroInt() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(ICONST_0);
         getContext().push(Type.INT_TYPE);
     }
 
     public void pushOneInt() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(ICONST_1);
         getContext().push(Type.INT_TYPE);
     }
 
     public void pushFalse() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(ICONST_0);
         getContext().push(Type.BOOLEAN_TYPE);
     }
 
     public void pushTrue() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(ICONST_1);
         getContext().push(Type.BOOLEAN_TYPE);
     }
 
     public void pushBoolean(Boolean b) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(b ? ICONST_1 : ICONST_0);
         getContext().push(Type.BOOLEAN_TYPE);
     }
 
     public void pushInt(Integer i) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitIntInsn(BIPUSH, i);
         getContext().push(Type.INT_TYPE);
     }
 
     public void pushLong(Long l) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(l);
         getContext().push(Type.LONG_TYPE);
     }
 
     public void pushFloat(Float f) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(f);
         getContext().push(Type.FLOAT_TYPE);
     }
 
     public void pushDouble(Double d) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(d);
         getContext().push(Type.DOUBLE_TYPE);
     }
 
     public void pushString(String s) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(s);
         getContext().push(Type.getType(String.class));
     }
 
     public void pushChar(Character c) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(c);
         getContext().push(Type.CHAR_TYPE);
     }
 
     public void pushByte(Byte b) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(b);
         getContext().push(Type.BYTE_TYPE);
     }
 
     public void pushShort(Short s) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitLdcInsn(s);
         getContext().push(Type.SHORT_TYPE);
     }
 
     public void loadConstant(Object value) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         switch (value) {
             case Integer i -> {
                 mv.visitLdcInsn(value);
@@ -1209,37 +1315,38 @@ public class JvmWriter {
     }
 
     public void smartCast(Type to) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         Type pop = getContext().peek();
-        if ((pop.getSort() != Type.OBJECT && pop.getSort() != Type.ARRAY) || (to.getSort() != Type.OBJECT && to.getSort() != Type.ARRAY)) smartCast(pop, to);
+        if ((pop.getSort() != Type.OBJECT && pop.getSort() != Type.ARRAY) || (to.getSort() != Type.OBJECT && to.getSort() != Type.ARRAY))
+            smartCast(pop, to);
         else cast(to);
         getContext().pop(pop);
         getContext().push(to);
     }
 
-    public void loadThis(PythonCompiler compiler, JvmClass type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+    public void loadThis(JvmClass type) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitVarInsn(ALOAD, 0);
-        getContext().push(type.type(compiler));
+        getContext().push(type.type());
     }
 
     public void pushNull() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitInsn(ACONST_NULL);
         getContext().push(Type.getType(Object.class));
     }
 
-    public void createArray(List<PyExpr> arguments, Type type) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+    public void createArray(List<PyExpression> arguments, Type type) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         pushStackByte(arguments.size());
         newArray(type);
         for (int i = 0, argumentsSize = arguments.size(); i < argumentsSize; i++) {
-            PyExpr argument = arguments.get(i);
+            PyExpression argument = arguments.get(i);
             dup();
             pushStackByte(i);
-            argument.load(mv, pc, argument.preload(mv, pc, false), false);
-            if (getContext().peek().getSort() != Type.OBJECT && argument.type(pc).getSort() != Type.ARRAY) {
-                box(argument.type(pc));
+            argument.write(pc, this);
+            if (getContext().peek().getSort() != Type.OBJECT && argument.type().getSort() != Type.ARRAY) {
+                box(argument.type());
             }
             if (!getContext().peek().equals(type)) {
                 cast(type);
@@ -1249,8 +1356,8 @@ public class JvmWriter {
         }
     }
 
-    public void dynamicBuiltinCall(String name, String signature) {
-        invokeDynamic(name, "([Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__builtincall__", signature);
+    public void dynamicBuiltinCall(String name) {
+        invokeDynamic(name, "([Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__builtincall__");
     }
 
     public void dynamicBuiltinGetAttr(String name) {
@@ -1366,8 +1473,21 @@ public class JvmWriter {
         invokeDynamic("__iter__", "(Ljava/lang/Object;)Ljava/lang/Object;");
     }
 
+
+    public void secretIter() {
+        hiddenInvokeDynamic("__iter__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
     public void dynamicNext() {
         invokeDynamic("__next__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void magicNext() {
+        magicInvokeDynamic("__next__", "(Ljava/lang/Object;)Ljava/lang/Object;");
+    }
+
+    public void magicHasNext() {
+        magicInvokeDynamic("__hasnext__", "(Ljava/lang/Object;)Z");
     }
 
     public void dynamicGetItem() {
@@ -1406,28 +1526,43 @@ public class JvmWriter {
         invokeDynamic("__ge__", "(Ljava/lang/Object;Ljava/lang/Object;)Z");
     }
 
-    private void dynamicCall() {
+    public void dynamicCall() {
         invokeDynamic("__call__", "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;");
     }
 
-    public void dynamicCall(PyExpr owner, List<PyExpr> arguments) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        owner.load(mv, pc, owner.preload(mv, pc, false), false);
+    public void dynamicCall(String name) {
+        invokeDynamic(name, "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__call__");
+    }
+
+    public void magicDynamicCall(String name) {
+        magicInvokeDynamic(name, "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__call__");
+    }
+
+    public void hiddenDynamicCall(String name) {
+        hiddenInvokeDynamic(name, "(Ljava/lang/Object;[Ljava/lang/Object;Ljava/util/Map;)Ljava/lang/Object;", "__call__");
+    }
+
+    public void dynamicCall(PyExpression owner, List<PyExpression> arguments) {
+        if (owner instanceof MemberExpression memberExpression) memberExpression.writeAttrOnly(pc, this);
+        else owner.write(pc, this);
         createArray(arguments, Type.getType(Object.class));
         createKwargs();
         dynamicCall();
     }
 
-    public void returnValue(Type type) {
+    public void returnValue(Type type, Location location) {
         Context context = getContext();
-        if (!context.needsPop()) {
-            throw new RuntimeException("No value to return");
-        }
 
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         if (type.equals(Type.VOID_TYPE)) {
+            if (context.needsPop())
+                pop();
             mv.visitInsn(RETURN);
             return;
+        }
+
+        if (!context.needsPop()) {
+            throw new CompilerException("No value to return", location);
         }
 
         Type boxedType = boxType(type);
@@ -1445,29 +1580,29 @@ public class JvmWriter {
         }
     }
 
-    public void loadClass(JvmClass jvmClass) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
-        Type type = jvmClass.type(pc);
+    public void loadClass(dev.ultreon.pythonc.classes.JvmClass jvmClass) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        Type type = jvmClass.type();
         mv.visitLdcInsn(type);
         Context context = getContext();
-        context.push(type);
+        context.push(Type.getType(java.lang.Class.class));
     }
 
     public void createKwargs() {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         mv.visitMethodInsn(INVOKESTATIC, "java/util/Collections", "emptyMap", "()Ljava/util/Map;", false);
         Context context = getContext();
         context.push(Type.getType(Map.class));
     }
 
-    public void writeArgs(List<PyExpr> arguments, Type[] types) {
-        var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+    public void writeArgs(List<PyExpression> arguments, Type[] types) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
         for (int i = 0, argumentsSize = arguments.size(); i < argumentsSize; i++) {
-            PyExpr argument = arguments.get(i);
-            argument.load(mv, pc, argument.preload(mv, pc, false), false);
+            PyExpression argument = arguments.get(i);
+            argument.write(pc, this);
             if (types[i] == null || types[i].getSort() == Type.OBJECT) {
-                if (argument.type(pc).getSort() != Type.ARRAY && argument.type(pc).getSort() != Type.OBJECT) {
-                    pc.writer.box(argument.type(pc));
+                if (argument.type().getSort() != Type.ARRAY && argument.type().getSort() != Type.OBJECT) {
+                    pc.writer.box(argument.type());
                 }
             }
 
@@ -1485,31 +1620,87 @@ public class JvmWriter {
     public void loadValue(int index, Type type) {
         switch (type.getSort()) {
             case Type.BYTE, Type.SHORT, Type.INT, Type.CHAR, Type.BOOLEAN -> {
-                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
                 mv.visitVarInsn(ILOAD, index);
                 getContext().push(type);
             }
             case Type.LONG -> {
-                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
                 mv.visitVarInsn(LLOAD, index);
                 getContext().push(type);
             }
             case Type.FLOAT -> {
-                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
                 mv.visitVarInsn(FLOAD, index);
                 getContext().push(type);
             }
             case Type.DOUBLE -> {
-                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
                 mv.visitVarInsn(DLOAD, index);
                 getContext().push(type);
             }
             case Type.OBJECT, Type.ARRAY -> {
-                var mv = pc.mv == null ? pc.rootInitMv : pc.mv;
+                var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
                 mv.visitVarInsn(ALOAD, index);
                 getContext().push(type);
             }
             default -> throw new RuntimeException("Unknown type: " + type);
         }
+    }
+
+    public void parameter(String name) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitParameter(name, 0);
+        getContext().push(Type.getType(Object.class));
+    }
+
+    public void loadThis(LangClass pyClass) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut;
+        mv.visitVarInsn(ALOAD, 0);
+        getContext().push(pyClass.type());
+    }
+
+    public MethodVisitor mv() {
+        if (pc.methodOut == null) {
+            if (pc.rootInitMv == null) {
+                throw new AssertionError("Outside a method definition!");
+            }
+            return pc.rootInitMv;
+        }
+        return pc.methodOut;
+    }
+
+    public void hiddenDup() {
+        mv().visitInsn(DUP);
+    }
+
+    public void createKwargs(Map<String, PyExpression> kwargs) {
+        List<PyExpression> expressions = new ArrayList<>();
+        newObject(Type.getType(HashMap.class));
+        dup();
+        invokeSpecial(Type.getType(HashMap.class), "<init>", Type.getMethodType(Type.VOID_TYPE), false);
+
+        List<Map.@NotNull Entry<String, PyExpression>> copyOf = List.copyOf(kwargs.entrySet());
+        for (int i = 0, copyOfSize = copyOf.size(); i < copyOfSize; i++) {
+            Map.Entry<String, PyExpression> entry = copyOf.get(i);
+            String s = entry.getKey();
+            PyExpression expression = entry.getValue();
+            if (i < copyOfSize - 1)
+                dup();
+            expressions.add(new ConstantExpr(s, expression.location()));
+            expressions.add(expression);
+
+            invokeVirtual(Type.getType(HashMap.class), "put", Type.getMethodType(Type.getType(Object.class), Type.getType(Object.class), Type.getType(Object.class)), false);
+        }
+    }
+
+    public Location lastLocation() {
+        return lastLocation;
+    }
+
+    public void lastLocation(Location location) {
+        if (location == null) return;
+        if (location.isUnknown()) return;
+        this.lastLocation = location;
     }
 }

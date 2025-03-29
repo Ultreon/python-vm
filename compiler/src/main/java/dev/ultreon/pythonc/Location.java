@@ -17,6 +17,8 @@ public record Location(String file, int lineStart, int columnStart, int lineEnd,
     public static final String ANSI_UNDERLINE = "\u001B[4m";
 
     public static final String ANSI_RESET = "\u001B[0m";
+    public static final Location BUILTIN = new Location("<builtin>", 0, 0, 0, 0);
+    public static final Location JAVA = new Location("<java>", 0, 0, 0, 0);
 
     public Location() {
         this("<unknown>", 0, 0, 0, 0);
@@ -64,14 +66,14 @@ public record Location(String file, int lineStart, int columnStart, int lineEnd,
                 builder.append(ANSI_GRAY);
                 builder.append("\n");
             } else if (i < lineEnd - 1) {
-                builder.append(ANSI_RED);
-                builder.append(lines.get(i)).append("\n");
+                builder.append(lines.get(i).replaceAll("(^ *)", "$1" + ANSI_RED + ANSI_UNDERLINE)).append("\n");
+                builder.append(ANSI_RESET);
                 builder.append(ANSI_GRAY);
             } else if (i == lineEnd - 1) {
-                builder.append(lines.get(i), 0, Math.min(columnEnd, lines.get(i).length()));
-                builder.append(ANSI_RED);
-                builder.append(lines.get(i), Math.min(columnEnd + 1, lines.get(i).length()), lines.get(i).length());
+                builder.append(lines.get(i).replaceAll("(^ *)", "$1" + ANSI_RED + ANSI_UNDERLINE), 0, Math.min(columnEnd, lines.get(i).length()));
+                builder.append(ANSI_RESET);
                 builder.append(ANSI_GRAY);
+                builder.append(lines.get(i), Math.min(columnEnd, lines.get(i).length()), lines.get(i).length());
             } else {
                 builder.append(ANSI_GRAY);
                 builder.append(lines.get(i)).append("\n");
@@ -81,5 +83,13 @@ public record Location(String file, int lineStart, int columnStart, int lineEnd,
         builder.append(ANSI_RESET);
 
         return builder.toString();
+    }
+
+    public Location firstLine() {
+        return new Location(file, lineStart, 0, lineStart, Integer.MAX_VALUE);
+    }
+
+    public boolean isUnknown() {
+        return !file.startsWith("/") && !file.startsWith("\\");
     }
 }

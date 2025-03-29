@@ -1,36 +1,33 @@
 package dev.ultreon.pythonc;
 
+import dev.ultreon.pythonc.classes.LangClass;
+import org.jetbrains.annotations.NotNull;
 import org.objectweb.asm.Type;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
-public class PyClasses {
-    private final Map<String, PyClass> byName = new HashMap<>();
-    private final Map<String, PyClass> byClassName = new HashMap<>();
-    private final Map<Type, PyClass> byType = new HashMap<>();
+public class PyClasses implements Iterable<LangClass> {
+    private final Map<String, LangClass> byName = new HashMap<>();
+    private final Map<String, LangClass> byClassName = new HashMap<>();
+    private final Map<Type, LangClass> byType = new HashMap<>();
 
-    private final PythonCompiler pythonCompiler;
-
-    public PyClasses(PythonCompiler pythonCompiler) {
-        this.pythonCompiler = pythonCompiler;
-    }
-
-    public void add(PyClass pyClass) {
+    public void add(LangClass pyClass) {
         byName.put(pyClass.name(), pyClass);
         byClassName.put(pyClass.className(), pyClass);
         byType.put(Type.getObjectType(pyClass.className()), pyClass);
     }
 
-    public PyClass byName(String name) {
+    public LangClass byName(String name) {
         return byName.get(name);
     }
 
-    public PyClass byClassName(String className) {
+    public LangClass byClassName(String className) {
         return byClassName.get(className);
     }
 
-    public JvmClass byType(Type type) {
+    public LangClass byType(Type type) {
         return byType.get(type);
     }
 
@@ -44,5 +41,10 @@ public class PyClasses {
 
     public boolean hasType(Type type) {
         return byType.containsKey(type);
+    }
+
+    @Override
+    public @NotNull Iterator<LangClass> iterator() {
+        return byName.values().iterator();
     }
 }

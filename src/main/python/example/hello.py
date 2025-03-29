@@ -4,11 +4,11 @@ from java.lang import Runnable, System, Long, Exception, Long
 from java.util import Objects
 from java.util import Random
 
-STRING = "Hello, world!"
+STRING: str = "Hello, world!"
 
-HASHCODE = Objects.hashCode("Hello, world!")
-INTEGER = 42
-FLOAT = 3.14
+HASHCODE: int = Objects.hashCode("Hello, world!")
+INTEGER: int = 42
+FLOAT: float = 3.14
 
 
 class Testing(ActionListener):
@@ -46,33 +46,33 @@ class TestClass(Runnable):
 
 
 
-TEST_CLASS = TestClass(3, 6)
+# TEST_CLASS = TestClass(3, 6)
 
 
 def init():
     print(Objects.hashCode("Hello, world!"))
 
-    print(HASHCODE)
-    print(INTEGER)
-    print(FLOAT)
-    print(STRING)
+    # print(HASHCODE)
+    # print(INTEGER)
+    # print(FLOAT)
+    # print(STRING)
 
     number = 3.141592653589793
 
-    testing = Testing()
-    frame = testing.frame
-    frame.hello = "Hello Señor"
+    # testing = Testing()
+    # frame = testing.frame
+    # frame.hello = "Hello Señor"
 
     hello = "Hello World"
 
-    print("Frame says:", frame.hello)
+    # print("Frame says:", frame.hello)
     print("Me says:", hello)
 
-    test_class = TestClass(1, 2)
-    test_class.run()
+    # test_class = TestClass(1, 2)
+    # test_class.run()
 
-    print(test_class.a)
-    print(test_class.b)
+    # print(test_class.a)
+    # print(test_class.b)
 
     frame = Frame()
     frame.setVisible(True)

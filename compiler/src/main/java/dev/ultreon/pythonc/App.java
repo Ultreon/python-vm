@@ -3,6 +3,8 @@
  */
 package dev.ultreon.pythonc;
 
+import org.jetbrains.annotations.NotNull;
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
@@ -11,17 +13,50 @@ import java.util.List;
 
 public class App {
     public static void main(String[] args) throws IOException {
-        String outputJar = null;
         String jarFile = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
         if (jarFile == null) {
             jarFile = "<filename>.jar";
         }
 
+        ArgParsed result = parseArgs(args);
+
+        if (result.outputJar() == null && result.outputDir() == null) {
+            System.err.println("Usage: java -jar " + jarFile + " -j <output jar> <python file> ...");
+            System.err.println("Usage: java -jar " + jarFile + " -o <output directory> <python file> ...");
+            System.exit(1);
+        }
+
+        if (result.sources().isEmpty()) {
+            System.err.println("Usage: java -jar " + jarFile + " -o <output jar> <python file> ...");
+            System.exit(1);
+        }
+
+        for (String source : result.sources()) {
+            if (!new File(source).exists()) {
+                System.err.println("Source directory does not exist: " + source);
+                System.exit(1);
+            }
+        }
+        for (String source : result.sources()) {
+            PythonCompiler.compileSources(source, result.outputDir());
+        }
+        if (result.outputJar != null) PythonCompiler.pack(result.outputDir(), result.outputJar());
+    }
+
+    private static @NotNull ArgParsed parseArgs(String[] args) {
+        String outputJar = null;
+        String outputDir = null;
         List<String> sources = new ArrayList<>();
+
         for (int i = 0, argsLength = args.length; i < argsLength; i++) {
             String arg = args[i];
-            if (arg.equals("-o")) {
+            if (arg.equals("-j")) {
                 outputJar = args[i + 1];
+                i++;
+                continue;
+            }
+            if (arg.equals("-o")) {
+                outputDir = args[i + 1];
                 i++;
                 continue;
             }
@@ -33,28 +68,9 @@ public class App {
 
             sources.add(arg);
         }
+        return new ArgParsed(outputJar, outputDir, sources);
+    }
 
-        if (outputJar == null) {
-            System.err.println("Usage: java -jar " + jarFile + " -o <output jar> <python file> ...");
-            System.exit(1);
-        }
-
-        if (sources.isEmpty()) {
-            System.err.println("Usage: java -jar " + jarFile + " -o <output jar> <python file> ...");
-            System.exit(1);
-        }
-
-        String outputDir = "build/tmp/compilePython";
-        PythonCompiler pythonCompiler = new PythonCompiler();
-        for (String source : sources) {
-            if (!new File(source).exists()) {
-                System.err.println("Source directory does not exist: " + source);
-                System.exit(1);
-            }
-        }
-        for (String source : sources) {
-            pythonCompiler.compileSources(source);
-        }
-        pythonCompiler.pack(outputDir, outputJar);
+    private record ArgParsed(String outputJar, String outputDir, List<String> sources) {
     }
 }

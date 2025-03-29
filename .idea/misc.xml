@@ -4,15 +4,20 @@
     <asm skipDebug="false" skipFrames="false" skipCode="false" expandFrames="false" />
     <groovy codeStyle="LEGACY" />
   </component>
-  <component name="ASMSmaliIdeaPluginConfiguration">
-    <asm skipDebug="true" skipFrames="true" skipCode="false" expandFrames="false" />
-    <groovy codeStyle="LEGACY" />
-  </component>
   <component name="Black">
-    <option name="sdkName" value="Python 3.9" />
+    <option name="sdkName" value="Python 3.12 (python-vm)" />
+  </component>
+  <component name="DiscordProjectSettings">
+    <option name="show" value="ASK" />
+    <option name="description" value="" />
+    <option name="applicationTheme" value="default" />
+    <option name="iconsTheme" value="default" />
+    <option name="button1Title" value="" />
+    <option name="button1Url" value="" />
+    <option name="button2Title" value="" />
+    <option name="button2Url" value="" />
+    <option name="customApplicationId" value="" />
   </component>
   <component name="ExternalStorageConfigurationManager" enabled="true" />
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_1_8" project-jdk-name="graalvm-ce-21" project-jdk-type="JavaSDK">
-    <output url="file://$PROJECT_DIR$/out" />
-  </component>
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_1_8" project-jdk-name="graalvm-ce-23" project-jdk-type="JavaSDK" />
 </project>

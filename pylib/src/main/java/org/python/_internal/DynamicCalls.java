@@ -7,6 +7,7 @@ import java.lang.invoke.MethodType;
 import java.util.Map;
 import java.util.Set;
 
+@SuppressWarnings("t")
 public class DynamicCalls {
 
     public static CallSite bootstrap(MethodHandles.Lookup lookup, String attrName, MethodType type, String name, String attrDesc) {
@@ -66,6 +67,12 @@ public class DynamicCalls {
             }
             try {
                 return new ConstantCallSite(MethodHandles.insertArguments(MethodHandles.lookup().findStatic(Py.class, "__callmember__", MethodType.methodType(Object.class, Object.class, String.class, Object[].class, Map.class)), 1, attrName));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } if (name.equals("__builtincall__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(PyBuiltins.class, attrName, type));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }

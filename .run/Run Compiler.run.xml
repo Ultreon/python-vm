@@ -4,7 +4,7 @@
     <module name="python-vm.compiler.main" />
     <extension name="coverage">
       <pattern>
-        <option name="PATTERN" value="dev.ultreon.pythonc.*" />
+        <option name="PATTERN" value="dev.ultreon.pythonc.modules.*" />
         <option name="ENABLED" value="true" />
       </pattern>
     </extension>

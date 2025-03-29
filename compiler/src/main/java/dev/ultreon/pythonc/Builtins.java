@@ -1,61 +1,66 @@
 package dev.ultreon.pythonc;
 
+import dev.ultreon.pythonc.classes.PyBuiltinClass;
+import dev.ultreon.pythonc.functions.PyBuiltinFunction;
+import dev.ultreon.pythonc.modules.PyBuiltinModule;
 import org.objectweb.asm.Type;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class Builtins {
     private final Map<String, PyBuiltinClass> builtinClassMap = new HashMap<>();
     private final Map<String, PyBuiltinFunction> builtinFunctionMap = new HashMap<>();
 
     private final Map<Type, PyBuiltinClass> builtinClassTypeMap = new HashMap<>();
-    private PythonCompiler compiler;
+    private final PythonCompiler compiler;
+    private final PyBuiltinModule module = new PyBuiltinModule(new ModulePath("builtins"));
 
     public Builtins(PythonCompiler compiler) {
         this.compiler = compiler;
-        put(new PyBuiltinClass("Ljava/lang/Long;", "J", "Lorg/python/builtins/PyInt;", "int"));
-        put(new PyBuiltinClass("Ljava/lang/Double;", "D", "Lorg/python/builtins/PyFloat;", "float"));
-        put(new PyBuiltinClass("Ljava/lang/Boolean;", "Z", "Lorg/python/builtins/PyBoolean;", "bool"));
-        put(new PyBuiltinClass("Ljava/lang/String;", "Lorg/python/builtins/PyStr;", "str"));
-        put(new PyBuiltinClass("[B", "[B", "Lorg/python/builtins/PyBytes;", "bytes"));
-        put(new PyBuiltinClass("[B", "[B", "Lorg/python/builtins/PyByteArray;", "bytearray"));
-        put(new PyBuiltinClass("Ljava/util/List;", "Lorg/python/builtins/PyList;", "list"));
-        put(new PyBuiltinClass("Ljava/util/Map;", "Lorg/python/builtins/PyDict;", "dict"));
-        put(new PyBuiltinClass("Ljava/util/Set;", "Lorg/python/builtins/PySet;", "set"));
-        put(new PyBuiltinClass("[Ljava/util/Object;", "Lorg/python/builtins/PyTuple;", "tuple"));
-        put(new PyBuiltinClass("Ljava/util/List;", "Lorg/python/builtins/PyRange;", "range"));
-        put(new PyBuiltinClass("Ljava/lang/Object;", "Lorg/python/builtins/PyNone;", "None"));
-        put(new PyBuiltinClass("Ljava/lang/Object;", "Lorg/python/builtins/PyObject;", "object"));
-        put(new PyBuiltinClass("Ljava/lang/Class;", "Lorg/python/builtins/PyType;", "type"));
-        put(new PyBuiltinClass("Ljava/lang/Exception;", "Lorg/python/builtins/PyException;", "Exception"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyBaseException;", "BaseException"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyStopIteration;", "StopIteration"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyStopAsyncIteration;", "StopAsyncIteration"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyGeneratorExit;", "GeneratorExit"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PySystemExit;", "SystemExit"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyKeyboardInterrupt;", "KeyboardInterrupt"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyImportError;", "ImportError"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyModuleNotFoundError;", "ModuleNotFoundError"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyIndexError;", "IndexError"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyKeyError;", "KeyError"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyValueError;", "ValueError"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyTypeError;", "TypeError"));
-        put(new PyBuiltinClass("Ljava/lang/UnsupportedOperationException;", "Lorg/python/builtins/PyNotImplementedError;", "NotImplementedError"));
-        put(new PyBuiltinClass("Ljava/lang/RuntimeException;", "Lorg/python/builtins/PyOverflowError;", "OverflowError"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyInt;"), Type.LONG_TYPE, "int", "long"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyFloat;"), Type.DOUBLE_TYPE, "float", "double"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyBool;"), Type.BOOLEAN_TYPE, "bool", "boolean"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyStr;"), Type.getType(String.class), "str", "String"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyBytes;"), Type.getType(byte[].class), "bytes", "byte[]"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyByteArray;"), Type.getType(byte[].class), "bytearray", "byte[]"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyList;"), Type.getType(List.class), "list", "List"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyDict;"), Type.getType(Map.class), "dict", "Map"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PySet;"), Type.getType(Set.class), "set", "Set"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyTuple;"), Type.getType(Object[].class), "Tuple", "Object[]"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyRange"), "range", "PyRange"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyJvmObject"), Type.getType(Object.class), "jvmobject", "Object"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyType"), Type.getType(Class.class), "type", "Class"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyException"), "Exception", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyBaseException"), "BaseException", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyStopIteration"), "StopIteration", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyStopAsyncIteration"), "StopAsyncIteration", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyGeneratorExit"), "GeneratorExit", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PySystemExit"), "SystemExit", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyKeyboardInterrupt"), "KeyboardInterrupt", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyImportError"), "ImportError", "ClassNotFoundException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyModuleNotFoundError"), "ModuleNotFoundError", "ClassNotFoundException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyIndexError"), "IndexError", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyKeyError"), "KeyError", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyTypeError"), "TypeError", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyNotImplementedError"), "NotImplementedError", "RuntimeException"));
+        put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyOverflowError"), "OverflowError", "StackOverflowError"));
 
-        put(new PyBuiltinFunction("java/lang/String", "org/python/builtins/BuiltinsPy", new String[]{"asc(Ljava/lang/String;)V"}, 1, "asc", Type.LONG_TYPE));
-        put(new PyBuiltinFunction("java/lang/System", "org/python/builtins/BuiltinsPy", new String[]{"print([Ljava/lang/Object;Ljava/util/Map;)"}, 2, "print", PyBuiltinFunction.Mode.DYN_CTOR, Type.VOID_TYPE));
+        put(new PyBuiltinFunction("asc", module));
+        put(new PyBuiltinFunction("ord", module));
+        put(new PyBuiltinFunction("input", module));
+        put(new PyBuiltinFunction("print", module));
+        put(new PyBuiltinFunction("len", module));
+        put(new PyBuiltinFunction("hash", module));
+        put(new PyBuiltinFunction("type", module));
     }
 
     private void put(PyBuiltinClass builtinClass) {
         builtinClassMap.put(builtinClass.pyName, builtinClass);
-        builtinClassTypeMap.put(builtinClass.type(compiler), builtinClass);
+        builtinClassTypeMap.put(builtinClass.type(), builtinClass);
     }
 
     private void put(PyBuiltinFunction builtinFunction) {
-        builtinFunctionMap.put(builtinFunction.name, builtinFunction);
+        builtinFunctionMap.put(builtinFunction.name(), builtinFunction);
     }
 
     public PyBuiltinClass getClass(String name) {

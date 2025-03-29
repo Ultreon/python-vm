@@ -14,6 +14,7 @@ public abstract class AbstractContext implements Context {
 
     @Override
     public void push(Type type) {
+        if (type.getSort() == Type.METHOD) throw new IllegalArgumentException("Method is not an object!");
         stack.push(type);
         if (type.equals(Type.LONG_TYPE) || type.equals(Type.DOUBLE_TYPE)) stack.push(type);
     }

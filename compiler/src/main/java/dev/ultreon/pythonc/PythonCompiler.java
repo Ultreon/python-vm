@@ -1,6 +1,15 @@
 package dev.ultreon.pythonc;
 
 import com.google.common.base.CaseFormat;
+import dev.ultreon.pythonc.classes.*;
+import dev.ultreon.pythonc.classes.Module;
+import dev.ultreon.pythonc.expr.*;
+import dev.ultreon.pythonc.functions.FunctionDefiner;
+import dev.ultreon.pythonc.functions.PyBuiltinFunction;
+import dev.ultreon.pythonc.functions.PyFunction;
+import dev.ultreon.pythonc.functions.param.*;
+import dev.ultreon.pythonc.lang.PyAST;
+import dev.ultreon.pythonc.statement.*;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.ParserRuleContext;
@@ -10,19 +19,16 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.objectweb.asm.*;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.*;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.*;
 import java.util.*;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -30,7 +36,7 @@ import java.util.zip.ZipEntry;
 
 import static org.objectweb.asm.Opcodes.*;
 
-@SuppressWarnings("t")
+@SuppressWarnings({"t", "UnusedReturnValue"})
 public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     public static final int F_CPL_FUNCTION = 0;
     public static final int F_CPL_CLASS = 1;
@@ -48,48 +54,46 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
     public static final String E_NOT_ALLOWED = "Not allowed";
     public static final String FMT_CLASS = "L%s;";
+    public static final PyParameter[] BUILTIN_FUNCTION_PARAMETER_TYPES = new PyParameter[]{new PyArgsParameter("args"), new PyKwargsParameter("kwargs")};
     public static CompileExpectations expectations = new CompileExpectations();
     public static Path rootDir;
+    private static final ThreadLocal<PythonCompiler> CURRENT = new ThreadLocal<>();
+    private final Path outputPath;
     public Builtins builtins = new Builtins(this);
 
-    private ClassWriter rootCw;
     Set<String> undefinedClasses = new LinkedHashSet<>();
-    private ClassVisitor cv = rootCw;
+    private ClassNode classOut = null;
     private Path pathOfFile;
     private String path = "";
     private String fileName = "Main";
-    final Set<String> implementing = new HashSet<>();
-    final Map<String, Symbol> symbols = new HashMap<>();
-    final PyImports imports = new PyImports(this);
+    PyImports imports;
     private State state = State.File;
     final BitSet flags = new BitSet();
     final Decorators decorators = new Decorators();
-    MethodVisitor mv;
+    MethodVisitor methodOut;
     MethodVisitor rootInitMv;
     int currentVariableIndex = 1;
     Label endLabel;
-    Label startLabel;
     Label curLabel;
-    PyClasses classes = new PyClasses(this);
-    static JvmClassCache classCache = new JvmClassCache();
-    private PyClass curPyClass = null;
-    private final List<CompilerException> compileErrors = new ArrayList<>();
-    private Label elifLabel;
+    PyClasses classes = new PyClasses();
+    public static JvmClassCache classCache = new JvmClassCache();
+    private LangClass curPyClass = null;
+    private static final List<CompilerException> compileErrors = new ArrayList<>();
     final Stack<Context> contextStack = new Stack<>();
 
     public final JvmWriter writer = new JvmWriter(this);
     @Nullable
-    public PyCompileClass compilingClass;
+    public JvmClassCompilable compilingClass;
     @Nullable
-    public PyClass definingClass;
+    public LangClass definingClass;
     @Nullable
-    public PyModule definingModule;
-    @Nullable PyClass definingInstance;
+    public Module definingModule;
+    @Nullable LangClass definingInstance;
     private PyFunction definingFunction;
-    private PythonParser.ArgumentsContext callArgs;
-    private Stack<MemberContext> memberContextStack = new Stack<>();
-    private MemberContext memberContext;
-    private ClassNode cNode;
+    private final Stack<MemberContext> memberContextStack = new Stack<>();
+    public static final JvmModuleCache moduleCache = new JvmModuleCache();
+    public final PyGlobalUnlocked unlocked = new PyGlobalUnlocked();
+    private PyExpression leftExpr;
 
     public static boolean isInstanceOf(PythonCompiler pc, Type pop1, String owner) {
         Type type = Type.getObjectType(owner);
@@ -98,15 +102,20 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         return pop.doesInherit(pc, require);
     }
 
-    public static JvmClass getType(Class<Object> objectClass) {
+    public static JvmClass getType(java.lang.Class<Object> objectClass) {
         return classCache.require(null, Type.getObjectType(objectClass.getName()));
     }
 
-    public void compileSources(String sourceDir) {
-        rootDir = Path.of(sourceDir).toAbsolutePath();
+    public static PythonCompiler current() {
+        return CURRENT.get();
+    }
+
+    public static void compileSources(String sourceDir, String outputDir) {
+        Path sourcePath = Path.of(sourceDir);
+        rootDir = sourcePath.toAbsolutePath();
 
         // Walk the directory
-        Path path = Path.of(System.getProperty("user.dir")).relativize(Path.of(sourceDir));
+        Path path = Path.of(System.getProperty("user.dir")).relativize(sourcePath);
         try {
             try (Stream<Path> walk = Files.walk(path)) {
                 walk
@@ -115,7 +124,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         .collect(Collectors.toSet())
                         .forEach(v -> {
                             try {
-                                compile(new File(v), new File(sourceDir));
+                                new PythonCompiler(outputDir).compile(new File(v), new File(sourceDir));
                             } catch (CompilerException e) {
                                 compileErrors.add(e);
                             } catch (IOException e) {
@@ -126,16 +135,17 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             try (Stream<Path> walk = Files.walk(path)) {
                 walk
                         .filter(p -> !p.toString().endsWith(".py"))
-                        .map(v -> Path.of(sourceDir).relativize(v.toAbsolutePath()).toString())
+                        .map(v -> sourcePath.relativize(v.toAbsolutePath()).toString())
                         .forEach(v -> {
                             try {
                                 // Copy over resources
                                 Path path1 = Path.of("build/tmp/compilePython", v);
                                 System.out.println("path1 = " + path1);
                                 if (Files.notExists(path1)) Files.createDirectories(path1.getParent());
-                                Path path2 = Path.of(sourceDir, v);
+                                Path sourceDirPath = Path.of(sourceDir, v);
+                                Path path2 = sourceDirPath;
                                 if (Files.isDirectory(path2)) return;
-                                Files.copy(Path.of(sourceDir, v), path1.toAbsolutePath(), StandardCopyOption.REPLACE_EXISTING);
+                                Files.copy(sourceDirPath, path1.toAbsolutePath(), StandardCopyOption.REPLACE_EXISTING);
                             } catch (IOException e) {
                                 throw new RuntimeException(e);
                             }
@@ -146,6 +156,8 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
 
         if (!compileErrors.isEmpty()) {
+            PythonCompiler.expectations.getExceptions().forEach(compileErrors::addFirst);
+
             for (CompilerException ex : compileErrors) {
                 try {
                     System.err.println(ex.toAdvancedString());
@@ -161,60 +173,223 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     JvmClass getClassSymbol(String className) {
         var name = className.substring(className.lastIndexOf(".") + 1);
 
-        if (!symbols.containsKey(name)) {
+        if (!SymbolContext.current().hasSymbol(name)) {
             undefinedClasses.add(className);
             return null;
         }
 
-        Symbol symbol = symbols.get(name);
+        PySymbol symbol = SymbolContext.current().getSymbol(name);
         if (symbol instanceof JvmClass) {
             return (JvmClass) symbol;
-        } else if (symbol instanceof PyImport pyImport && pyImport.symbol instanceof JvmClass jvmClass) {
-            return jvmClass;
         }
 
         undefinedClasses.add(className);
         return null;
     }
 
-    public String pyName(Type owner) {
-        if (owner.getSort() == Type.BYTE) return "jbyte";
-        if (owner.getSort() == Type.SHORT) return "jshort";
-        if (owner.getSort() == Type.INT) return "jint";
-        if (owner.getSort() == Type.LONG) return "int";
-        if (owner.getSort() == Type.FLOAT) return "jfloat";
-        if (owner.getSort() == Type.DOUBLE) return "float";
-        if (owner.getSort() == Type.BOOLEAN) return "bool";
-        if (owner.getSort() == Type.CHAR) return "jchar";
-        if (owner.getSort() == Type.ARRAY) return "typing.Tuple";
-        if (owner.getSort() == Type.OBJECT && owner.getClassName().equals("java/lang/String")) return "str";
-        if (owner.getSort() == Type.OBJECT && owner.getClassName().equals("java/util/List")) return "list";
-        if (owner.getSort() == Type.OBJECT && owner.getClassName().equals("java/util/Map")) return "dict";
-        if (owner.getSort() == Type.OBJECT && owner.getClassName().equals("java/util/Set")) return "set";
-        if (owner.getSort() == Type.OBJECT && owner.getClassName().equals("java/lang/Iterable"))
-            return "typing.Iterable";
-        if (owner.getSort() == Type.OBJECT && owner.getClassName().equals("java/lang/Enum")) return "typing.Enum";
-        if (owner.getSort() == Type.OBJECT && owner.getClassName().equals("java/lang/Enum$Value")) return "typing.Enum";
+    public void writeClass(Type type, ClassNode classNode) {
+        String internalName = type.getInternalName();
+        Path resolve = rootDir.resolve(internalName + ".class");
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        classNode.accept(cw);
+        byte[] byteArray = cw.toByteArray();
 
-        PythonCompiler.classCache.load(this, owner);
-        return PythonCompiler.classCache.get(owner).name();
+        try {
+            Files.write(resolve, byteArray, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+        } catch (IOException e) {
+            throw new CompilerException("Failed to write classfile '" + resolve + "': " + e);
+        }
+    }
+
+    public FunctionContext startFunction(FunctionDefiner owner, PyFunction function, String name, PyParameter[] parameters, String signature) {
+        return FunctionContext.pushContext(owner, function, name, parameters);
+    }
+
+    public <T> @Nullable T lastContext(@NotNull java.lang.Class<T> symbolContextClass) {
+        for (int i = contextStack.size() - 1; i >= 0; i--) {
+            Context context = contextStack.get(i);
+            if (symbolContextClass.isInstance(context)) {
+                return symbolContextClass.cast(context);
+            }
+        }
+        throw new RuntimeException("No " + symbolContextClass.getSimpleName() + " context found");
+    }
+
+    public Context lastContext(@NotNull Predicate<Context> predicate) {
+        for (int i = contextStack.size() - 1; i >= 0; i--) {
+            Context context = contextStack.get(i);
+            if (predicate.test(context)) {
+                return context;
+            }
+        }
+        throw new RuntimeException("No context found matching the predicate!");
+    }
+
+    public void endFunction(FunctionContext functionContext) {
+        MethodNode mv = functionContext.function().node();
+
+        AbstractInsnNode last = mv.instructions.getLast();
+
+        if (functionContext.needsPop()) {
+            throw new RuntimeException("Function " + functionContext.function().name() + " needs to pop:\n" + functionContext.location());
+        }
+
+        if (last instanceof InsnNode) {
+            Type type = functionContext.function().returnType();
+            if (type != null) switch (type.getSort()) {
+                case Type.BYTE, Type.SHORT, Type.INT, Type.CHAR, Type.BOOLEAN -> {
+                    mv.visitInsn(ICONST_0);
+                    mv.visitInsn(IRETURN);
+                }
+                case Type.LONG -> {
+                    mv.visitInsn(LCONST_0);
+                    mv.visitInsn(LRETURN);
+                }
+                case Type.FLOAT -> {
+                    mv.visitInsn(FCONST_0);
+                    mv.visitInsn(FRETURN);
+                }
+                case Type.DOUBLE -> {
+                    mv.visitInsn(DCONST_0);
+                    mv.visitInsn(DRETURN);
+                }
+                case Type.OBJECT, Type.ARRAY -> {
+                    mv.visitInsn(ACONST_NULL);
+                    mv.visitInsn(ARETURN);
+                }
+                case Type.VOID -> mv.visitInsn(RETURN);
+                default -> throw new RuntimeException("Unknown type: " + type);
+            }
+            else {
+                mv.visitInsn(ACONST_NULL);
+                mv.visitInsn(ARETURN);
+            }
+        }
+
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+    }
+
+    public void checkPop(Location location) {
+        if (writer.getContext().needsPop())
+            throw new RuntimeException("Who forgot to pop the stack?" + location.toAdvancedString());
+    }
+
+    public void checkNoPop(Location location) {
+        if (!writer.getContext().needsPop())
+            throw new RuntimeException("Expression returned void!" + location.toAdvancedString());
+    }
+
+    public void checkNoPop(Location location, Type type) {
+        if (!writer.getContext().needsPop())
+            throw new RuntimeException("Expression should return " + type + " not void!" + location.toAdvancedString());
+        if (classCache.require(this, type).doesInherit(this, classCache.object(this)))
+            throw new RuntimeException("Expression should return " + type + " not void!\n" + location);
+    }
+
+    public void unlock(GlobalSettable globalSettable) {
+        this.unlocked.add(globalSettable.name());
+    }
+
+    public void classDefinition(Type owner, Consumer<ClassNode> runnable) {
+        ClassNode classNode = new ClassNode(ASM9);
+        classNode.access = ACC_PUBLIC;
+        classNode.version = Opcodes.V1_8;
+        classNode.name = owner.getInternalName();
+
+        classNode.interfaces = List.of("org/python/_internal/PyObject");
+
+        swapClass(classNode, () -> {
+            runnable.accept(classNode);
+        });
+
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        classNode.accept(cw);
+        byte[] byteArray = cw.toByteArray();
+
+        try {
+            Files.createDirectories(outputPath.resolve(owner.getInternalName() + ".class").getParent());
+            Files.write(outputPath.resolve(owner.getInternalName() + ".class"), byteArray, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+        } catch (IOException e) {
+            compileErrors.add(new CompilerException("Failed to write class file: " + e.toString()));
+        }
+    }
+
+    public void moduleDefinition(Type owner, Consumer<ClassNode> runnable) {
+        ClassNode classNode = new ClassNode(ASM9);
+        classNode.access = ACC_PUBLIC;
+        classNode.version = Opcodes.V1_8;
+        classNode.name = owner.getInternalName();
+        classNode.superName = "java/lang/Object";
+
+        classNode.interfaces = List.of("org/python/_internal/PyModule");
+
+        swapClass(classNode, () -> {
+            runnable.accept(classNode);
+        });
+
+        ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+        classNode.accept(cw);
+        byte[] byteArray = cw.toByteArray();
+
+        try {
+            Files.createDirectories(outputPath.resolve(owner.getInternalName() + ".class").getParent());
+            Files.write(outputPath.resolve(owner.getInternalName() + ".class"), byteArray, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+        } catch (IOException e) {
+            compileErrors.add(new CompilerException("Failed to write class file: " + e.toString()));
+        }
+    }
+
+    public void classInit(Consumer<MethodNode> o) {
+        if (classOut == null) throw new IllegalStateException("No class output set!");
+
+        MethodNode methodNode = new MethodNode();
+        methodNode.name = "<clinit>";
+        methodNode.desc = "()V";
+        methodNode.access = ACC_STATIC;
+        methodNode.instructions = new InsnList();
+        methodNode.signature = null;
+        methodNode.exceptions = null;
+        methodNode.visibleAnnotations = null;
+        methodNode.invisibleAnnotations = null;
+        methodNode.visibleTypeAnnotations = null;
+        methodNode.invisibleTypeAnnotations = null;
+
+        classOut.methods.add(methodNode);
+
+        swapMethod(methodNode, () -> o.accept(methodNode));
+
+        methodNode.visitInsn(RETURN);
+        methodNode.visitMaxs(0, 0);
+        methodNode.visitEnd();
     }
 
     enum State {
-        File, Class, Function, Decorators
+        File, Decorators
     }
 
-    public PythonCompiler() {
-        for (PyBuiltinClass builtinClass : builtins.getClasses()) {
-            this.symbols.put(builtinClass.pyName, builtinClass);
-            this.imports.add(builtinClass.pyName, builtinClass);
-        }
+    public PythonCompiler(String outputDir) {
+        CURRENT.set(this);
+        this.outputPath = Path.of(outputDir);
+    }
 
-        for (PyBuiltinFunction builtinFunction : builtins.getFunctions()) {
-            this.symbols.put(builtinFunction.name, builtinFunction);
-        }
+    public void setSymbol(String name, PySymbol symbol) {
+        SymbolContext.current().setSymbol(name, symbol);
+    }
 
-        classCache.init(this);
+    public PySymbol getSymbol(String name) {
+        return SymbolContext.current().getSymbol(name);
+    }
+
+    public boolean hasSymbol(String name) {
+        return SymbolContext.current().hasSymbol(name);
+    }
+
+    public PySymbol getSymbol(String name, Location location) {
+        PySymbol symbol = getSymbol(name);
+        if (symbol == null)
+            throw new CompilerException("Unknown symbol: " + name, location);
+        return symbol;
     }
 
     @Override
@@ -245,212 +420,117 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitStatements(PythonParser.StatementsContext ctx) {
+    public List<PyStatement> visitStatements(PythonParser.StatementsContext ctx) {
+        List<PyStatement> statements = new ArrayList<>();
         for (int i = 0; i < ctx.statement().size(); i++) {
-            Context context = getContext(Context.class);
-            if (context.needsPop() && i > 0) {
-                PythonParser.StatementContext statement = ctx.statement(i - 1);
-                if (!compileErrors.isEmpty()) {
-                    return ErrorValue.Instance;
-                }
-                if (statement == null)
-                    throw new RuntimeException("Didn't fully pop before statement " + (i - 1) + " for:\n" + ctx.getText());
-                throw new RuntimeException("Didn't fully pop in statement " + (i - 1) + " for:\n" + statement.getText());
-            }
-            Object visit = visit(ctx.statement(i));
-            switch (visit) {
-                case Unit unit -> {
-
-                }
-                case List<?> list -> {
-                    for (Object o : list) {
-                        switch (o) {
-                            case List<?> list1 -> {
-                                for (Object o1 : list1) {
-                                    if (o1 instanceof MemberFuncCall funcCall) {
-                                        if (mv == null) {
-                                            throw new RuntimeException("Not writing a method:\n" + ctx.getText());
-                                        }
-
-                                        MethodVisitor mv = this.mv == null ? rootInitMv : this.mv;
-                                        funcCall.load(mv, this, funcCall.preload(mv, this, false), false);
-                                        Type type = funcCall.type(this);
-                                        if (type.equals(Type.VOID_TYPE)) {
-                                            continue;
-                                        }
-
-                                        writer.pop();
-
-                                    }
-                                }
-                            }
-                            case PyObjectRef pyObjectRef -> {
-                                if (flags.get(F_CPL_TYPE_ANNO)) {
-                                    return imports.get(pyObjectRef.name()).name();
-                                } else {
-                                    throw new RuntimeException("statement not supported for:\n" + ctx.getText());
-                                }
-                            }
-                            case String s ->
-                                    throw new RuntimeException("statement not supported for string:\n" + ctx.getText());
-                            case Boolean b ->
-                                    throw new RuntimeException("statement not supported for boolean:\n" + ctx.getText());
-                            case Integer j ->
-                                    throw new RuntimeException("statement not supported for integer:\n" + ctx.getText());
-                            case Float f ->
-                                    throw new RuntimeException("statement not supported for float:\n" + ctx.getText());
-                            case Long l ->
-                                    throw new RuntimeException("statement not supported for long:\n" + ctx.getText());
-                            case Double d ->
-                                    throw new RuntimeException("statement not supported for double:\n" + ctx.getText());
-                            case Unit unit -> {
-                            }
-                            case PyExpr pyExpr -> {
-                                pyExpr.expectReturnType(this, classCache.require(this, Object.class), new Location(pathOfFile.toString(), ctx.start.getLine(), ctx.start.getCharPositionInLine(), ctx.stop.getLine(), ctx.stop.getCharPositionInLine()));
-                                pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
-                                if (pyExpr.type(this) != Type.VOID_TYPE) {
-                                    writer.pop();
-                                }
-
-                                while (context.needsPop()) {
-                                    writer.pop();
-                                }
-                            }
-                            case null, default ->
-                                    throw new RuntimeException("statement not supported for: " + ctx.getText());
-                        }
-                    }
-                }
-                case null, default -> throw new RuntimeException("statement not supported for:\n" + ctx.getText());
-            }
-
+            checkPopped(ctx, i);
+            statements.add(visitStatement(ctx.statement(i)));
         }
-        return Unit.Instance;
+        return statements;
+    }
+
+    private @Nullable ErrorValue checkPopped(PythonParser.StatementsContext ctx, int i) {
+        Context context = getContext(Context.class);
+        if (context.needsPop() && i > 0) {
+            PythonParser.StatementContext statement = ctx.statement(i - 1);
+            if (!compileErrors.isEmpty()) {
+                return ErrorValue.Instance;
+            }
+            if (statement == null)
+                throw new RuntimeException("Didn't fully pop before statement " + (i - 1) + " for:\n" + getTextFor(ctx));
+
+            List<String> classNames = new ArrayList<>();
+            int stackSize = context.stackSize();
+            while (context.needsPop()) {
+                classNames.add(context.pop().getClassName());
+            }
+            throw new RuntimeException("Didn't fully pop (" + stackSize + " left) in statement " + (i - 1) + " for '" + String.join(", ", classNames) + getTextFor(statement));
+        }
+        return null;
     }
 
     @Override
-    public Object visitStatement(PythonParser.StatementContext ctx) {
+    public PyStatement visitStatement(PythonParser.StatementContext ctx) {
         PythonParser.Compound_stmtContext compoundStmtContext = ctx.compound_stmt();
         PythonParser.Simple_stmtsContext simpleStmtsContext = ctx.simple_stmts();
         if (simpleStmtsContext != null) {
-            return visit(simpleStmtsContext);
+            return visitSimple_stmts(simpleStmtsContext);
         }
-        return visit(compoundStmtContext);
+        if (compoundStmtContext != null) {
+            return visitCompound_stmt(compoundStmtContext);
+        }
+        throw new RuntimeException("No supported matching statement found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitCompound_stmt(PythonParser.Compound_stmtContext ctx) {
+    public PyStatement visitCompound_stmt(PythonParser.Compound_stmtContext ctx) {
         PythonParser.Class_defContext classDefContext = ctx.class_def();
         if (classDefContext != null) {
-            return visit(classDefContext);
+            return visitClass_def(classDefContext).definition();
         }
 
         PythonParser.Function_defContext functionDefContext = ctx.function_def();
         if (functionDefContext != null) {
-            return visit(functionDefContext);
+            return visitFunction_def(functionDefContext);
         }
 
         PythonParser.If_stmtContext ifStmtContext = ctx.if_stmt();
         if (ifStmtContext != null) {
-            return visit(ifStmtContext);
+            return visitIf_stmt(ifStmtContext);
         }
 
         PythonParser.While_stmtContext whileStmtContext = ctx.while_stmt();
         if (whileStmtContext != null) {
-            return visit(whileStmtContext);
+            return visitWhile_stmt(whileStmtContext);
         }
 
         PythonParser.For_stmtContext forStmtContext = ctx.for_stmt();
         if (forStmtContext != null) {
-            return visit(forStmtContext);
+            return visitFor_stmt(forStmtContext);
         }
 
-        throw new RuntimeException("No supported matching compound_stmt found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching compound_stmt found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitFor_stmt(PythonParser.For_stmtContext ctx) {
-//        PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
-//        if (namedExpressionContext != null) {
-//            Object visit = visit(namedExpressionContext);
-//            loadExpr(ctx, visit);
-//        } else {
-//            throw new RuntimeException("No supported matching named_expression found for:\n" + ctx.getText());
-//        }
-
-        throw new RuntimeException("No supported matching for_stmt found for:\n" + ctx.getText());
-    }
-
-    @Override
-    public Object visitWhile_stmt(PythonParser.While_stmtContext ctx) {
-        Label loopStart = new Label();
-        Label loopEnd = new Label();
-        Label elseBlock = null;
-        if (ctx.else_block() != null) {
-            elseBlock = new Label();
-        }
-
-        // Loop start:
-        writer.label(loopStart);
-
-        // region Comparison(named_expression)
-        pushContext(new WhileConditionContext(loopEnd, elseBlock));
-        PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
-        if (namedExpressionContext != null) {
-            Object visit = visit(namedExpressionContext);
-            loadExpr(ctx, visit);
-        } else {
-            throw new RuntimeException("No supported matching named_expression found for:\n" + ctx.getText());
-        }
-        Context context = writer.getContext();
-        popContext();
-        // endregion Comparison
-
-        // region Loop(block)
-        Context loopContext = new WhileLoopContext(loopStart, loopEnd);
-        pushContext(loopContext);
+    public ForStatement visitFor_stmt(PythonParser.For_stmtContext ctx) {
         PythonParser.BlockContext block = ctx.block();
-        if (block != null) {
-            visit(block);
-        }
-        if (context.needsPop()) {
-            throw new RuntimeException("Still values on stack for:\n" + ctx.getText());
-        }
-        popContext();
-        // endregion Loop
+        if (block == null) throw new CompilerException("While statement doesn't have content", getLocation(ctx));
 
-        // Jump to loop start
-        writer.jump(loopStart);
-        writer.lineNumber(ctx.start.getLine(), loopStart);
+        List<PyExpression> expressions = visitStar_targets(ctx.star_targets());
+        if (expressions.size() > 1)
+            throw new CompilerException("For statement can only have one target", getLocation(ctx));
+        if (expressions.isEmpty())
+            throw new CompilerException("For statement must have at least one target", getLocation(ctx));
 
-        if (elseBlock != null) {
-            writer.label(elseBlock);
-            writer.lineNumber(ctx.else_block().start.getLine(), elseBlock);
+        List<StarExpression> starExpressions = visitStar_expressions(ctx.star_expressions());
 
-            // region Else(block)
-            PythonParser.BlockContext elseBlockContext = ctx.else_block().block();
-            if (elseBlockContext != null) {
-                visit(elseBlockContext);
-            }
-            if (context.needsPop()) {
-                throw new RuntimeException("Still values on stack for:\n" + ctx.getText());
-            }
-            // endregion Else
+
+        PyBlock elseBlock = null;
+        if (ctx.else_block() != null) {
+            elseBlock = visitElse_block(ctx.else_block());
         }
 
-        // Loop end:
-        writer.label(loopEnd);
-        writer.lineNumber(ctx.stop.getLine(), loopEnd);
-
-        return Unit.Instance;
+        return new ForStatement(starExpressions.getFirst().expression(), (VariableExpr) expressions.getFirst(), visitBlock(block), elseBlock);
     }
 
     @Override
-    public Object visitIf_stmt(PythonParser.If_stmtContext ctx) {
-        Label endLabel = new Label(); // Marks the end of the if-else block
-        Label elseLabel = new Label(); // Marks the start of the else block (if present)
+    public WhileStatement visitWhile_stmt(PythonParser.While_stmtContext ctx) {
+        PythonParser.BlockContext block = ctx.block();
+        if (block == null) throw new CompilerException("While statement doesn't have content", getLocation(ctx));
 
-        // Check if there is an elif block
+        PyExpression expression = visitNamed_expression(ctx.named_expression());
+
+        PyBlock elseBlock = null;
+        if (ctx.else_block() != null) {
+            elseBlock = visitElse_block(ctx.else_block());
+        }
+
+        return new WhileStatement(expression, visitBlock(block), elseBlock);
+    }
+
+    @Override
+    public IfStatement visitIf_stmt(PythonParser.If_stmtContext ctx) {
         PythonParser.Elif_stmtContext elifStmtContext = ctx.elif_stmt();
         Label elifLabel = null;
         if (elifStmtContext != null) {
@@ -461,201 +541,113 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         IfStatementContext context = new IfStatementContext(elifLabel, endLabel);
         this.pushContext(context);
 
-        // Visit and evaluate the "if" condition
         PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
+        PyExpression condition;
         if (namedExpressionContext != null) {
-            Object visit = visit(namedExpressionContext);// Generates bytecode for the condition
-            switch (visit) {
-                case PyConstant pyConstant -> {
-                    if (mv == null) {
-                        throw new RuntimeException("Not writing a method:\n" + ctx.getText());
-                    }
-                    writer.loadConstant(pyConstant.value());
-                    writer.smartCast(Type.BOOLEAN_TYPE);
-                    writer.pushTrue();
-                }
-                case PyExpr pyExpr -> {
-                    if (mv == null) {
-                        throw new RuntimeException("Not writing a method:\n" + ctx.getText());
-                    }
-
-                    Type type = pyExpr.type(this);
-                    if (type.equals(Type.getType(Object.class))) {
-                        pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
-                        writer.cast(Type.getType(Boolean.class));
-                        writer.unbox(Type.BOOLEAN_TYPE);
-                        writer.pushTrue();
-                    } else if (type != Type.BOOLEAN_TYPE) {
-                        throw new RuntimeException("Expected boolean, got " + type.getClassName());
-                    } else {
-                        pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
-                        writer.cast(Type.getType(Boolean.class));
-                        writer.unbox(Type.BOOLEAN_TYPE);
-                        writer.pushTrue();
-                    }
-                }
-                case Boolean b -> {
-                    if (mv == null) {
-                        throw new RuntimeException("Not writing a method:\n" + ctx.getText());
-                    }
-
-                    writer.loadConstant(b);
-                    writer.unbox(Type.BOOLEAN_TYPE);
-                    writer.pushTrue();
-                    writer.unbox(Type.BOOLEAN_TYPE);
-                }
-                case Integer i -> {
-                    if (mv == null) {
-                        throw new RuntimeException("Not writing a method:\n" + ctx.getText());
-                    }
-                    writer.loadConstant(i);
-                    writer.unbox(Type.BOOLEAN_TYPE);
-                    writer.pushTrue();
-                }
-                case String s -> throw new RuntimeException("String is not a condition:\n" + ctx.getText());
-                case Float f -> throw new RuntimeException("Float is not a condition:\n" + ctx.getText());
-                case Long l -> throw new RuntimeException("Long is not a condition:\n" + ctx.getText());
-                case Double d -> throw new RuntimeException("Double is not a condition:\n" + ctx.getText());
-                case Unit unit -> throw new RuntimeException("Unit is not a condition:\n" + ctx.getText());
-                case null, default -> {
-                    if (visit != null) {
-                        throw new RuntimeException("statement not supported for: " + visit.getClass().getSimpleName());
-                    }
-                }
-            }
-
-            // Jump to elif or else block if the condition is false
-            writer.jumpIfEqual(elifLabel != null ? elifLabel : elseLabel);
+            condition = (PyExpression) visit(namedExpressionContext);
+            return new IfStatement(condition, (PyBlock) visit(ctx.block()), ctx.elif_stmt() != null ? new PyBlock(List.of(visitElif_stmt(ctx.elif_stmt())), getLocation(ctx.elif_stmt())) : ctx.else_block() != null ? visitElse_block(ctx.else_block()) : null);
         }
 
-        // If block
-        visit(ctx.block()); // Generate bytecode for "if" block
-        writer.jump(endLabel); // Skip the else/elif blocks
-
-        // Handle elif blocks if present
-        if (elifStmtContext != null) {
-            writer.label(elifLabel);
-
-            visit(elifStmtContext);
-            context.elifLabel = null;
-        }
-
-        // Handle else block if present
-        writer.label(elseLabel); // Mark the else label (jumped here if the condition is false)
-        PythonParser.Else_blockContext elseBlockContext = ctx.else_block();
-        if (elseBlockContext != null) {
-            writer.lineNumber(elseBlockContext.start.getLine(), elseLabel);
-            visit(elseBlockContext);
-        }
-
-        // End label to exit if-else
-        writer.label(endLabel);
-        writer.lineNumber(ctx.stop.getLine(), endLabel);
-        this.popContext();
-
-        return Unit.Instance;
+        throw new CompilerException("No condition in if statement", getLocation(ctx));
     }
 
     @Override
-    public Object visitElif_stmt(PythonParser.Elif_stmtContext ctx) {
-        IfStatementContext context = getContext(IfStatementContext.class);
-        Label nextLabel = null;
-        Label endLabel = context.endLabel; // Do NOT reassign this!
-
-        if (ctx.elif_stmt() != null) {
-            nextLabel = new Label();
+    public IfStatement visitElif_stmt(PythonParser.Elif_stmtContext ctx) {
+        PythonParser.Elif_stmtContext elifStmtContext = ctx.elif_stmt();
+        Label elifLabel = null;
+        if (elifStmtContext != null) {
+            elifLabel = new Label();
+            writer.lineNumber(elifStmtContext.start.getLine(), elifLabel);
         }
 
-        Label elseLabel = ctx.else_block() != null ? new Label() : null;
-        Label jumpTarget = nextLabel != null ? nextLabel : elseLabel != null ? elseLabel : endLabel;
+        IfStatementContext context = new IfStatementContext(elifLabel, endLabel);
+        this.pushContext(context);
 
-        // Evaluate condition
-        Object visit = visit(ctx.named_expression());
-        loadConstant(ctx, visit, mv);
-        context.pop();
-        writer.jumpIfEqual(jumpTarget);
-
-        // If true, execute block
-        visit(ctx.block());
-        writer.jump(endLabel);
-
-        // Handle elif chain
-        if (nextLabel != null) {
-            writer.label(nextLabel);
-            writer.lineNumber(ctx.start.getLine(), nextLabel);
-            visit(ctx.elif_stmt());
+        PythonParser.Named_expressionContext namedExpressionContext = ctx.named_expression();
+        PyExpression condition;
+        if (namedExpressionContext != null) {
+            condition = (PyExpression) visit(namedExpressionContext);
+            return new IfStatement(condition, (PyBlock) visit(ctx.block()), ctx.elif_stmt() != null ? new PyBlock(List.of((PyStatement) visit(ctx.elif_stmt())), getLocation(ctx.elif_stmt())) : (PyBlock) visit(ctx.else_block()));
         }
 
-        // Else block
-        if (elseLabel != null) {
-            writer.label(elseLabel);
-            writer.lineNumber(ctx.else_block().start.getLine(), elseLabel);
-            visit(ctx.else_block());
-        }
-
-        writer.lineNumber(ctx.stop.getLine(), elseLabel);
-        writer.label(endLabel);
-
-        return Unit.Instance;
+        throw new CompilerException("No condition in if statement", getLocation(ctx));
     }
 
-    private void popContext() {
+    @Override
+    public PyBlock visitElse_block(PythonParser.Else_blockContext ctx) {
+        return visitBlock(ctx.block());
+    }
+
+    void popContext() {
         contextStack.pop();
+        unlocked.pop();
     }
 
-    private void pushContext(Context ifStatementContext) {
+    void popContext(java.lang.Class<? extends Context> contextClass) {
+        Context context = contextStack.pop();
+        if (!contextClass.isInstance(context)) {
+            throw new RuntimeException("Expected context " + contextClass.getSimpleName() + " but got " + context.getClass().getSimpleName());
+        }
+    }
+
+    public void pushContext(Context ifStatementContext) {
         contextStack.push(ifStatementContext);
+        unlocked.push();
     }
 
-    public <T extends Context> T getContext(Class<T> ifStatementContextClass) {
+    public Context getContext() {
+        return contextStack.peek();
+    }
+
+    public <T extends Context> T getContext(java.lang.Class<T> ifStatementContextClass) {
         return ifStatementContextClass.cast(contextStack.peek());
     }
 
     @Override
-    public Object visitFunction_def(PythonParser.Function_defContext ctx) {
+    public PyFunction visitFunction_def(PythonParser.Function_defContext ctx) {
         flags.set(F_CPL_FUNCTION);
         try {
             PythonParser.DecoratorsContext decorators = ctx.decorators();
             if (decorators != null) {
                 Object visit = visit(decorators);
                 if (visit == null) {
-                    throw new RuntimeException("Decorators not supported for:\n" + ctx.getText());
+                    throw new RuntimeException("Decorators not supported for:\n" + getTextFor(ctx));
                 }
             }
             PythonParser.Function_def_rawContext functionDefRawContext = ctx.function_def_raw();
             if (functionDefRawContext != null) {
-                return visit(functionDefRawContext);
+                return visitFunction_def_raw(functionDefRawContext);
             }
-            throw new RuntimeException("No supported matching function_def_raw found for:\n" + ctx.getText());
+            throw new RuntimeException("No supported matching function_def_raw found for:\n" + getTextFor(ctx));
         } finally {
             flags.clear(F_CPL_FUNCTION);
         }
     }
 
     @Override
-    public Object visitFunction_def_raw(PythonParser.Function_def_rawContext ctx) {
+    public PyFunction visitFunction_def_raw(PythonParser.Function_def_rawContext ctx) {
         TerminalNode def = ctx.DEF();
         if (def == null) {
-            throw new RuntimeException("No DEF found for:\n" + ctx.getText());
+            throw new RuntimeException("No DEF found for:\n" + getTextFor(ctx));
         }
 
         TerminalNode name = ctx.NAME();
         if (name == null) {
-            throw new RuntimeException("No NAME found for:\n" + ctx.getText());
+            throw new RuntimeException("No NAME found for:\n" + getTextFor(ctx));
         }
 
         PythonParser.@Nullable ParamsContext params = ctx.params();
 
         PythonParser.BlockContext block = ctx.block();
         if (block == null) {
-            throw new RuntimeException("No block found for:\n" + ctx.getText());
+            throw new RuntimeException("No block found for:\n" + getTextFor(ctx));
         }
 
         if (decorators.byJvmName.containsKey("org/pythonutils/Override")) {
-            // Ignore for now
+            throw new RuntimeException("Override not supported for:\n" + getTextFor(ctx));
         }
 
-        boolean static_ = decorators.byJvmName.containsKey("org/python/builtins/PyStaticmethod") || cv == rootCw;
+        boolean static_ = decorators.byJvmName.containsKey("org/python/builtins/PyStaticmethod") || definingClass == null;
         boolean class_ = decorators.byJvmName.containsKey("org/python/builtins/PyClassmethod");
 
         if (static_) {
@@ -666,49 +658,31 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             flags.set(F_CPL_INSTANCE_FUNC);
         }
 
-        List<PyParameter> parmeters = new ArrayList<>();
+        List<PyParameter> parameters = new ArrayList<>();
         if (params != null) {
-            Object visit = visit(params);
-            if (visit == null) {
-                throw new RuntimeException("params not supported for:\n" + ctx.getText());
+            PyParameters pyParameters = visitParams(params);
+            if (pyParameters == null) {
+                throw new RuntimeException("params not supported for:\n" + getTextFor(ctx));
             }
-            if (!(visit instanceof List<?> list)) {
-                throw new RuntimeException("Not a list:\n" + visit.getClass().getSimpleName());
-            }
-            for (Object o : list) {
-                if (o instanceof TypedName typedName) {
-                    parmeters.add(new PyParameter(typedName, 0, typedName.type(), null));
-                } else if (!(o instanceof PyParameter pyParameter)) {
-                    throw new RuntimeException("Not a PyParameter:\n" + ctx.getText());
-                } else {
-                    parmeters.add(pyParameter);
-                }
-            }
+
+            parameters.addAll(pyParameters.parameters());
         }
 
         StringBuilder signature = new StringBuilder();
-        for (PyParameter typedName : parmeters) {
+        for (PyParameter typedName : parameters) {
             if (typedName.type() == null) {
                 signature.append("Ljava/lang/Object;");
                 continue;
             }
             if (builtins.getClass(typedName.type()) != null) {
-                signature.append("L").append(typedName.typedName().type().getInternalName()).append(";");
+                signature.append("L").append(typedName.type().getInternalName()).append(";");
                 continue;
             }
-            Symbol symbol = imports.get(typedName.type());
-            if (symbol == null) {
-                throw new RuntimeException("No import found for " + typedName.typedName().name() + " " + getLocation(ctx));
-            }
-            String s = symbol.name();
-            if (s == null) {
-                throw new RuntimeException("No import found for " + symbol.type(this).getClassName() + " " + getLocation(ctx));
-            }
-            signature.append("L").append(typedName.typedName()).append(";");
+            signature.append(typedName.type().getDescriptor());
         }
 
         StringJoiner joiner = new StringJoiner("");
-        for (PyParameter typedName : parmeters) {
+        for (PyParameter typedName : parameters) {
             Type type = typedName.type();
             if (type == null) type = Type.getType(Object.class);
             joiner.add(type.getDescriptor());
@@ -719,174 +693,110 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         if (ctx.expression() != null) {
             Object visit = visit(ctx.expression());
             if (visit == null) {
-                throw new RuntimeException("expression not supported for:\n" + ctx.getText());
-            }
-            if (visit instanceof PyExpr pyExpr) {
-                returnType = pyExpr.type(this);
-                if (returnType == null) {
-                    throw new RuntimeException("No type found for: " + pyExpr.getClass().getName());
-                }
-            } else {
-                throw new RuntimeException("Not a PyExpr:\n" + ctx.getText());
+                throw new RuntimeException("expression not supported for:\n" + getTextFor(ctx));
             }
         }
 
+        PyFunction oldDefiningFunction = definingFunction;
+        MethodVisitor oldMv = methodOut;
+        Location location = getLocation(ctx);
         if (name.getText().equals("__init__")) {
-            List<JvmFunction> jvmFunctions = definingClass.methods.get("<init>");
+            if (definingClass == null) {
+                throw new RuntimeException("No defining class found for:\n" + getTextFor(ctx));
+            }
+            var jvmFunctions = definingClass.definition.functions.get("<init>");
             if (jvmFunctions == null || jvmFunctions.isEmpty()) {
-                mv = rootInitMv;
-                MethodNode initMv = (MethodNode) rootInitMv;
-                initMv.desc = "(" + sig + ")V";
+                methodOut = rootInitMv;
 
-                MethodNode ctorInitMv = new MethodNode(ACC_PUBLIC, "<init>", "(" + sig + ")V", null, null);
-                ctorInitMv.visitCode();
-                ctorInitMv.visitVarInsn(ALOAD, 0);
-                ctorInitMv.visitMethodInsn(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+                definingFunction = new PyFunction(definingClass, "<init>", parameters.toArray(PyParameter[]::new), classCache.void_(this), false, location);
+                MemberCallExpr.Builder builder1 = MemberCallExpr.builder(
+                        new MemberAttrExpr(SelfExpr.of(definingClass, location), "__init__", location),
+                        location
+                );
+                for (PyParameter pyParameter : parameters) {
+                    builder1.argument(definingFunction.getVariable(pyParameter.name()));
+                }
+                PyBlock.Builder bodyBuilder = PyBlock.builder(location.firstLine())
+                        .statement(new ExpressionStatement(
+                                List.of(
+                                        new StarExpression(builder1.build(), false, location)
+                                ), location
+                        ));
 
-                for (JvmClass jvmClass : definingClass.dynamicSuperClasses(this)) {
-                    if (jvmClass instanceof PyInheritorClass pyInheritorClass) {
-                        callPyInit(ctx, jvmClass, ctorInitMv, parmeters, sig);
-                    }
+                callPyInit(ctx, definingClass, definingFunction.node(), parameters, sig);
+
+                definingFunction.body(bodyBuilder.build());
+                if (definingClass == null) definingModule.addFunction(definingFunction);
+                definingClass.definition.functions.add(definingFunction);
+
+                definingFunction = new PyFunction(definingClass == null ? definingModule : definingClass, name.getText(), parameters.toArray(PyParameter[]::new), classCache.require(this, returnType), false, location);
+                if (definingClass == null) definingModule.addFunction(definingFunction);
+                definingClass.definition.functions.add(definingFunction);
+            } else {
+                definingFunction = new PyFunction(definingClass, "<init>", parameters.toArray(PyParameter[]::new), classCache.void_(this), false, location);
+                MemberCallExpr.Builder builder1 = MemberCallExpr.builder(
+                        new MemberAttrExpr(SelfExpr.of(definingClass, location), "__init__", location),
+                        location
+                );
+                for (PyParameter pyParameter : parameters) {
+                    builder1.argument(definingFunction.getVariable(pyParameter.name()));
+                }
+                PyBlock.Builder bodyBuilder = PyBlock.builder(location.firstLine())
+                        .statement(new ExpressionStatement(
+                                List.of(
+                                        new StarExpression(builder1.build(), false, location)
+                                ), location
+                        ));
+
+
+                for (JvmClass jvmClass : definingClass.superClasses()) {
+                    // TODO Multiple inheritance
                 }
 
-                callPyInit(ctx, definingClass, ctorInitMv, parmeters, sig);
+                callPyInit(ctx, definingClass, definingFunction.node(), parameters, sig);
 
-                ctorInitMv.visitInsn(RETURN);
-                ctorInitMv.visitMaxs(1, 1);
-                ctorInitMv.visitEnd();
+                definingFunction.body(bodyBuilder.build());
+                if (definingClass == null) definingModule.addFunction(definingFunction);
+                else definingClass.definition.functions.add(definingFunction);
 
-                ctorInitMv.accept(cv);
-            } else {
-                mv = cv.visitMethod(ACC_PUBLIC, "<init>", "(" + sig + ")" + returnType.getDescriptor(), null, null);
+                definingFunction = new PyFunction(definingClass == null ? definingModule : definingClass, name.getText(), parameters.toArray(PyParameter[]::new), classCache.require(this, returnType), false, location);
             }
         } else if (name.getText().startsWith("__")) {
-            mv = cv.visitMethod(ACC_PRIVATE + (static_ ? ACC_STATIC : 0) + (class_ ? ACC_STATIC : 0), name.getText().substring(2), "(" + sig + ")" + returnType.getDescriptor(), null, null);
+            definingFunction = new PyFunction(definingClass == null ? definingModule : definingClass, name.getText(), parameters.toArray(PyParameter[]::new), classCache.require(this, returnType), definingClass == null || static_, location);
         } else {
-            int access = ACC_PUBLIC + (static_ ? ACC_STATIC : 0) + (class_ ? ACC_STATIC : 0);
-            mv = cv.visitMethod(access, name.getText(), "(" + sig + ")" + returnType.getDescriptor(), null, null);
+            definingFunction = new PyFunction(definingClass == null ? definingModule : definingClass, name.getText(), parameters.toArray(PyParameter[]::new), classCache.require(this, returnType), definingClass == null || static_, location);
         }
 
         if (definingInstance != null) {
             currentVariableIndex = 2;
         }
-        PyClass oldDefiningInstance = definingInstance;
-        Map<String, Symbol> oldSymbols = null;
+        boolean isStatic = definingClass == null || static_;
+        definingFunction.body((PyBlock) visit(block));
         if (definingClass != null) {
             definingInstance = definingClass;
         }
-        PyFunction oldDefiningFunction = definingFunction;
-        boolean isStatic = false; // TODO
-        PyFunction func = name.getText().equals("__init__")
-                ? (definingFunction = new PyConstructor(this, definingClass, parmeters.stream().map(PyParameter::type).toArray(Type[]::new), returnType, getLocation(ctx)))
-                : (definingFunction = new PyFunction(this, definingClass == null ? definingModule : definingClass, name.getText(), parmeters.stream().map(PyParameter::type).toArray(Type[]::new), returnType, this.getLocation(ctx), definingClass == null || isStatic));
 
-        pushMemberContext(MemberContext.VAR);
-        for (PyParameter typedName : parmeters) {
-            mv.visitParameter(typedName.typedName().name(), 0);
-            definingFunction.createParam(typedName.typedName().name(), new PyVariable(typedName.typedName().name(), typedName.type(), currentVariableIndex, null, getLocation(ctx)));
-        }
+        methodOut = oldMv;
 
-        endLabel = new Label();
-        endLabel.info = 100000;
-        writer.lineNumber(ctx.stop.getLine(), endLabel);
-        startLabel = new Label();
-        startLabel.info = 0;
-        writer.lineNumber(ctx.start.getLine(), startLabel);
-
-        try {
-            if (mv != rootInitMv) mv.visitCode();
-
-            if (decorators.byJvmName.containsKey("org/pythonutils/Override")) {
-                // Ignore for now
-            }
-
-            Label blockStart = new Label();
-            FunctionContext functionContext = new FunctionContext();
-            pushContext(functionContext);
-            writer.lineNumber(ctx.start.getLine(), blockStart);
-
-            visit(block);
-            definingFunction = oldDefiningFunction;
-            definingInstance = oldDefiningInstance;
-            symbols.put(func.name(), func);
-
-            popContext();
-            while (functionContext.needsPop()) {
-                writer.pop();
-            }
-
-            if (mv != rootInitMv) {
-                if (mv instanceof MethodNode) {
-                    AbstractInsnNode last = ((MethodNode) mv).instructions.getLast();
-                    if ((last == null || last.getOpcode() != IRETURN) && last.getOpcode() != ARETURN && last.getOpcode() != DRETURN && last.getOpcode() != FRETURN && last.getOpcode() != LRETURN && last.getOpcode() != RETURN) {
-                        doReturn(returnType);
-                    }
-                } else {
-                    doReturn(returnType);
-                }
-            }
-            if (mv != rootInitMv) writer.end();
-            popMemberContext();
-        } catch (CompilerException e) {
-            throw e;
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
-        } finally {
-            flags.clear(F_CPL_STATIC_FUNC);
-            flags.clear(F_CPL_CLASS_FUNC);
-            flags.clear(F_CPL_INSTANCE_FUNC);
-
-            mv = null;
-        }
-
-        if (definingModule != null) {
-            if (name.getText().equals("__init__")) {
-                if (!(func instanceof PyConstructor)) {
-                    throw new AssertionError("Why is this not a constructor?");
-                }
-                definingModule.methods.computeIfAbsent("<init>", v -> new ArrayList<>()).add(func);
-            } else {
-                definingModule.methods.computeIfAbsent(name.getText(), v -> new ArrayList<>()).add(func);
-            }
-        }
-
-        if (curPyClass != null) {
-            if (name.getText().equals("__init__")) {
-                if (!(func instanceof PyConstructor)) {
-                    throw new AssertionError("Why is this not a constructor?");
-                }
-                curPyClass.methods.computeIfAbsent("<init>", v -> new ArrayList<>()).add(func);
-            } else {
-                curPyClass.methods.computeIfAbsent(name.getText(), v -> new ArrayList<>()).add(func);
-            }
-        }
-        return Unit.Instance;
+        PyFunction function = definingFunction;
+        definingFunction = oldDefiningFunction;
+        return function;
     }
 
-    private void callPyInit(PythonParser.Function_def_rawContext ctx, JvmClass jvmClass, MethodNode ctorInitMv, List<PyParameter> parmeters, String sig) {
+    private void callPyInit(PythonParser.Function_def_rawContext ctx, JvmClass jvmClass, MethodNode ctorInitMv, List<PyParameter> parameters, String sig) {
         // Call <inheritor>.super.__init__(<arguments>);
         ctorInitMv.visitVarInsn(ALOAD, 0);
         int index = 1;
-        for (PyParameter typedName : parmeters) {
-            Type type = typedName.type();
+        for (PyParameter typedName : parameters) {
+            @Nullable JvmClass type = typedName.typeClass();
             if (type == null) {
                 ctorInitMv.visitVarInsn(ALOAD, index);
                 index++;
                 continue;
             }
-            switch (type.getSort()) {
-                case Type.ARRAY -> throw new RuntimeException("Array not supported for:\n" + ctx.getText());
+            switch (type.type().getSort()) {
+                case Type.ARRAY -> throw new RuntimeException("Array not supported for:\n" + getTextFor(ctx));
                 case Type.OBJECT -> {
-                    Symbol symbol = imports.get(type);
-                    if (symbol == null) {
-                        throw new RuntimeException("No import found for " + type + " " + getLocation(ctx));
-                    }
-
-                    String s = symbol.name();
-                    if (s == null) {
-                        throw new RuntimeException("No import found for " + symbol.type(this) + " " + getLocation(ctx));
-                    }
                     ctorInitMv.visitVarInsn(ALOAD, index);
                     index++;
                 }
@@ -906,11 +816,11 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     ctorInitMv.visitVarInsn(DLOAD, index);
                     index += 2;
                 }
-                default -> throw new RuntimeException("Type not supported for:\n" + ctx.getText());
+                default -> throw new RuntimeException("Type not supported for:\n" + getTextFor(ctx));
             }
         }
 
-        ctorInitMv.visitMethodInsn(INVOKEVIRTUAL, jvmClass.type(this).getInternalName(), "__init__", "(" + sig + ")V", false);
+        ctorInitMv.visitMethodInsn(INVOKEVIRTUAL, jvmClass.type().getInternalName(), "__init__", "(" + sig + ")V", false);
     }
 
     private void doReturn(Type returnType) {
@@ -950,66 +860,75 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitBlock(PythonParser.BlockContext ctx) {
+    public PyBlock visitBlock(PythonParser.BlockContext ctx) {
         PythonParser.StatementsContext statementsContext = ctx.statements();
         if (statementsContext != null) {
-            return visit(statementsContext);
+            List<PyStatement> statements = visitStatements(statementsContext);
+            return new PyBlock(statements, getLocation(ctx));
         }
-        throw new RuntimeException("No supported matching statements found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching statements found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitParams(PythonParser.ParamsContext ctx) {
-        return visit(ctx.parameters());
+    public PyParameters visitParams(PythonParser.ParamsContext ctx) {
+        return visitParameters(ctx.parameters());
     }
 
     @Override
-    public Object visitParameters(PythonParser.ParametersContext ctx) {
-        List<PyParameter> typedNames = new ArrayList<>();
+    public PyParameters visitParameters(PythonParser.ParametersContext ctx) {
+        SelfExpr selfExpr = null;
+        PyArgsParameter argsParameter = null;
+        PyKwargsParameter kwargsParameter = null;
+        List<PyParameter> parameters = new ArrayList<>();
         if (ctx.star_etc() != null) {
             if (ctx.param_no_default() != null && !ctx.param_no_default().isEmpty()) {
-                throw new RuntimeException("param_no_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("param_no_default not supported for:\n" + getTextFor(ctx));
             }
             if (ctx.param_with_default() != null && !ctx.param_with_default().isEmpty()) {
-                throw new RuntimeException("param_with_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("param_with_default not supported for:\n" + getTextFor(ctx));
             }
             if (ctx.slash_no_default() != null && !ctx.slash_no_default().isEmpty()) {
-                throw new RuntimeException("slash_no_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("slash_no_default not supported for:\n" + getTextFor(ctx));
             }
             if (ctx.slash_with_default() != null && !ctx.slash_with_default().isEmpty()) {
-                throw new RuntimeException("slash_with_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("slash_with_default not supported for:\n" + getTextFor(ctx));
             }
 
-            return ctx.star_etc().accept(this);
+            PyStarEtc pyStarEtc = visitStar_etc(ctx.star_etc());
+            parameters.add(pyStarEtc.argsParameter());
+            parameters.addAll(pyStarEtc.parameters());
         }
 
         for (int i = 0; i < ctx.param_no_default().size(); i++) {
-            Object visit = visit(ctx.param_no_default(i));
+            Object visit = visitParam_no_default(ctx.param_no_default(i));
             if (visit == null) {
-                throw new RuntimeException("param_no_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("param_no_default not supported for:\n" + getTextFor(ctx));
             }
 
-            if (!(visit instanceof TypedName typedName)) {
-                if (visit instanceof Self self) continue;
+            if (!(visit instanceof TypedName(String name, Type type))) {
+                if (visit instanceof SelfExpr self) {
+                    selfExpr = self;
+                    continue;
+                }
                 if (visit instanceof String name) {
-                    typedNames.add(new PyParameter(new TypedName(name, Type.getType(Object.class)), ctx.param_no_default(i).start.getLine(), null, null));
+                    parameters.add(new PyNormalParameter(name, getLocation(ctx.param_no_default(i))));
                     continue;
                 }
                 throw new RuntimeException("param_no_default not supported for:\n" + ctx.param_no_default(i).getText());
             }
 
-            typedNames.add(new PyParameter(typedName, ctx.param_no_default(i).start.getLine(), typedName.type(), null));
+            parameters.add(new PyTypedParameter(name, classCache.require(this, type == null ? Type.getType(Object.class) : type), getLocation(ctx.param_no_default(i))));
 
             if (flags.get(F_CPL_FUNCTION)) {
                 if (visit.equals("self")) {
                     if (!flags.get(F_CPL_INSTANCE_FUNC)) {
-                        throw new CompilerException("self on a non-instance method:\n" + ctx.getText());
+                        throw new CompilerException("self on a non-instance method:\n" + getTextFor(ctx));
                     }
                 } else {
                     // TODO
                 }
             } else {
-                throw new RuntimeException("param_no_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("param_no_default not supported for:\n" + getTextFor(ctx));
             }
         }
 
@@ -1018,37 +937,37 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             Object visitDef = visit(paramWithDefaultContext.default_assignment());
             Object visit = visit(paramWithDefaultContext.param());
             if (visit == null) {
-                throw new RuntimeException("param_no_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("param_no_default not supported for:\n" + getTextFor(ctx));
             }
 
             if (!(visit instanceof TypedName typedName)) {
-                if (visit instanceof Self self) continue;
+                if (visit instanceof SelfExpr self) continue;
                 if (visit instanceof String name) {
-                    typedNames.add(new PyParameter(new TypedName(name, Type.getType(Object.class)), paramWithDefaultContext.start.getLine(), Type.getType(Object.class), (PyExpr) visitDef));
+                    parameters.add(new PyDefaultedParameter(name, (PyExpression) visitDef, getLocation(ctx.param_with_default(i))));
                     continue;
                 }
                 throw new RuntimeException("param_no_default not supported for:\n" + ctx.param_no_default(i).getText());
             }
 
-            typedNames.add(new PyParameter(typedName, paramWithDefaultContext.start.getLine(), typedName.type(), (PyExpr) visitDef));
+            parameters.add(new PyTypedDefaultParameter(typedName.name(), typedName.type(), (PyExpression) visitDef, getLocation(ctx.param_with_default(i))));
 
             if (flags.get(F_CPL_FUNCTION)) {
                 if (visit.equals("self")) {
                     if (!flags.get(F_CPL_INSTANCE_FUNC)) {
-                        throw new CompilerException("self on a non-instance method:\n" + ctx.getText());
+                        throw new CompilerException("self on a non-instance method:\n" + getTextFor(ctx));
                     }
                 } else {
                     // TODO
                 }
             } else {
-                throw new RuntimeException("param_no_default not supported for:\n" + ctx.getText());
+                throw new RuntimeException("param_no_default not supported for:\n" + getTextFor(ctx));
             }
         }
-        return typedNames;
+        return new PyParameters(selfExpr, parameters, null, null);
     }
 
     @Override
-    public Object visitStar_etc(PythonParser.Star_etcContext ctx) {
+    public PyStarEtc visitStar_etc(PythonParser.Star_etcContext ctx) {
         TerminalNode star = ctx.STAR();
         PythonParser.Param_no_defaultContext paramNoDefaultContext = ctx.param_no_default();
         List<PythonParser.Param_maybe_defaultContext> paramMaybeDefaultContexts = ctx.param_maybe_default();
@@ -1061,48 +980,47 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         if (paramNoDefaultContext != null) {
             if (paramNoDefaultContext.TYPE_COMMENT() != null) {
-                throw new AssertionError("TYPE_COMMENT not supported for:\n" + ctx.getText());
+                throw new AssertionError("TYPE_COMMENT not supported for:\n" + getTextFor(ctx));
             }
             Object visit = visit(paramNoDefaultContext.param());
             if (visit == null) {
-                throw new AssertionError("param_no_default not supported for:\n" + ctx.getText());
+                throw new AssertionError("param_no_default not supported for:\n" + getTextFor(ctx));
             }
             switch (visit) {
                 case TypedName typedName ->
-                        parameters.add(new PyParameter(typedName, paramNoDefaultContext.start.getLine(), typedName.type(), null));
-                case String name ->
-                        parameters.add(new PyParameter(new TypedName(name, Type.getType(Object.class)), paramNoDefaultContext.start.getLine(), Type.getType(Object.class), null));
-                default -> throw new AssertionError("param_no_default not supported for:\n" + ctx.getText());
+                        parameters.add(new PyTypedParameter(typedName.name(), typedName.typeClass(this), getLocation(paramNoDefaultContext)));
+                case String name -> parameters.add(new PyNormalParameter(name, getLocation(paramNoDefaultContext)));
+                default -> throw new AssertionError("param_no_default not supported for:\n" + getTextFor(ctx));
             }
         }
 
         if (paramMaybeDefaultContexts != null) {
             for (PythonParser.Param_maybe_defaultContext paramMaybeDefaultContext : paramMaybeDefaultContexts) {
                 if (paramMaybeDefaultContext.TYPE_COMMENT() != null) {
-                    throw new AssertionError("TYPE_COMMENT not supported for:\n" + ctx.getText());
+                    throw new AssertionError("TYPE_COMMENT not supported for:\n" + getTextFor(ctx));
                 }
                 Object visit = visit(paramMaybeDefaultContext.param());
                 PythonParser.Default_assignmentContext tree = paramMaybeDefaultContext.default_assignment();
                 if (visit == null) {
-                    throw new AssertionError("param_maybe_default not supported for:\n" + ctx.getText());
+                    throw new AssertionError("param_maybe_default not supported for:\n" + getTextFor(ctx));
                 }
                 switch (visit) {
                     case TypedName typedName ->
-                            parameters.add(new PyParameter(typedName, paramMaybeDefaultContext.start.getLine(), typedName.type(), tree == null ? null : (PyExpr) visit(tree), true));
+                            parameters.add(new PyTypedDefaultParameter(typedName.name(), typedName.type(), tree == null ? null : (PyExpression) visit(tree), getLocation(paramMaybeDefaultContext)));
                     case String name ->
-                            parameters.add(new PyParameter(new TypedName(name, Type.getType(Object.class)), paramMaybeDefaultContext.start.getLine(), null, tree == null ? null : (PyExpr) visit(tree), true));
-                    default -> throw new AssertionError("param_maybe_default not supported for:\n" + ctx.getText());
+                            parameters.add(new PyDefaultedParameter(name, tree == null ? null : (PyExpression) visit(tree), getLocation(paramMaybeDefaultContext)));
+                    default -> throw new AssertionError("param_maybe_default not supported for:\n" + getTextFor(ctx));
                 }
             }
 
-            return parameters;
+            return new PyStarEtc(new PyArgsParameter(parameters.getFirst().name()), parameters.subList(1, parameters.size()));
         }
 
         if (paramNoDefaultStarAnnotationContext != null) {
-            throw new AssertionError("param_no_default_star_annotation not supported for:\n" + ctx.getText());
+            throw new AssertionError("param_no_default_star_annotation not supported for:\n" + getTextFor(ctx));
         }
 
-        throw new AssertionError("No supported matching star_etc found for:\n" + ctx.getText());
+        throw new AssertionError("No supported matching star_etc found for:\n" + getTextFor(ctx));
     }
 
     @Override
@@ -1111,163 +1029,130 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         TerminalNode terminalNode = ctx.TYPE_COMMENT();
         if (visit(param).equals("self")) {
             if (!flags.get(F_CPL_INSTANCE_FUNC)) {
-                throw new CompilerException("self on a non-instance method:\n" + ctx.getText());
+                throw new CompilerException("self on a non-instance method:\n" + getTextFor(ctx));
             } else {
-                return new Self(curPyClass.type(this), getLocation(param));
+                return new SelfExpr(curPyClass.type(), getLocation(param));
             }
         }
         if (terminalNode != null) {
-            Object visit = visit(param);
+            TypedName visit = visitParam(param);
             if (visit == null) {
-                throw new RuntimeException("param not supported for:\n" + ctx.getText());
-            }
-            if (!(visit instanceof TypedName typedName)) {
-                throw new RuntimeException("Not a typed typedName:\n" + ctx.getText());
+                throw new RuntimeException("param not supported for:\n" + getTextFor(ctx));
             }
             return visit;
         }
 
-        return visit(param);
+        return visitParam(param);
     }
 
     @Override
-    public Object visitParam(PythonParser.ParamContext ctx) {
+    public TypedName visitParam(PythonParser.ParamContext ctx) {
         PythonParser.AnnotationContext annotation = ctx.annotation();
         if (annotation != null) {
+            flags.set(F_CPL_TYPE_ANNO);
             Object visit = visit(annotation);
+            flags.clear(F_CPL_TYPE_ANNO);
             if (visit == null) {
-                throw new RuntimeException("annotation not supported for:\n" + ctx.getText());
+                throw new RuntimeException("annotation not supported for 'null' at:\n" + getTextFor(ctx));
             }
             return new TypedName(ctx.NAME().getText(), switch (visit) {
                 case Type type -> type;
                 case String name -> Type.getType(name);
-                case PyExpr expr -> expr.type(this);
-                default -> throw new RuntimeException("annotation not supported for:\n" + ctx.getText());
+                case JvmClass jvmClass -> jvmClass.type();
+                case TypedName typedName -> typedName.type();
+                case SymbolReferenceExpr symbolReferenceExpr -> {
+                    PySymbol symbol = symbolReferenceExpr.symbol();
+                    if (symbol instanceof JvmClass jvmClass) {
+                        yield jvmClass.type();
+                    }
+                    throw new RuntimeException("annotation not supported for '" + visit.getClass().getName() + "' at:\n" + getTextFor(ctx));
+                }
+                default ->
+                        throw new RuntimeException("annotation not supported for '" + visit.getClass().getName() + "' at:\n" + getTextFor(ctx));
             });
         }
 
         TerminalNode name = ctx.NAME();
         if (name == null) {
-            throw new RuntimeException("No NAME found for:\n" + ctx.getText());
+            throw new RuntimeException("No NAME found for:\n" + getTextFor(ctx));
         }
-        return name.getText();
+        return new TypedName(name.getText(), null);
     }
 
     @Override
-    public Object visitClass_def(PythonParser.Class_defContext ctx) {
+    public LangClass visitClass_def(PythonParser.Class_defContext ctx) {
         MethodVisitor rootInitMv1 = rootInitMv;
         PythonParser.DecoratorsContext decorators = ctx.decorators();
 
-        ClassVisitor cv1 = cv;
+        ClassNode cv1 = classOut;
         if (decorators != null) {
-            Object visit = visit(decorators);
+            PyDecorators visit = (PyDecorators) visit(decorators);
 
             if (visit instanceof List<?> list) {
-                for (int i = 0, listSize = list.size(); i < listSize; i++) {
-                    Object o = list.get(i);
-                    if (o instanceof MemberFuncCall func) {
-                        var arguments = func.arguments;
-                        if (arguments != null) {
-                            Symbol symbol = imports.get(func.name);
-                            Type owner = func.owner(this);
-                            if (owner == null) {
-                                imports.get("implements");
-                                for (PyExpr o1 : arguments) {
-                                    if (o1 instanceof PyObjectRef(String name, Location location)) {
-                                        implementing.add(imports.get(name).name());
-                                    } else {
-                                        throw new CompilerException("Invalid @implements(...) decorator: @" + decorators.named_expression(i).getText());
-                                    }
-                                }
-                            }
-                        }
-                    }
+                for (Object o : list) {
+                    throw new RuntimeException("No supported matching decorators found at:\n" + getTextFor(ctx));
                 }
+            } else if (visit != null) {
+                throw new RuntimeException("No supported matching decorators found at:\n" + getTextFor(ctx));
             }
         }
 
         PythonParser.Class_def_rawContext classDefRawContext = ctx.class_def_raw();
         if (classDefRawContext != null) {
-            Object visit = visit(classDefRawContext);
+            LangClass visit = visitClass_def_raw(classDefRawContext);
             this.rootInitMv = rootInitMv1;
-            cv = cv1;
+            classOut = cv1;
             return visit;
         }
         this.rootInitMv = rootInitMv1;
-        cv = cv1;
-        throw new RuntimeException("No supported matching class_def found for:\n" + ctx.getText());
+        classOut = cv1;
+        throw new RuntimeException("No supported matching class_def found for:\n" + getTextFor(ctx));
+    }
+
+    private String getTextFor(ParserRuleContext ctx) {
+        Location location = getLocation(ctx);
+        return location.toAdvancedString();
     }
 
     @Override
-    public Object visitClass_def_raw(PythonParser.Class_def_rawContext ctx) {
+    public LangClass visitClass_def_raw(PythonParser.Class_def_rawContext ctx) {
         TerminalNode name = ctx.NAME();
-        var cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-        ClassNode node = new ClassNode();
-        this.cv = node;
 
-        String superClass = "java/lang/Object";
-        List<String> implementing = new ArrayList<>();
-        List<String> dynamicSuperClass = new ArrayList<>();
+        List<ClassReference> extending = new ArrayList<>();
         PythonParser.ArgumentsContext arguments = ctx.arguments();
         if (arguments != null) {
             flags.set(F_CPL_CLASS_INHERITANCE);
+            flags.set(F_CPL_TYPE_ANNO);
             try {
-                Object visit = visit(arguments);
-                if (visit == null) {
-                    throw new RuntimeException("arguments not supported for:\n" + ctx.getText());
+                List<PyExpression> classList = visitArguments(arguments);
+                if (classList == null) {
+                    throw new RuntimeException("arguments not supported for:\n" + getTextFor(ctx));
                 }
 
-                if (visit instanceof List<?> list) {
-                    for (Object o : list) {
-                        if (o instanceof PyObjectRef(String name1, Location location)) {
-                            o = name1;
-                        }
-                        if (o instanceof String classname) {
-                            Symbol symbol = symbols.get(classname);
-                            JvmClass type = switch (symbol) {
-                                case JvmClass jvmClass -> jvmClass;
-                                case PyImport pyImport -> switch (pyImport.symbol) {
-                                    case JvmClass jvmClass -> jvmClass;
-                                    default ->
-                                            throw new AssertionError("No supported imported compile class owner: " + pyImport.symbol.getClass().getName());
-                                };
-                                default ->
-                                        throw new AssertionError("No supported compile class owner: " + symbol.getClass().getName());
-                            };
-                            Type classType = type.type(this);
-                            String internalName = classType.getInternalName();
-                            if (type.isInterface()) {
-                                implementing.add(internalName);
-                            } else if (superClass.equals("java/lang/Object") && !classType.equals(Type.getType(Object.class))) {
-                                superClass = internalName;
-                            } else {
-                                superClass = "java/lang/Object";
-                                JvmClass require = classCache.require(this, classType);
-                                if (require instanceof JClass) {
-                                    if (!superClass.equals("java/lang/Object")) {
-                                        throw new RuntimeException("Can't inherit multiple Java classes for:\n" + ctx.getText());
-                                    }
-
-                                    superClass = require.type(this).getInternalName();
-                                } else {
-                                    dynamicSuperClass.add(internalName);
-                                }
-                            }
-                        }
+                boolean errored = false;
+                for (int i = 0, listSize = classList.size(); i < listSize; i++) {
+                    PyExpression expression = classList.get(i);
+                    if (!(expression instanceof SymbolReferenceExpr referenceExpr)) {
+                        compileErrors.add(new CompilerException("Invalid class reference!", expression.location()));
+                        errored = true;
+                        continue;
                     }
+                    extending.add(new ClassReference(referenceExpr));
+                }
+
+                if (errored) {
+                    throw new CompilerException("Class " + path.replace('/', '.') + name.getText() + " has invalid class inheritors!", getLocation(arguments));
                 }
             } finally {
                 flags.clear(F_CPL_CLASS_INHERITANCE);
+                flags.clear(F_CPL_TYPE_ANNO);
             }
         }
 
-        implementing.add("org/python/_internal/PyObject");
-
-        cv.visit(V1_8, ACC_PUBLIC, path + name.getText(), null, superClass, implementing.isEmpty() ? null : implementing.toArray(new String[0]));
         String classname = (path + name.getText()).replace("/", ".");
-        PyClass value = new PyClass(this.pathOfFile, name.getText(), getLocation(ctx));
+        LangClass value = LangClass.create(extending, Type.getObjectType(classname), name.getText(), getLocation(ctx));
         this.definingClass = value;
-        PyCompileClass oldCompilingClass = compilingClass;
+        JvmClassCompilable oldCompilingClass = compilingClass;
         this.compilingClass = value;
         imports.add(name.getText(), value);
         undefinedClasses.remove(classname);
@@ -1277,80 +1162,21 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         curPyClass = value;
 
-        FieldVisitor self = cv.visitField(ACC_PUBLIC | ACC_FINAL, "__dict__", "Ljava/util/Map;", /*<String, Object>*/ "Ljava/util/Map<Ljava/lang/String;Ljava/lang/Object;>;", null);
-//        AnnotationVisitor annotationVisitor = self.visitAnnotation("org/pythonvm/annotations/Generated", true);
-//        annotationVisitor.visit("reason", "Generated for Python interop");
-//        annotationVisitor.visitEnd();
-        self.visitEnd();
+        this.rootInitMv = methodOut;
 
-        // Generate method: public Map<String, Object> --dict--() { return storage; }
-        mv = cv.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, "\uffffdict\uffff", "()Ljava/util/Map;", "()Ljava/util/Map<Ljava/lang/String;Ljava/lang/Object;>;", null);
-        mv.visitCode();
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitFieldInsn(GETFIELD, path + name.getText(), "__dict__", "Ljava/util/Map;");
-        mv.visitInsn(ARETURN);
-        mv.visitMaxs(1, 1);
-        mv.visitEnd();
-
-        // Generate method: public void --dict--(Map<String, Object> dict) { storage = dict; }
-        mv = cv.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, "\uffffdict\uffff", "(Ljava/util/Map;)V", "(Ljava/util/Map<Ljava/lang/String;Ljava/lang/Object;>;)V", null);
-        mv.visitCode();
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitVarInsn(ALOAD, 1);
-        mv.visitFieldInsn(PUTFIELD, path + name.getText(), "__dict__", "Ljava/util/Map;");
-        mv.visitInsn(RETURN);
-        mv.visitMaxs(2, 2);
-        mv.visitEnd();
-
-        // Create default constructor
-        MethodNode mv = new MethodNode(ACC_PUBLIC, "__init__", "()V", null, null);
-        mv.visitCode();
-        mv.visitVarInsn(ALOAD, 0);
-        mv.visitTypeInsn(NEW, "java/util/HashMap");
-        mv.visitInsn(DUP);
-        mv.visitMethodInsn(INVOKESPECIAL, "java/util/HashMap", "<init>", "()V", false);
-        mv.visitFieldInsn(PUTFIELD, path + name.getText(), "__dict__", "Ljava/util/Map;");
-
-        this.rootInitMv = mv;
-
-        Object visit = visit(ctx.block());
+        PyBlock visit = visitBlock(ctx.block());
         if (visit == null) {
-            throw new RuntimeException("block not supported for:\n" + ctx.getText());
+            throw new RuntimeException("block not supported for:\n" + getTextFor(ctx));
         }
 
-        mv.visitInsn(RETURN);
-        mv.visitMaxs(0, 0);
-        mv.visitEnd();
-        mv.accept(cv);
+        this.methodOut = null;
 
         compilingClass = oldCompilingClass;
 
-        cv.visitEnd();
-
-        node.accept(cw);
-
         definingClass = null;
         curPyClass = null;
-
-        byte[] bytes = cw.toByteArray();
-
-        try {
-            String s = "build/tmp/compilePython/" + path.substring(0, path.length() - 1);
-            if (!new File(s).exists()) {
-                boolean mkdirs = new File(s).mkdirs();
-                if (!mkdirs) {
-                    throw new RuntimeException("Failed to create directory: " + s);
-                }
-            }
-            FileOutputStream fileOutputStream = new FileOutputStream("build/tmp/compilePython/" + path + name.getText() + ".class");
-            fileOutputStream.write(bytes);
-            fileOutputStream.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        cw = rootCw;
-        return Unit.Instance;
+        classOut = null;
+        return value;
     }
 
     @Override
@@ -1370,36 +1196,36 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitNamed_expression(PythonParser.Named_expressionContext ctx) {
+    public PyExpression visitNamed_expression(PythonParser.Named_expressionContext ctx) {
         PythonParser.ExpressionContext expression = ctx.expression();
         if (expression != null) {
-            return visit(expression);
+            return visitExpression(expression);
         }
         PythonParser.Assignment_expressionContext assignmentExpressionContext = ctx.assignment_expression();
         if (assignmentExpressionContext != null) {
-            return visit(assignmentExpressionContext);
+            return visitAssignment_expression(ctx.assignment_expression());
         }
-        throw new RuntimeException("No supported matching named_expression found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching named_expression found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitSimple_stmts(PythonParser.Simple_stmtsContext ctx) {
-        List<Object> visit = new ArrayList<>();
+    public PyStatement visitSimple_stmts(PythonParser.Simple_stmtsContext ctx) {
+        List<PyStatement> visit = new ArrayList<>();
         for (int i = 0; i < ctx.simple_stmt().size(); i++) {
-            Object visit1 = visit(ctx.simple_stmt(i));
+            PyStatement visit1 = visitSimple_stmt(ctx.simple_stmt(i));
             if (visit1 == null) {
-                throw new RuntimeException("simple_stmt not supported for:\n" + ctx.getText());
+                throw new RuntimeException("simple_stmt not supported for:\n" + getTextFor(ctx));
             }
             visit.add(visit1);
         }
-        return visit;
+        return new PyBlock(visit, getLocation(ctx));
     }
 
     @Override
-    public Object visitSimple_stmt(PythonParser.Simple_stmtContext ctx) {
+    public PyStatement visitSimple_stmt(PythonParser.Simple_stmtContext ctx) {
         PythonParser.Import_stmtContext importStmtContext = ctx.import_stmt();
         if (importStmtContext != null) {
-            return visit(importStmtContext);
+            return visitImport_stmt(importStmtContext);
         }
         PythonParser.Del_stmtContext delStmtContext = ctx.del_stmt();
         if (delStmtContext != null) {
@@ -1421,71 +1247,47 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions();
         if (starExpressionsContext != null) {
-            return visit(starExpressionsContext);
+            return new ExpressionStatement(visitStar_expressions(starExpressionsContext), getLocation(starExpressionsContext));
         }
         PythonParser.AssignmentContext assignment = ctx.assignment();
         if (assignment != null) {
-            Object visit = visit(assignment);
-            if (visit == null || visit == Unit.Instance) {
-                return visit;
-            }
-
-            writer.pop();
+            AssignmentStatement visit = visitAssignment(assignment);
+            if (getContext().needsPop()) writer.pop();
+            if (getContext().needsPop())
+                throw new RuntimeException("Type stack is not empty after popping once!" + getLocation(assignment));
             return visit;
         }
 
         TerminalNode aBreak = ctx.BREAK();
         if (aBreak != null) {
-            Context context = writer.getLoopContext();
-            if (context instanceof WhileLoopContext whileConditionContext) {
-                writer.jump(whileConditionContext.endLabel);
-                return Unit.Instance;
-//            } else if (writer.getContext() instanceof ForConditionContext) {
-//                ForConditionContext forConditionContext = (ForConditionContext) writer.getContext();
-//                mv.visitJumpInsn(GOTO, forConditionContext.loopEnd);
-//                return Unit.Instance;
-            } else {
-                throw new RuntimeException("Not in a loop:\n" + ctx.getText());
-            }
+            return new BreakStatement();
+        }
+
+        TerminalNode aContinue = ctx.CONTINUE();
+        if (aContinue != null) {
+            return new ContinueStatement();
         }
 
         PythonParser.Return_stmtContext returnStmtContext = ctx.return_stmt();
         if (returnStmtContext != null) {
-            return visit(returnStmtContext);
+            return visitReturn_stmt(returnStmtContext);
         }
 
-        throw new RuntimeException("No supported matching simple_stmt found of owner " + ctx.getClass().getSimpleName() + " for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching simple_stmt found of owner " + ctx.getClass().getSimpleName() + " for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitReturn_stmt(PythonParser.Return_stmtContext ctx) {
+    public ReturnStatement visitReturn_stmt(PythonParser.Return_stmtContext ctx) {
         PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions();
         if (starExpressionsContext != null) {
-            Object visit = visit(starExpressionsContext);
-            PyExpr pyExpr = loadExpr(ctx, visit);
-            Type type = pyExpr.type(this);
-            if (this.definingFunction.returnType == null) {
-                this.definingFunction.returnType = type;
-            } else {
-                JvmClass jvmClass = this.definingFunction.returnClass(this);
-                if (jvmClass.type(this).getSort() == Type.VOID && type != Type.VOID_TYPE) {
-                    throw new RuntimeException("Return owner mismatch for:\n" + ctx.getText());
-                } else if (!PythonCompiler.classCache.require(this, type).doesInherit(this, jvmClass)) {
-                    throw new RuntimeException("Return owner mismatch '" + type + "' should inherit from '" + jvmClass.type(this) + "' for:\n" + ctx.getText());
-                }
-            }
-
-            if (type != Type.VOID_TYPE) {
-                writer.returnValue(definingFunction.returnType);
-            }
-            writer.returnVoid();
-            return Unit.Instance;
+            List<StarExpression> visit = visitStar_expressions(starExpressionsContext);
+            return new ReturnStatement(visit, definingFunction, getLocation(ctx));
         }
-        throw new RuntimeException("No supported matching return_stmt found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching return_stmt found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitAssignment(PythonParser.AssignmentContext ctx) {
+    public AssignmentStatement visitAssignment(PythonParser.AssignmentContext ctx) {
         flags.set(F_CPL_ASSIGN);
         try {
             curLabel = new Label();
@@ -1497,17 +1299,17 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 List<PythonParser.Star_targetsContext> starTargetsContexts = ctx.star_targets();
                 if (starTargetsContexts.size() != 1) {
                     // TODO Add support for multiple star targets
-                    throw new RuntimeException("Expected 1 variable target, got " + starTargetsContexts.size() + " which is unsupported for now, code: " + ctx.getText());
+                    throw new RuntimeException("Expected 1 variable target, got " + starTargetsContexts.size() + " which is unsupported for now, code: " + getTextFor(ctx));
                 }
 
                 PythonParser.Star_targetsContext starTargetsContext = starTargetsContexts.getFirst();
                 if (starTargetsContext == null) {
-                    throw new RuntimeException("Variable target is not found :\n" + ctx.getText());
+                    throw new RuntimeException("Variable target is not found :\n" + getTextFor(ctx));
                 }
 
                 List<PythonParser.Star_targetContext> starTargetContext = starTargetsContext.star_target();
                 if (starTargetContext == null) {
-                    throw new RuntimeException("Variable target is not found :\n" + ctx.getText());
+                    throw new RuntimeException("Variable target is not found :\n" + getTextFor(ctx));
                 }
 
 
@@ -1517,12 +1319,12 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 }
                 PythonParser.Star_targetContext starTargetContext1 = starTargetContext.getFirst();
                 if (starTargetContext1 == null) {
-                    throw new RuntimeException("Variable target is not found :\n" + ctx.getText());
+                    throw new RuntimeException("Variable target is not found :\n" + getTextFor(ctx));
                 }
 
                 PythonParser.Target_with_star_atomContext targetWithStarAtomContext = starTargetContext1.target_with_star_atom();
                 if (targetWithStarAtomContext == null) {
-                    throw new RuntimeException("Variable target is not found :\n" + ctx.getText());
+                    throw new RuntimeException("Variable target is not found :\n" + getTextFor(ctx));
                 }
 
                 PythonParser.Star_atomContext targetContext = targetWithStarAtomContext.star_atom();
@@ -1536,47 +1338,19 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     }
 
                     List<PythonParser.Star_expressionContext> starExpressionContexts = starExpressionsContext.star_expression();
-                    if (starExpressionContexts.size() != 1) {
-                        // TODO Add support for multiple star expressions
-                        throw new RuntimeException("Expected 1 expression, got " + starExpressionContexts.size() + " which is unsupported for now.");
-                    }
+                    PythonParser.ExpressionContext expressionContext = getExpressionContext(starExpressionContexts);
 
-                    PythonParser.Star_expressionContext starExpressionContext = starExpressionContexts.getFirst();
-                    TerminalNode star = starExpressionContext.STAR();
-                    if (star != null) {
-                        // TODO Add support for star expressions
-                        throw new RuntimeException("Star expressions are not supported for now.");
-                    }
-
-                    PythonParser.ExpressionContext expressionContext = starExpressionContext.expression();
-                    if (expressionContext == null) {
+                    PyExpression expression = visitExpression(expressionContext);
+                    if (expression == null) {
                         throw new RuntimeException("Expression for variable assignment wasn't found.");
                     }
 
-                    Object visit1 = visit(expressionContext);
-                    if (visit1 == null) {
-                        throw new RuntimeException("Expression for variable assignment wasn't found.");
-                    }
-
-                    if (first instanceof MemberField field) {
-                        PyExpr expr = switch (visit1) {
-                            case PyExpr pyExpr -> pyExpr;
-                            case String string -> new PyConstant(string, getLocation(ctx));
-                            case Byte byteValue -> new PyConstant(byteValue, getLocation(ctx));
-                            case Short shortValue -> new PyConstant(shortValue, getLocation(ctx));
-                            case Integer integer -> new PyConstant(integer, getLocation(ctx));
-                            case Boolean booleanValue -> new PyConstant(booleanValue, getLocation(ctx));
-                            case Long longValue -> new PyConstant(longValue, getLocation(ctx));
-                            case Float floatValue -> new PyConstant(floatValue, getLocation(ctx));
-                            case Double doubleValue -> new PyConstant(doubleValue, getLocation(ctx));
-                            case Character charValue -> new PyConstant(charValue, getLocation(ctx));
-                            default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                        };
-
-                        field.set(mv, this, expr);
-                        return Unit.Instance;
+                    if (first instanceof MemberAttrExpr field) {
+                        return new AssignmentStatement(new Settable[]{field}, expression, getLocation(ctx));
+                    } else if (first instanceof Settable expr) {
+                        return new AssignmentStatement(new Settable[]{expr}, expression, getLocation(ctx));
                     } else {
-                        throw new RuntimeException("Variable target is not found :\n" + ctx.getText());
+                        throw new RuntimeException("Variable target is not found for '" + first.getClass().getName() + "' at:\n" + getTextFor(ctx));
                     }
                 }
 
@@ -1588,67 +1362,32 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 }
 
                 List<PythonParser.Star_expressionContext> starExpressionContexts = starExpressionsContext.star_expression();
-                if (starExpressionContexts.size() != 1) {
-                    // TODO Add support for multiple star expressions
-                    throw new RuntimeException("Expected 1 expression, got " + starExpressionContexts.size() + " which is unsupported for now.");
-                }
+                PythonParser.ExpressionContext expressionContext = getExpressionContext(starExpressionContexts);
 
-                PythonParser.Star_expressionContext starExpressionContext = starExpressionContexts.getFirst();
-                TerminalNode star = starExpressionContext.STAR();
-                if (star != null) {
-                    // TODO Add support for star expressions
-                    throw new RuntimeException("Star expressions are not supported for now.");
-                }
-
-                PythonParser.ExpressionContext expressionContext = starExpressionContext.expression();
-                if (expressionContext == null) {
-                    throw new RuntimeException("Expression for variable assignment wasn't found.");
-                }
-
-                Object visit1 = visit(expressionContext);
+                PyExpression visit1 = visitExpression(expressionContext);
                 if (visit1 == null) {
                     throw new RuntimeException("Expression for variable assignment wasn't found.");
                 }
 
-                if (mv == null) {
-                    Type type = switch (visit1) {
-                        case PyExpr symbol -> symbol.type(this);
-                        case String string -> Type.getType(String.class);
-                        case Byte byteValue -> Type.getType(byte.class);
-                        case Short shortValue -> Type.getType(short.class);
-                        case Integer integer -> Type.getType(int.class);
-                        case Boolean booleanValue -> Type.getType(boolean.class);
-                        case Long longValue -> Type.getType(long.class);
-                        case Float floatValue -> Type.getType(float.class);
-                        case Double doubleValue -> Type.getType(double.class);
-                        case Character charValue -> Type.getType(char.class);
-                        default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                    };
-
-                    if (type == null) {
-                        throw new RuntimeException("Type for variable assignment wasn't found.");
-                    }
-
-                    symbols.put(name, new ImportedField(name, type, getName(), getLocation(ctx)));
-
-                    if (cv == rootCw) {
-                        MethodVisitor getterMethod = cv.visitMethod(ACC_PUBLIC + ACC_STATIC, getterName(name), "()" + type.getDescriptor(), null, null);
-                        @Nullable final String finalName = name;
-                        swapMv(getterMethod, () -> {
+                if (definingFunction == null) {
+                    if (definingClass == null) {
+                        if (definingModule == null) throw new AssertionError("Unknown module!" + getTextFor(ctx));
+                        Type type = Type.getType(Object.class);
+                        @Nullable String finalName = name;
+                        JvmClass require = classCache.require(this, type);
+                        PyFunction getterFunc = PyFunction.withContent(definingModule, getterName(name), new PyParameter[0], require, true, getLocation(ctx), getterMethod -> {
                             if (definingModule != null) {
                                 writer.loadClass(definingModule);
                             } else {
                                 throw new RuntimeException("Not in root class");
                             }
                             writer.dynamicGetAttr(finalName);
-                            writer.returnValue(type);
+                            writer.returnValue(type, getLocation(ctx));
                         });
-                        getterMethod.visitMaxs(0, 0);
-                        getterMethod.visitEnd();
 
-                        MethodVisitor setterMethod = cv.visitMethod(ACC_PUBLIC + ACC_STATIC, setterName(name), "(" + type.getDescriptor() + ")V", null, null);
-                        swapMv(setterMethod, () -> {
-                            mv.visitParameter("val", 0);
+                        definingModule.addFunction(getterFunc);
+
+                        PyFunction setterFunc = PyFunction.withContent(definingModule, setterName(name), new PyParameter[]{new PyTypedParameter("value", classCache.object(this), getLocation(ctx))}, classCache.void_(this), true, getLocation(ctx), setterMethod -> {
                             if (definingModule != null) {
                                 writer.loadClass(definingModule);
                             } else {
@@ -1659,220 +1398,225 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                             writer.dynamicSetAttr(finalName);
                             writer.returnVoid();
                         });
-                        setterMethod.visitMaxs(0, 0);
-                        setterMethod.visitEnd();
 
-                        MethodVisitor rootInitMv1 = rootInitMv;
-                        swapMv(rootInitMv1, () -> {
-                            if (definingModule != null) {
-                                writer.loadClass(definingModule);
-                            } else {
-                                throw new RuntimeException("Not in root class");
-                            }
-                            switch (visit1) {
-                                case PyExpr pyExpr -> pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
-                                case String string -> writer.loadConstant(string);
-                                case Byte byteValue -> writer.loadConstant(byteValue);
-                                case Short shortValue -> writer.loadConstant(shortValue);
-                                case Integer integer -> writer.loadConstant(integer);
-                                case Boolean booleanValue -> writer.loadConstant(booleanValue);
-                                case Long longValue -> writer.loadConstant(longValue);
-                                case Float floatValue -> writer.loadConstant(floatValue);
-                                case Double doubleValue -> writer.loadConstant(doubleValue);
-                                case Character charValue -> writer.loadConstant(charValue);
-                                default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                            }
-                            writer.cast(Type.getType(Object.class));
-                            writer.dynamicSetAttr(finalName);
-                        });
+                        definingModule.addFunction(setterFunc);
+                        return new AssignmentStatement(new Settable[]{new MemberAttrExpr(definingModule, finalName, getLocation(ctx))}, visit1, getLocation(ctx));
                     } else {
                         throw new RuntimeException("Not in root class");
                     }
-                } else if (this.symbols.containsKey(name)) {
-                    Symbol symbol = this.symbols.get(name);
-                    if (symbol instanceof ImportedField importedField) {
-                        PyExpr expr = switch (visit1) {
-                            case PyExpr pyExpr -> pyExpr;
-                            case String string -> new PyConstant(string, getLocation(ctx));
-                            case Byte byteValue -> new PyConstant(byteValue, getLocation(ctx));
-                            case Short shortValue -> new PyConstant(shortValue, getLocation(ctx));
-                            case Integer integer -> new PyConstant(integer, getLocation(ctx));
-                            case Boolean booleanValue -> new PyConstant(booleanValue, getLocation(ctx));
-                            case Long longValue -> new PyConstant(longValue, getLocation(ctx));
-                            case Float floatValue -> new PyConstant(floatValue, getLocation(ctx));
-                            case Double doubleValue -> new PyConstant(doubleValue, getLocation(ctx));
-                            case Character charValue -> new PyConstant(charValue, getLocation(ctx));
-                            default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                        };
-                        importedField.set(mv, this, expr);
-                    } else if (symbol instanceof PyVariable pyVariable) {
-                        Type type = switch (visit1) {
-                            case PyExpr pyExpr -> pyExpr.type(this);
-                            case String string -> Type.getType(String.class);
-                            case Byte byteValue -> Type.BYTE_TYPE;
-                            case Short shortValue -> Type.SHORT_TYPE;
-                            case Integer integer -> Type.INT_TYPE;
-                            case Boolean booleanValue -> Type.BOOLEAN_TYPE;
-                            case Long longValue -> Type.LONG_TYPE;
-                            case Float floatValue -> Type.FLOAT_TYPE;
-                            case Double doubleValue -> Type.DOUBLE_TYPE;
-                            case Character charValue -> Type.CHAR_TYPE;
-                            default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                        };
-                        PyExpr expr = switch (visit1) {
-                            case PyExpr pyExpr -> pyExpr;
-                            case String string -> new PyConstant(string, getLocation(ctx));
-                            case Byte byteValue -> new PyConstant(byteValue, getLocation(ctx));
-                            case Short shortValue -> new PyConstant(shortValue, getLocation(ctx));
-                            case Integer integer -> new PyConstant(integer, getLocation(ctx));
-                            case Boolean booleanValue -> new PyConstant(booleanValue, getLocation(ctx));
-                            case Long longValue -> new PyConstant(longValue, getLocation(ctx));
-                            case Float floatValue -> new PyConstant(floatValue, getLocation(ctx));
-                            case Double doubleValue -> new PyConstant(doubleValue, getLocation(ctx));
-                            case Character charValue -> new PyConstant(charValue, getLocation(ctx));
-                            default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                        };
-
-                        pyVariable.set(mv, this, expr);
+                } else if (this.hasSymbol(name)) {
+                    PySymbol symbol = this.getSymbol(name);
+                    if (symbol instanceof JvmClass) {
+                        throw new TODO();
+                    } else if (symbol instanceof Settable settable) {
+                        return new AssignmentStatement(new Settable[]{settable}, visit1, getLocation(ctx));
+                    } else {
+                        throw new AssertionError("Unknown symbol type! Got: " + symbol.getClass().getName());
                     }
                 } else {
-                    Type type = switch (visit1) {
-                        case Symbol symbol -> symbol.type(this);
-                        case Boolean booleanValue -> Type.BOOLEAN_TYPE;
-                        case String stringValue -> Type.getType(String.class);
-                        case Byte byteValue -> Type.BYTE_TYPE;
-                        case Short shortValue -> Type.SHORT_TYPE;
-                        case Integer integerValue -> Type.INT_TYPE;
-                        case Long longValue -> Type.LONG_TYPE;
-                        case Float floatValue -> Type.FLOAT_TYPE;
-                        case Double doubleValue -> Type.DOUBLE_TYPE;
-                        case Character charValue -> Type.CHAR_TYPE;
-                        case PyConstant pyConstant -> pyConstant.type(this);
-                        case PyExpr pyExpr -> pyExpr.type(this);
-                        default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                    };
-                    String s = importType(type);
-                    createVariable(name, type, switch (visit1) {
-                        case PyConstant pyConstant -> pyConstant;
-                        case Symbol symbol -> symbol;
-                        case String string -> new PyConstant(string, getLocation(ctx));
-                        case Integer integer -> new PyConstant(integer, getLocation(ctx));
-                        case Boolean booleanValue -> new PyConstant(booleanValue, getLocation(ctx));
-                        case Long longValue -> new PyConstant(longValue, getLocation(ctx));
-                        case Float floatValue -> new PyConstant(floatValue, getLocation(ctx));
-                        case Double doubleValue -> new PyConstant(doubleValue, getLocation(ctx));
-                        case Character charValue -> new PyConstant(charValue, getLocation(ctx));
-                        case Byte byteValue -> new PyConstant(byteValue, getLocation(ctx));
-                        case Short shortValue -> new PyConstant(shortValue, getLocation(ctx));
-                        case PyExpr pyExpr -> pyExpr;
-                        default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-                    }, false, getLocation(ctx));
-
-                    imports.remove(s);
+                    createVariable(name, visit1, getLocation(ctx));
                 }
-
-                return Unit.Instance;
             }
 
             PythonParser.AugassignContext augassign = ctx.augassign();
             if (augassign != null) {
-                throw new RuntimeException("augassign not supported for:\n" + ctx.getText());
+                throw new RuntimeException("augassign not supported for:\n" + getTextFor(ctx));
             }
             PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions();
+            List<StarExpression> starExpressions = null;
             if (starExpressionsContext != null) {
-                return visit(starExpressionsContext);
+                starExpressions = visitStar_expressions(starExpressionsContext);
             }
             PythonParser.ExpressionContext expressionContext = ctx.expression();
             PythonParser.Annotated_rhsContext value = ctx.annotated_rhs();
+
+            if (definingFunction == null) {
+                if (definingClass == null) {
+                    if (definingModule == null) throw new AssertionError("Unknown module!" + getTextFor(ctx));
+
+
+                    flags.set(F_CPL_TYPE_ANNO);
+                    PyExpression visit1;
+                    try {
+                        visit1 = visitExpression(ctx.expression());
+                    } finally {
+                        flags.clear(F_CPL_TYPE_ANNO);
+                    }
+                    PyExpression visit = visitAnnotated_rhs(value);
+                    ClassReference reference = new ClassReference((SymbolReferenceExpr) visit1);
+                    @Nullable String finalName = name;
+                    PyFunction getterFunc = PyFunction.withContent(definingModule, getterName(name), new PyParameter[0], reference, true, getLocation(ctx), getterMethod -> {
+                        if (definingModule != null) {
+                            writer.loadClass(definingModule);
+                        } else {
+                            throw new RuntimeException("Not in root class");
+                        }
+                        writer.dynamicGetAttr(finalName);
+                        writer.returnValue(reference.type(), getLocation(ctx));
+                    });
+
+                    definingModule.addFunction(getterFunc);
+
+                    PyFunction setterFunc = PyFunction.withContent(definingModule, setterName(name), new PyParameter[]{new PyTypedParameter("value", reference, getLocation(ctx))}, classCache.void_(this), true, getLocation(ctx), setterMethod -> {
+                        if (definingModule != null) {
+                            writer.loadClass(definingModule);
+                        } else {
+                            throw new RuntimeException("Not in root class");
+                        }
+                        writer.loadValue(0, reference.type());
+                        writer.cast(Type.getType(Object.class));
+                        writer.dynamicSetAttr(finalName);
+                        writer.returnVoid();
+                    });
+
+                    definingModule.addFunction(setterFunc);
+                    return new AssignmentStatement(new Settable[]{new MemberAttrExpr(definingModule, finalName, getLocation(ctx))}, visit, getLocation(ctx));
+                } else {
+                    throw new RuntimeException("Not in root class");
+                }
+            }
             if (expressionContext != null) {
                 if (value == null) {
-                    throw new CompilerException("Annotated RHS is required " + getLocation(ctx));
+                    flags.set(F_CPL_TYPE_ANNO);
+                    PyExpression visit1;
+                    try {
+                        visit1 = visitExpression(ctx.expression());
+                    } finally {
+                        flags.clear(F_CPL_TYPE_ANNO);
+                    }
+
+                    if (methodOut == null) {
+                        Type type = visit1.type();
+                        if (definingModule == null) throw new RuntimeException("Not in a module?" + getLocation(ctx));
+                        definingModule.addProperty(this, name, type);
+                        ModuleRootField symbol = new ModuleRootField(definingModule, name, getLocation(ctx));
+                        setSymbol(name, symbol);
+                        return new AssignmentStatement(new Settable[]{symbol}, visit1, getLocation(ctx));
+                    } else {
+                        return createVariable(name, starExpressions.getFirst().expression(), getLocation(ctx));
+                    }
                 }
+
                 System.out.println("annotatedRhsContext = " + value.getText());
-                Object visit = visit(value);
+                PyExpression expression = visitAnnotated_rhs(value);
                 flags.set(F_CPL_TYPE_ANNO);
-                Object visit1;
+                PyExpression visit1;
                 try {
-                    visit1 = visit(ctx.expression());
+                    visit1 = visitExpression(ctx.expression());
                 } finally {
                     flags.clear(F_CPL_TYPE_ANNO);
                 }
 
-                if (mv == null) {
-                    Type type = switch (visit1) {
-                        case PyExpr symbol -> symbol.type(this);
-                        default ->
-                                throw new RuntimeException("Annotated RHS not supported with owner " + visit1.getClass().getSimpleName() + " for:\n" + value.getText());
-                    };
-                    FieldVisitor fieldVisitor = cv.visitField(ACC_PUBLIC + ACC_STATIC, name, type.getDescriptor(), null, null);
-                    fieldVisitor.visitEnd();
-
-                    symbols.put(name, new ImportedField(name, type, getName(), getLocation(ctx)));
-
-                    if (cv == rootCw) {
-                        var a = constant(ctx, visit);
-                        a.load(rootInitMv, this, a.preload(rootInitMv, this, false), false);
-                        rootInitMv.visitFieldInsn(PUTSTATIC, getName(), name, type.getDescriptor());
-                    }
+                if (methodOut == null) {
+                    Type type = visit1.type();
+                    if (definingModule == null) throw new RuntimeException("Not in a module?" + getLocation(ctx));
+                    definingModule.addProperty(this, name, type);
+                    ModuleRootField symbol = new ModuleRootField(definingModule, name, getLocation(ctx));
+                    setSymbol(name, symbol);
+                    return new AssignmentStatement(new Settable[]{symbol}, visit1, getLocation(ctx));
                 } else {
-                    createVariable(name, switch (visit1) {
-                        case PyClassConstruction classConstruction -> classConstruction.type(this);
-                        case Symbol symbol -> symbol.type(this);
-                        default ->
-                                throw new RuntimeException("Annotated RHS not supported with owner " + visit1.getClass().getSimpleName() + " for:\n" + value.getText());
-                    }, constant(ctx, visit), false, getLocation(ctx));
+                    return createVariable(name, expression, getLocation(ctx));
                 }
-
-                return Unit.Instance;
             } else {
-                if (value != null) {
-                    Type type = symbols.get(name).type(this);
-                    Object visit = visit(value);
-                    symbols.get(name).set(mv, this, switch (visit) {
-                        case PyExpr pyExpr -> pyExpr;
-                        default ->
-                                throw new RuntimeException("Annotated RHS not supported with owner " + visit.getClass().getSimpleName() + " for:\n" + value.getText());
-                    });
+                if (definingFunction.name().equals("<init>") || definingFunction.name().equals("__init__")) {
+                    if (definingModule == null) throw new RuntimeException("Not in a module?" + getLocation(ctx));
+                    throw new CompilerException("Annotated RHS is required " + getLocation(ctx));
+                } else {
+                    if (starExpressions == null) {
+                        throw new CompilerException("Annotated RHS is required ", getLocation(ctx));
+                    }
+
+                    List<PythonParser.Star_targetsContext> starTargetsContexts = ctx.star_targets();
+                    if (starTargetsContexts == null) {
+                        throw new CompilerException("Targets are required ", getLocation(ctx));
+                    }
+                    if (starTargetsContexts.size() != 1) {
+                        throw new CompilerException("Not supported", getLocation(ctx));
+                    }
+
+                    List<PyExpression> first = visitStar_targets(starTargetsContexts.getFirst());
+
+                    return new AssignmentStatement(first.toArray(Settable[]::new), starExpressions.getFirst().expression(), getLocation(ctx));
                 }
-                throw new CompilerException("Type annotation is required " + getLocation(ctx));
             }
         } catch (CompilerException e) {
             throw e;
-        } catch (Exception e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
         } finally {
             flags.clear(F_CPL_ASSIGN);
         }
     }
 
-    private void swapMv(MethodVisitor methodVisitor, Runnable func) {
-        MethodVisitor oldMv = mv;
-        mv = methodVisitor;
+    private static PythonParser.@NotNull ExpressionContext getExpressionContext(List<PythonParser.Star_expressionContext> starExpressionContexts) {
+        if (starExpressionContexts.size() != 1) {
+            // TODO Add support for multiple star expressions
+            throw new RuntimeException("Expected 1 expression, got " + starExpressionContexts.size() + " which is unsupported for now.");
+        }
+
+        PythonParser.Star_expressionContext starExpressionContext = starExpressionContexts.getFirst();
+        TerminalNode star = starExpressionContext.STAR();
+        if (star != null) {
+            // TODO Add support for star expressions
+            throw new RuntimeException("Star expressions are not supported for now.");
+        }
+
+        PythonParser.ExpressionContext expressionContext = starExpressionContext.expression();
+        if (expressionContext == null) {
+            throw new RuntimeException("Expression for variable assignment wasn't found.");
+        }
+        return expressionContext;
+    }
+
+    @Override
+    public PyExpression visitAnnotated_rhs(PythonParser.Annotated_rhsContext ctx) {
+        PythonParser.Yield_exprContext yieldExprContext = ctx.yield_expr();
+        if (yieldExprContext != null) {
+            throw new CompilerException("Generators (yield) are not supported yet!", getLocation(yieldExprContext));
+        }
+
+        List<StarExpression> o = visitStar_expressions(ctx.star_expressions());
+        if (o.size() > 1)
+            throw new CompilerException("Too many expressions for annotation!", getLocation(ctx.star_expressions()));
+        if (o.isEmpty())
+            throw new CompilerException("Expected an annotation", getLocation(ctx.star_expressions()));
+        StarExpression first = o.getFirst();
+        if (first.expression() instanceof PyExpression expression) {
+            return expression;
+        }
+        throw new CompilerException("Expected a class as annotation", first.location());
+    }
+
+    public void swapMethod(MethodVisitor methodVisitor, Runnable func) {
+        MethodVisitor oldMethodOut = methodOut;
+        methodOut = methodVisitor;
         func.run();
-        mv = oldMv;
+        methodOut = oldMethodOut;
+    }
+
+    public void swapClass(ClassNode classVisitor, Runnable func) {
+        ClassNode oldClassOut = classOut;
+        classOut = classVisitor;
+        func.run();
+        classOut = oldClassOut;
     }
 
     private String getterName(@Nullable String name) {
-        if (name == null) return null;
-        return name;
+        return "get" + CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, name);
     }
 
     private String setterName(@Nullable String name) {
-        if (name == null) return null;
-        return name;
+        return "set" + CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, name);
     }
 
     @Override
-    public Object visitStar_targets(PythonParser.Star_targetsContext ctx) {
+    public List<PyExpression> visitStar_targets(PythonParser.Star_targetsContext ctx) {
         if (ctx.star_target().size() != 1) {
-            throw new AssertionError("DEBUG");
+            throw new TODO();
         }
-        return List.of(visit(ctx.star_target(0)));
+        return List.of(visitStar_target(ctx.star_target(0)));
     }
 
     @Override
-    public Object visitStar_target(PythonParser.Star_targetContext ctx) {
+    public PyExpression visitStar_target(PythonParser.Star_targetContext ctx) {
         PythonParser.Star_targetContext starTargetContext = ctx.star_target();
         if (starTargetContext != null) {
             throw new AssertionError("DEBUG");
@@ -1883,17 +1627,30 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             throw new AssertionError("DEBUG");
         }
 
-        return visit(ctx.target_with_star_atom());
+        return visitTarget_with_star_atom(ctx.target_with_star_atom());
     }
 
     @Override
-    public Object visitTarget_with_star_atom(PythonParser.Target_with_star_atomContext ctx) {
+    public PyExpression visitTarget_with_star_atom(PythonParser.Target_with_star_atomContext ctx) {
         if (ctx.LSQB() != null)
             throw new AssertionError("DEBUG");
         if (ctx.RSQB() != null)
             throw new AssertionError("DEBUG");
-        if (ctx.star_atom() != null)
+        if (ctx.star_atom() != null) {
+            Object o = visitStar_atom(ctx.star_atom());
+            if (o instanceof Settable settable && settable instanceof PyExpression expression) {
+                return expression;
+            } else if (o instanceof PyNameReference(String name, Location location) && definingFunction != null) {
+                PySymbol symbolToSet = getSymbolToSet(name);
+                if (symbolToSet != null) {
+                    if (symbolToSet instanceof Settable settable && settable instanceof PyExpression expression)
+                        return expression;
+                }
+                return definingFunction.defineVariable(name, location);
+            }
+
             throw new AssertionError("DEBUG");
+        }
 
         PythonParser.T_primaryContext tPrimaryContext = ctx.t_primary();
         TerminalNode name = ctx.NAME();
@@ -1905,36 +1662,38 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         Object visit = visit(tPrimaryContext);
         if (visit instanceof JvmClass jvmClass) {
             String name1 = name.getText();
-            return jvmClass.field(this, name1);
+            return new MemberAttrExpr(jvmClass, name1, getLocation(tPrimaryContext));
         }
-        if (visit instanceof Self self) {
-            PyClass pyClass = self.typeClass(this);
-            JvmField field = pyClass.field(this, name.getText());
-            if (field == null) {
-                int access;
-                if (name.getText().startsWith("__")) {
-                    access = ACC_PRIVATE;
-                } else if (name.getText().startsWith("_")) {
-                    access = ACC_PUBLIC;
-                } else {
-                    access = ACC_PUBLIC;
-                }
-                FieldVisitor fieldVisitor = cv.visitField(access, name.getText(), "Ljava/lang/Object;", null, null);
-                PyField value = new PyField(pyClass.type(this), name.getText(), Type.getType(Object.class), getLocation(ctx));
-                pyClass.fields.put(name.getText(), value);
-                return new MemberField(self, name.getText(), getLocation(ctx));
+        if (visit instanceof SelfExpr self) {
+            self.typeClass();
+            MemberAttrExpr attr = self.attr(name.getText(), getLocation(tPrimaryContext));
+            if (attr == null) {
+                return new MemberAttrExpr(self, name.getText(), getLocation(tPrimaryContext));
             }
-//            self.load(mv, this, self.preload(mv, this, false), false);
-            return new MemberField(self, name.getText(), getLocation(ctx));
-        }
-
-        if (visit instanceof PyObjectRef(String varName, Location location)) {
-            PyVariable variable = definingFunction.getVariable(varName);
-            if (variable == null) throw new CompilerException("Variable '" + varName + "' not found", getLocation(ctx));
-            return new MemberField(variable, name.getText(), getLocation(ctx));
+            return attr;
+        } else if (visit instanceof PyNameReference(String name1, Location location) && definingFunction != null) {
+            if (definingInstance != null && name1.equals("self")) {
+                return new MemberAttrExpr(new SelfExpr(definingInstance.type(), location), name.getText(), getLocation(ctx));
+            }
+            if (!definingFunction.isStatic() && name1.equals("self")) {
+                return new MemberAttrExpr(new SelfExpr(definingFunction.owner().type(), location), name.getText(), getLocation(name));
+            }
+            PySymbol symbolToSet = getSymbolToSet(name1);
+            if (symbolToSet != null) {
+                if (symbolToSet instanceof Settable settable && settable instanceof PyExpression expression)
+                    return expression;
+                else throw new RuntimeException("E");
+            }
+            return definingFunction.defineVariable(name1, location);
+        } else if (visit instanceof PyNameReference(String refName, Location location)) {
+            throw new AssertionError("DEBUG");
         }
 
         throw new AssertionError("DEBUG");
+    }
+
+    public PySymbol getSymbolToSet(String name) {
+        return SymbolContext.current().getSymbolToSet(name);
     }
 
     private String importType(Type type) {
@@ -1945,15 +1704,15 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
         if (type.getSort() != Type.OBJECT) return null;
         try {
-            Class javaType = Class.forName(type.getClassName(), false, getClass().getClassLoader());
+            java.lang.Class<?> javaType = java.lang.Class.forName(type.getClassName(), false, getClass().getClassLoader());
             String simpleName = getSimpleName(type);
-            JClass value = new JClass(type.getClassName(), javaType);
+            JavaClass value = new JavaClass(type.getClassName(), javaType, new Location());
             imports.add(simpleName, value);
             return simpleName;
         } catch (ClassNotFoundException e) {
-            PyClass value = classes.byClassName(type.getClassName());
+            LangClass value = classes.byClassName(type.getClassName());
             if (value == null) throw new CompilerException("JVM Class not found: " + type.getClassName());
-            String simpleName = getSimpleName(value.owner);
+            String simpleName = getSimpleName(value.type());
             imports.add(simpleName, value);
             return simpleName;
         }
@@ -1964,75 +1723,71 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         return split[split.length - 1];
     }
 
-    public PyExpr loadConstant(ParserRuleContext ctx, Object visit1, MethodVisitor mv) {
-        var a = constant(ctx, visit1);
-
-        a.load(mv, this, a.preload(mv, this, false), false);
-        return a;
-    }
-
-    private @NotNull PyExpr constant(ParserRuleContext ctx, Object visit1) {
-        return switch (visit1) {
-            case PyConstant pyConstant -> pyConstant;
-            case Symbol symbol -> symbol;
-            case PyExpr pyExpr -> pyExpr;
-            case String string -> new PyConstant(string, getLocation(ctx));
-            case Integer integer -> new PyConstant(integer, getLocation(ctx));
-            case Boolean booleanValue -> new PyConstant(booleanValue, getLocation(ctx));
-            case Long longValue -> new PyConstant(longValue, getLocation(ctx));
-            case Float floatValue -> new PyConstant(floatValue, getLocation(ctx));
-            case Double doubleValue -> new PyConstant(doubleValue, getLocation(ctx));
-            case Character charValue -> new PyConstant(charValue, getLocation(ctx));
-            case Byte byteValue -> new PyConstant(byteValue, getLocation(ctx));
-            case Short shortValue -> new PyConstant(shortValue, getLocation(ctx));
-            default -> throw new RuntimeException("Expression for variable assignment wasn't found.");
-        };
-    }
-
     @Override
     public Object visitStar_atom(PythonParser.Star_atomContext ctx) {
-        throw new AssertionError(ctx);
+        TerminalNode name = ctx.NAME();
+        TerminalNode lpar = ctx.LPAR();
+        TerminalNode lsqb = ctx.LSQB();
+        if (lpar != null)
+            throw new AssertionError("DEBUG");
+        if (lsqb != null)
+            throw new AssertionError("DEBUG");
+        if (name != null) {
+            PythonParser.Target_with_star_atomContext targetWithStarAtomContext = ctx.target_with_star_atom();
+            if (targetWithStarAtomContext != null) {
+                visitTarget_with_star_atom(targetWithStarAtomContext);
+                throw new AssertionError("DEBUG");
+            }
+            return new PyNameReference(name.getText(), getLocation(ctx.NAME()));
+        }
+
+        throw new AssertionError("DEBUG");
     }
 
     @Override
-    public Object visitStar_expressions(PythonParser.Star_expressionsContext ctx) {
+    public List<StarExpression> visitStar_expressions(PythonParser.Star_expressionsContext ctx) {
         if (ctx.star_expression().size() == 1) {
-            return visit(ctx.star_expression(0));
+            return List.of(visitStar_expression(ctx.star_expression(0)));
         } else {
-            throw new RuntimeException("star_expressions not supported for:\n" + ctx.getText());
+            throw new RuntimeException("star_expressions not supported for:\n" + getTextFor(ctx));
         }
     }
 
     @Override
-    public Object visitStar_expression(PythonParser.Star_expressionContext ctx) {
+    public StarExpression visitStar_expression(PythonParser.Star_expressionContext ctx) {
         PythonParser.Bitwise_orContext bitwiseOrContext = ctx.bitwise_or();
         if (ctx.STAR() != null) {
-            throw new RuntimeException("star_expression not supported for:\n" + ctx.getText());
+            throw new CompilerException("STAR not supported yet!", getLocation(ctx.STAR()));
         }
         if (bitwiseOrContext != null) {
-            return visit(bitwiseOrContext);
+            return new StarExpression(visitBitwise_or(bitwiseOrContext), ctx.STAR() != null, getLocation(ctx));
         }
         PythonParser.ExpressionContext expression = ctx.expression();
         if (expression != null) {
-            return visit(expression);
+            return new StarExpression(visitExpression(expression), ctx.STAR() != null, getLocation(ctx));
         }
-        throw new RuntimeException("No supported matching star_expression found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching star_expression found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitBitwise_or(PythonParser.Bitwise_orContext ctx) {
+    public AssignmentExpr visitAssignment_expression(PythonParser.Assignment_expressionContext ctx) {
+        return (AssignmentExpr) super.visitAssignment_expression(ctx);
+    }
+
+    @Override
+    public PyExpression visitBitwise_or(PythonParser.Bitwise_orContext ctx) {
         PythonParser.Bitwise_orContext otherContext = ctx.bitwise_or();
 
-        Object value;
-        Object addition = null;
+        PyExpression value;
+        PyExpression addition = null;
         if (otherContext != null) {
-            value = visit(otherContext);
-            addition = visit(ctx.bitwise_xor());
+            value = visitBitwise_or(otherContext);
+            addition = visitBitwise_xor(ctx.bitwise_xor());
         } else {
-            value = visit(ctx.bitwise_xor());
+            value = visitBitwise_xor(ctx.bitwise_xor());
         }
-        Object finalValue = value;
-        Object finalAddition = addition;
+        PyExpression finalValue = value;
+        PyExpression finalAddition = addition;
         if (shouldNotCreateEval()) {
             if (addition != null) {
                 throw new RuntimeException("Binary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
@@ -2046,7 +1801,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         if (ctx.VBAR() != null) {
             operator = PyEval.Operator.OR;
         }
-        return new PyEval(this, ctx, operator, finalValue, finalAddition, getLocation(ctx));
+        return new PyEval(operator, finalValue, finalAddition, getLocation(ctx));
     }
 
     private boolean shouldNotCreateEval() {
@@ -2054,19 +1809,19 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitBitwise_xor(PythonParser.Bitwise_xorContext ctx) {
+    public PyExpression visitBitwise_xor(PythonParser.Bitwise_xorContext ctx) {
         PythonParser.Bitwise_xorContext otherContext = ctx.bitwise_xor();
 
-        Object value;
-        Object addition = null;
+        PyExpression value;
+        PyExpression addition = null;
         if (otherContext != null) {
-            value = visit(otherContext);
-            addition = visit(ctx.bitwise_and());
+            value = visitBitwise_xor(otherContext);
+            addition = visitBitwise_and(ctx.bitwise_and());
         } else {
-            value = visit(ctx.bitwise_and());
+            value = visitBitwise_and(ctx.bitwise_and());
         }
-        Object finalValue = value;
-        Object finalAddition = addition;
+        PyExpression finalValue = value;
+        PyExpression finalAddition = addition;
         PyEval.Operator operator = null;
         if (shouldNotCreateEval()) {
             if (addition != null) {
@@ -2080,62 +1835,62 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         if (ctx.CIRCUMFLEX() != null) {
             operator = PyEval.Operator.XOR;
         }
-        return new PyEval(this, ctx, operator, finalValue, finalAddition, getLocation(ctx));
+        return new PyEval(operator, finalValue, finalAddition, getLocation(ctx));
     }
 
     @Override
-    public Object visitConjunction(PythonParser.ConjunctionContext ctx) {
+    public PyExpression visitConjunction(PythonParser.ConjunctionContext ctx) {
         List<PythonParser.InversionContext> inversionContext = ctx.inversion();
         if (!ctx.AND().isEmpty()) {
-            throw new RuntimeException("conjunction not supported for:\n" + ctx.getText());
+            throw new RuntimeException("conjunction not supported for:\n" + getTextFor(ctx));
         }
         if (inversionContext.size() == 1) {
-            return visit(inversionContext.getFirst());
+            return visitInversion(inversionContext.getFirst());
         }
-        throw new RuntimeException("No supported matching conjunction found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching conjunction found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitDisjunction(PythonParser.DisjunctionContext ctx) {
+    public PyExpression visitDisjunction(PythonParser.DisjunctionContext ctx) {
         List<PythonParser.ConjunctionContext> conjunctionContext = ctx.conjunction();
         if (!ctx.OR().isEmpty()) {
-            throw new RuntimeException("disjunction not supported for:\n" + ctx.getText());
+            throw new RuntimeException("disjunction not supported for:\n" + getTextFor(ctx));
         }
         if (conjunctionContext.size() == 1) {
-            return visit(conjunctionContext.getFirst());
+            return visitConjunction(conjunctionContext.getFirst());
         }
-        throw new RuntimeException("No supported matching disjunction found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching disjunction found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitExpression(PythonParser.ExpressionContext ctx) {
+    public PyExpression visitExpression(PythonParser.ExpressionContext ctx) {
         List<PythonParser.DisjunctionContext> disjunction = ctx.disjunction();
         if (disjunction.size() == 1) {
-            return visit(disjunction.getFirst());
+            return visitDisjunction(ctx.disjunction(0));
         }
 
-        throw new RuntimeException("No supported matching expression found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching expression found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitInversion(PythonParser.InversionContext ctx) {
-        PythonParser.InversionContext inversion = ctx.inversion();
+    public PyExpression visitInversion(PythonParser.InversionContext ctx) {
+        ctx.inversion();
         if (ctx.NOT() != null) {
-            throw new RuntimeException("inversion not supported for:\n" + ctx.getText());
+            throw new RuntimeException("inversion not supported for:\n" + getTextFor(ctx));
         }
         PythonParser.ComparisonContext comparison = ctx.comparison();
         if (comparison != null) {
-            return visit(comparison);
+            return visitComparison(comparison);
         }
-        throw new RuntimeException("No supported matching inversion found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching inversion found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitComparison(PythonParser.ComparisonContext ctx) {
+    public PyExpression visitComparison(PythonParser.ComparisonContext ctx) {
         PythonParser.Bitwise_orContext bitwiseOrContext = ctx.bitwise_or();
         List<PythonParser.Compare_op_bitwise_or_pairContext> compareOpBitwiseOrPairContexts = ctx.compare_op_bitwise_or_pair();
         if (bitwiseOrContext != null) {
-            Object visit = visit(bitwiseOrContext);
+            PyExpression visit = visitBitwise_or(bitwiseOrContext);
             if (shouldNotCreateEval()) {
                 if (!compareOpBitwiseOrPairContexts.isEmpty()) {
                     throw new RuntimeException("Comparison is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
@@ -2147,49 +1902,25 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
             if (!compareOpBitwiseOrPairContexts.isEmpty()) {
                 for (PythonParser.Compare_op_bitwise_or_pairContext compareOpBitwiseOrPairContext : compareOpBitwiseOrPairContexts) {
+                    var oldLeftExpr = leftExpr;
+                    leftExpr = visit;
                     Object visit1 = visit(compareOpBitwiseOrPairContext);
-                    if (visit1 instanceof PyComparison comparison) {
-                        return new PyExpr() {
-                            @Override
-                            public Object preload(MethodVisitor mv, PythonCompiler compiler, boolean boxed) {
-                                return null;
-                            }
-
-                            @Override
-                            public void load(MethodVisitor mv, PythonCompiler compiler, Object preloaded, boolean boxed) {
-                                loadExpr(ctx, visit);
-                                comparison.load(mv, compiler, comparison.preload(mv, compiler, boxed), boxed);
-                            }
-
-                            @Override
-                            public void expectReturnType(PythonCompiler compiler, JvmClass returnType, Location location) {
-                                comparison.expectReturnType(compiler, returnType, location);
-                            }
-
-                            @Override
-                            public Type type(PythonCompiler compiler) {
-                                return Type.BOOLEAN_TYPE;
-                            }
-
-                            @Override
-                            public Location location() {
-                                return getLocation(ctx);
-                            }
-                        };
+                    leftExpr = oldLeftExpr;
+                    if (visit1 instanceof PyEval comparison) {
+                        return comparison;
                     } else {
-                        throw new RuntimeException("compare_op_bitwise_or_pair not supported for:\n" + ctx.getText());
+                        throw new RuntimeException("compare_op_bitwise_or_pair not supported for '" + visit1.getClass().getName() + "' at:\n" + getTextFor(ctx));
                     }
                 }
             }
             return visit;
         }
 
-        throw new RuntimeException("No supported matching comparison found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching comparison found for:\n" + getTextFor(ctx));
     }
 
     @Override
     public Object visitCompare_op_bitwise_or_pair(PythonParser.Compare_op_bitwise_or_pairContext ctx) {
-        PythonParser.Eq_bitwise_orContext eqBitwiseOrContext = ctx.eq_bitwise_or();
         if (shouldNotCreateEval()) {
             if (ctx.eq_bitwise_or() != null) {
                 throw new RuntimeException("Equality is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
@@ -2210,64 +1941,65 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 throw new RuntimeException("Relational operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
 
-            throw new RuntimeException("No supported matching compare_op_bitwise_or_pair found for:\n" + ctx.getText());
+            throw new RuntimeException("No supported matching compare_op_bitwise_or_pair found for:\n" + getTextFor(ctx));
         }
+        PythonParser.Eq_bitwise_orContext eqBitwiseOrContext = ctx.eq_bitwise_or();
         if (eqBitwiseOrContext != null) {
-            return new PyComparison(eqBitwiseOrContext, PyComparison.Comparison.EQ, ctx, getLocation(eqBitwiseOrContext));
+            return new PyEval(PyEval.Operator.EQ, leftExpr, visitBitwise_or(eqBitwiseOrContext.bitwise_or()), getLocation(eqBitwiseOrContext));
         }
         PythonParser.Noteq_bitwise_orContext noteqBitwiseOrContext = ctx.noteq_bitwise_or();
         if (noteqBitwiseOrContext != null) {
-            return new PyComparison(noteqBitwiseOrContext, PyComparison.Comparison.NE, ctx, getLocation(noteqBitwiseOrContext));
+            return new PyEval(PyEval.Operator.NE, leftExpr, visitBitwise_or(noteqBitwiseOrContext.bitwise_or()), getLocation(noteqBitwiseOrContext));
         }
         PythonParser.Gt_bitwise_orContext gtBitwiseOrContext = ctx.gt_bitwise_or();
         if (gtBitwiseOrContext != null) {
-            return new PyComparison(gtBitwiseOrContext, PyComparison.Comparison.GT, ctx, getLocation(gtBitwiseOrContext));
+            return new PyEval(PyEval.Operator.GT, leftExpr, visitBitwise_or(gtBitwiseOrContext.bitwise_or()), getLocation(gtBitwiseOrContext));
         }
         PythonParser.Gte_bitwise_orContext gteBitwiseOrContext = ctx.gte_bitwise_or();
         if (gteBitwiseOrContext != null) {
-            return new PyComparison(gteBitwiseOrContext, PyComparison.Comparison.GTE, ctx, getLocation(gteBitwiseOrContext));
+            return new PyEval(PyEval.Operator.GE, leftExpr, visitBitwise_or(gteBitwiseOrContext.bitwise_or()), getLocation(gteBitwiseOrContext));
         }
         PythonParser.Lt_bitwise_orContext ltBitwiseOrContext = ctx.lt_bitwise_or();
         if (ltBitwiseOrContext != null) {
-            return new PyComparison(ltBitwiseOrContext, PyComparison.Comparison.LT, ctx, getLocation(ltBitwiseOrContext));
+            return new PyEval(PyEval.Operator.LT, leftExpr, visitBitwise_or(ltBitwiseOrContext.bitwise_or()), getLocation(ltBitwiseOrContext));
         }
         PythonParser.Lte_bitwise_orContext lteBitwiseOrContext = ctx.lte_bitwise_or();
         if (lteBitwiseOrContext != null) {
-            return new PyComparison(lteBitwiseOrContext, PyComparison.Comparison.LTE, ctx, getLocation(lteBitwiseOrContext));
+            return new PyEval(PyEval.Operator.LE, leftExpr, visitBitwise_or(lteBitwiseOrContext.bitwise_or()), getLocation(lteBitwiseOrContext));
         }
         PythonParser.Notin_bitwise_orContext notinBitwiseOrContext = ctx.notin_bitwise_or();
         if (notinBitwiseOrContext != null) {
-            return new PyComparison(notinBitwiseOrContext, PyComparison.Comparison.NOT_IN, ctx, getLocation(notinBitwiseOrContext));
+            return new PyEval(PyEval.Operator.NOT_IN, leftExpr, visitBitwise_or(notinBitwiseOrContext.bitwise_or()), getLocation(notinBitwiseOrContext));
         }
         PythonParser.In_bitwise_orContext inBitwiseOrContext = ctx.in_bitwise_or();
         if (inBitwiseOrContext != null) {
-            return new PyComparison(inBitwiseOrContext, PyComparison.Comparison.IN, ctx, getLocation(inBitwiseOrContext));
+            return new PyEval(PyEval.Operator.IN, leftExpr, visitBitwise_or(inBitwiseOrContext.bitwise_or()), getLocation(inBitwiseOrContext));
         }
         PythonParser.Is_bitwise_orContext bitwiseOr = ctx.is_bitwise_or();
         if (bitwiseOr != null) {
-            return new PyComparison(bitwiseOr, PyComparison.Comparison.IS, ctx, getLocation(bitwiseOr));
+            return new PyEval(PyEval.Operator.IS, leftExpr, visitBitwise_or(bitwiseOr.bitwise_or()), getLocation(bitwiseOr));
         }
         PythonParser.Isnot_bitwise_orContext isnotBitwiseOrContext = ctx.isnot_bitwise_or();
         if (isnotBitwiseOrContext != null) {
-            return new PyComparison(isnotBitwiseOrContext, PyComparison.Comparison.IS_NOT, ctx, getLocation(isnotBitwiseOrContext));
+            return new PyEval(PyEval.Operator.IS_NOT, leftExpr, visitBitwise_or(isnotBitwiseOrContext.bitwise_or()), getLocation(isnotBitwiseOrContext));
         }
-        throw new RuntimeException("No supported matching compare_op_bitwise_or_pair found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching compare_op_bitwise_or_pair found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitBitwise_and(PythonParser.Bitwise_andContext ctx) {
+    public PyExpression visitBitwise_and(PythonParser.Bitwise_andContext ctx) {
         PythonParser.Bitwise_andContext otherContext = ctx.bitwise_and();
 
-        Object value;
-        Object addition = null;
+        PyExpression value;
+        PyExpression addition = null;
         if (otherContext != null) {
-            value = visit(otherContext);
-            addition = visit(ctx.shift_expr());
+            value = visitBitwise_and(otherContext);
+            addition = visitShift_expr(ctx.shift_expr());
         } else {
-            value = visit(ctx.shift_expr());
+            value = visitShift_expr(ctx.shift_expr());
         }
-        Object finalValue = value;
-        Object finalAddition = addition;
+        PyExpression finalValue = value;
+        PyExpression finalAddition = addition;
         PyEval.Operator operator = null;
         if (shouldNotCreateEval()) {
             if (addition != null) {
@@ -2281,23 +2013,23 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         if (ctx.AMPER() != null) {
             operator = PyEval.Operator.AND;
         }
-        return new PyEval(this, ctx, operator, finalValue, finalAddition, getLocation(ctx));
+        return new PyEval(operator, finalValue, finalAddition, getLocation(ctx));
     }
 
     @Override
-    public Object visitShift_expr(PythonParser.Shift_exprContext ctx) {
+    public PyExpression visitShift_expr(PythonParser.Shift_exprContext ctx) {
         PythonParser.Shift_exprContext otherContext = ctx.shift_expr();
 
-        Object value;
-        Object addition = null;
+        PyExpression value;
+        PyExpression addition = null;
         if (otherContext != null) {
-            value = visit(otherContext);
-            addition = visit(ctx.sum());
+            value = visitShift_expr(otherContext);
+            addition = visitSum(ctx.sum());
         } else {
-            value = visit(ctx.sum());
+            value = visitSum(ctx.sum());
         }
-        Object finalValue = value;
-        Object finalAddition = addition;
+        PyExpression finalValue = value;
+        PyExpression finalAddition = addition;
         PyEval.Operator operator = null;
         if (shouldNotCreateEval()) {
             if (addition != null) {
@@ -2313,23 +2045,23 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         } else if (ctx.RIGHTSHIFT() != null) {
             operator = PyEval.Operator.RSHIFT;
         }
-        return new PyEval(this, ctx, operator, finalValue, finalAddition, getLocation(ctx));
+        return new PyEval(operator, finalValue, finalAddition, getLocation(ctx));
     }
 
     @Override
-    public Object visitSum(PythonParser.SumContext ctx) {
+    public PyExpression visitSum(PythonParser.SumContext ctx) {
         PythonParser.SumContext otherContext = ctx.sum();
 
-        Object value;
-        Object addition = null;
+        PyExpression value;
+        PyExpression addition = null;
         if (otherContext != null) {
-            value = visit(otherContext);
-            addition = visit(ctx.term());
+            value = visitSum(otherContext);
+            addition = visitTerm(ctx.term());
         } else {
-            value = visit(ctx.term());
+            value = visitTerm(ctx.term());
         }
-        Object finalValue = value;
-        Object finalAddition = addition;
+        PyExpression finalValue = value;
+        PyExpression finalAddition = addition;
         PyEval.Operator operator = null;
         if (shouldNotCreateEval()) {
             if (addition != null) {
@@ -2346,44 +2078,25 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             operator = PyEval.Operator.SUB;
         }
         if (operator != null) {
-            return new PyEval(this, ctx, operator, finalValue, finalAddition, getLocation(ctx));
+            return new PyEval(operator, finalValue, finalAddition, getLocation(ctx));
         }
         return value;
     }
 
-    public PyExpr loadExpr(ParserRuleContext ctx, Object visit) {
-        MethodVisitor mv = this.mv == null ? this.rootInitMv : this.mv;
-        return switch (visit) {
-            case PyExpr pyExpr -> {
-                pyExpr.load(mv, this, pyExpr.preload(mv, this, false), false);
-                yield pyExpr;
-            }
-            case Integer integer -> loadConstant(ctx, integer, mv);
-            case Long aLong -> loadConstant(ctx, aLong, mv);
-            case Float aFloat -> loadConstant(ctx, aFloat, mv);
-            case Double aDouble -> loadConstant(ctx, aDouble, mv);
-            case String s -> loadConstant(ctx, s, mv);
-            case Boolean aBoolean -> loadConstant(ctx, aBoolean, mv);
-            case Character aChar -> loadConstant(ctx, aChar, mv);
-            case Unit unit -> throw new RuntimeException("unit not supported for:\n" + ctx.getText());
-            default -> throw new RuntimeException("No supported matching loadExpr found for:\n" + ctx.getText());
-        };
-    }
-
     @Override
-    public Object visitTerm(PythonParser.TermContext ctx) {
+    public PyExpression visitTerm(PythonParser.TermContext ctx) {
         PythonParser.TermContext otherContext = ctx.term();
 
-        Object value;
-        Object addition = null;
+        PyExpression value;
+        PyExpression addition = null;
         if (otherContext != null) {
-            value = visit(otherContext);
-            addition = visit(ctx.factor());
+            value = visitTerm(otherContext);
+            addition = visitFactor(ctx.factor());
         } else {
-            value = visit(ctx.factor());
+            value = visitFactor(ctx.factor());
         }
-        Object finalValue = value;
-        Object finalAddition = addition;
+        PyExpression finalValue = value;
+        PyExpression finalAddition = addition;
         PyEval.Operator operator = null;
         if (shouldNotCreateEval()) {
             if (addition != null) {
@@ -2403,22 +2116,22 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         } else if (ctx.DOUBLESLASH() != null) {
             operator = PyEval.Operator.FLOORDIV;
         }
-        return new PyEval(this, ctx, operator, finalValue, finalAddition, getLocation(ctx));
+        return new PyEval(operator, finalValue, finalAddition, getLocation(ctx));
     }
 
     @Override
-    public Object visitFactor(PythonParser.FactorContext ctx) {
-        PythonParser.FactorContext factor = ctx.factor();
+    public PyExpression visitFactor(PythonParser.FactorContext ctx) {
+        ctx.factor();
         if (ctx.MINUS() != null) {
             PythonParser.FactorContext otherContext = ctx.factor();
 
-            Object value;
+            PyExpression value;
             if (otherContext != null) {
-                value = visit(otherContext);
+                value = visitFactor(otherContext);
             } else {
-                value = visit(ctx.power());
+                value = visitPower(ctx.power());
             }
-            Object finalValue = value;
+            PyExpression finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_MINUS;
             if (shouldNotCreateEval()) {
                 if (value != null) {
@@ -2426,19 +2139,19 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
-            return new PyEval(this, ctx, operator, finalValue, null, getLocation(ctx));
+            return new PyEval(operator, finalValue, null, getLocation(ctx));
         }
 
         if (ctx.PLUS() != null) {
             PythonParser.FactorContext otherContext = ctx.factor();
 
-            Object value;
+            PyExpression value;
             if (otherContext != null) {
-                value = visit(otherContext);
+                value = visitFactor(otherContext);
             } else {
-                value = visit(ctx.power());
+                value = visitPower(ctx.power());
             }
-            Object finalValue = value;
+            PyExpression finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_PLUS;
             if (shouldNotCreateEval()) {
                 if (value != null) {
@@ -2446,19 +2159,19 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
-            return new PyEval(this, ctx, operator, finalValue, null, getLocation(ctx));
+            return new PyEval(operator, finalValue, null, getLocation(ctx));
         }
 
         if (ctx.TILDE() != null) {
             PythonParser.FactorContext otherContext = ctx.factor();
 
-            Object value;
+            PyExpression value;
             if (otherContext != null) {
-                value = visit(otherContext);
+                value = visitFactor(otherContext);
             } else {
-                value = visit(ctx.power());
+                value = visitPower(ctx.power());
             }
-            Object finalValue = value;
+            PyExpression finalValue = value;
             PyEval.Operator operator = PyEval.Operator.UNARY_NOT;
             if (shouldNotCreateEval()) {
                 if (value != null) {
@@ -2466,30 +2179,30 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.getStart().getLine() + ":" + ctx.getStart().getCharPositionInLine() + ")");
             }
-            return new PyEval(this, ctx, operator, finalValue, null, getLocation(ctx));
+            return new PyEval(operator, finalValue, null, getLocation(ctx));
         }
         PythonParser.PowerContext powerContext = ctx.power();
         if (powerContext != null) {
-            return visit(powerContext);
+            return visitPower(powerContext);
         }
-        throw new RuntimeException("No supported matching factor found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching factor found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitPower(PythonParser.PowerContext ctx) {
+    public PyExpression visitPower(PythonParser.PowerContext ctx) {
         if (ctx.DOUBLESTAR() != null) {
             PythonParser.FactorContext otherContext = ctx.factor();
 
-            Object value;
-            Object addition = null;
+            PyExpression value;
+            PyExpression addition = null;
             if (otherContext != null) {
-                value = visit(otherContext);
-                addition = visit(ctx.await_primary());
+                value = visitFactor(otherContext);
+                addition = visitAwait_primary(ctx.await_primary());
             } else {
-                value = visit(ctx.await_primary());
+                value = visitAwait_primary(ctx.await_primary());
             }
-            Object finalValue = value;
-            Object finalAddition = addition;
+            PyExpression finalValue = value;
+            PyExpression finalAddition = addition;
             PyEval.Operator operator = PyEval.Operator.POW;
             if (shouldNotCreateEval()) {
                 if (addition != null) {
@@ -2500,28 +2213,30 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     return value;
                 }
             }
-            return new PyEval(this, ctx, operator, finalValue, finalAddition, getLocation(ctx));
+            return new PyEval(operator, finalValue, finalAddition, getLocation(ctx));
 
         }
         PythonParser.FactorContext factorContext = ctx.factor();
         if (factorContext != null) {
-            return visit(factorContext);
+            return visitFactor(factorContext);
         }
 
         PythonParser.Await_primaryContext awaitPrimaryContext = ctx.await_primary();
         if (awaitPrimaryContext != null) {
-            return visit(awaitPrimaryContext);
+            return visitAwait_primary(awaitPrimaryContext);
         }
-        throw new RuntimeException("No supported matching power found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching power found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitAwait_primary(PythonParser.Await_primaryContext ctx) {
+    public PyExpression visitAwait_primary(PythonParser.Await_primaryContext ctx) {
         PythonParser.PrimaryContext primaryContext = ctx.primary();
+        if (ctx.AWAIT() != null)
+            throw new CompilerException("Async/await calls aren't supported yet!", getLocation(ctx));
         if (primaryContext != null) {
-            return visit(primaryContext);
+            return visitPrimary(primaryContext);
         }
-        throw new RuntimeException("No supported matching await_primary found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching await_primary found for:\n" + getTextFor(ctx));
     }
 
     @Override
@@ -2529,276 +2244,64 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         PythonParser.AtomContext atom = ctx.atom();
         PythonParser.T_primaryContext tPrimaryContext = ctx.t_primary();
         if (tPrimaryContext != null) {
-            throw new RuntimeException("t_primary not supported for:\n" + ctx.getText());
+            throw new RuntimeException("t_primary not supported for:\n" + getTextFor(ctx));
         }
         PythonParser.ArgumentsContext arguments = ctx.arguments();
         if (arguments != null) {
-            throw new RuntimeException("t_primary not supported for:\n" + ctx.getText());
+            throw new RuntimeException("t_primary not supported for:\n" + getTextFor(ctx));
         }
         if (atom != null) {
-            Object visit = visit(atom);
-            if (this.definingInstance != null && visit instanceof PyObjectRef(String name, Location location)) {
-                if (name.equals("self")) {
-                    return new Self(definingInstance.owner, getLocation(ctx));
-                }
-            }
-            return visit;
+            return visit(atom);
         }
-        throw new RuntimeException("No supported matching t_primary found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching t_primary found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitPrimary(PythonParser.PrimaryContext ctx) {
+    public PyExpression visitPrimary(PythonParser.PrimaryContext ctx) {
         PythonParser.PrimaryContext primaryContext = ctx.primary();
-        PythonParser.ArgumentsContext argumentsContext = ctx.arguments();
-        if (ctx.LPAR() != null) {
-            pushMemberContext(MemberContext.FUNCTION);
-            if (primaryContext == null) {
-                throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-            }
-            callArgs = argumentsContext;
-            PyExpr visit = (PyExpr) visit(primaryContext);
-            List<PyExpr> arguments = argumentsContext == null ? Collections.emptyList() : (List<PyExpr>) visit(argumentsContext);
-            if (visit instanceof JvmClass) {
-                JvmClass jvmClass = (JvmClass) visit;
-                return new PyClassConstruction(arguments, jvmClass, getLocation(ctx));
-            } else {
-                return visit;
-            }
-        } else {
-            PythonParser.ArgumentsContext arguments = argumentsContext;
-            if (arguments != null) {
-                throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-            }
-        }
-        if (ctx.RPAR() != null) {
-            throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-        }
+        ctx.arguments();
         if (primaryContext != null) {
             if (primaryContext.LPAR() == null) {
                 this.pushMemberContext(MemberContext.FIELD);
             }
-            Object parent = visit(primaryContext);
+            PyExpression parent = (PyExpression) visit(primaryContext);
             if (primaryContext.LPAR() == null) {
                 this.popMemberContext();
             }
             if (ctx.DOT() != null && ctx.NAME() != null) {
                 String name = ctx.NAME().getText();
-                switch (parent) {
-                    case PyObjectRef(String name1, Location location) -> {
-                        if (name1.equals("self") && definingInstance != null) {
-                            return new Self(definingInstance.owner, getLocation(ctx));
-                        }
-                        Symbol symbol = symbols.get(name1);
-                        if (symbol == null) {
-                            throw new CompilerException("Unknown symbol: " + name1 + " at " + getLocation(ctx));
-                        }
-                        switch (symbol) {
-                            case PyImport pyImport -> {
-                                if (pyImport.symbol == null) {
-                                    throw new CompilerException("Unknown symbol: " + name + " at " + getLocation(ctx));
-                                }
-
-                                return switch (pyImport.symbol) {
-                                    case JvmClass cls -> {
-                                        if (memberContext.equals(MemberContext.FUNCTION)) {
-                                            List<PyExpr> visit = (List<PyExpr>) visit(callArgs);
-                                            yield new MemberFuncCall((PyExpr) parent, name, visit.toArray(PyExpr[]::new), getLocation(ctx));
-                                        } else if (flags.get(F_READ_CALL)) {
-                                            PythonParser.ArgumentsContext arguments = this.callArgs;
-                                            List<PyExpr> visit = (List<PyExpr>) visit(arguments);
-                                            yield new MemberFuncCall((PyExpr) parent, name, visit.toArray(PyExpr[]::new), getLocation(ctx));
-                                        }
-                                        yield new MemberField((PyExpr) parent, name, getLocation(ctx));
-                                    }
-                                    case JvmFunction func -> {
-                                        if (ctx.LPAR() != null) {
-                                            if (argumentsContext != null) {
-                                                PythonParser.PrimaryContext primary = ctx.primary();
-                                                if (primary == null) {
-                                                    throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-                                                }
-                                                yield new MemberFuncCall((PyExpr) parent, name, ((List<PyExpr>) visit(argumentsContext)).toArray(PyExpr[]::new), getLocation(ctx));
-                                            } else {
-                                                PythonParser.PrimaryContext primary = ctx.primary();
-                                                if (primary == null) {
-                                                    throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-                                                }
-                                                yield new MemberFuncCall((PyExpr) parent, name, new PyExpr[0], getLocation(ctx));
-                                            }
-                                        }
-
-                                        throw new AssertionError("DEBUG");
-                                    }
-                                    default ->
-                                            throw new RuntimeException("Primary Python Object Reference not supported for:\n" + ctx.getText());
-                                };
-                            }
-                            case PyVariable pyVariable -> {
-                                if (ctx.LPAR() != null) {
-                                    if (argumentsContext != null) {
-                                        PythonParser.PrimaryContext primary = ctx.primary();
-                                        if (primary == null) {
-                                            throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-                                        }
-                                        return new MemberFuncCall((PyExpr) parent, name, ((List<PyExpr>) visit(argumentsContext)).toArray(PyExpr[]::new), getLocation(ctx));
-                                    } else {
-                                        PythonParser.PrimaryContext primary = ctx.primary();
-                                        if (primary == null) {
-                                            throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-                                        }
-                                        return new MemberFuncCall((PyExpr) parent, name, new PyExpr[0], getLocation(ctx));
-                                    }
-                                }
-
-                                if (flags.get(F_READ_CALL)) {
-                                    PythonParser.ArgumentsContext arguments = this.callArgs;
-                                    if (arguments == null) {
-                                        throw new RuntimeException("arguments not supported for:\n" + ctx.getText());
-                                    }
-                                    return new MemberFuncCall((PyExpr) parent, name, ((List<PyExpr>) visit(arguments)).toArray(PyExpr[]::new), getLocation(ctx));
-                                }
-                                if (memberContext == MemberContext.FUNCTION) {
-                                    List<PyExpr> arguments;
-                                    if (argumentsContext == null) {
-                                        arguments = List.of();
-                                    } else {
-                                        arguments = (List<PyExpr>) visit(argumentsContext);
-                                        if (arguments == null || arguments.isEmpty()) {
-                                            throw new RuntimeException("arguments not supported for:\n" + ctx.getText());
-                                        }
-                                    }
-
-                                    Type[] types = new Type[arguments.size()];
-                                    for (int i = 0; i < arguments.size(); i++) {
-                                        types[i] = switch (arguments.get(i)) {
-                                            case PyObjectRef(String name2, Location location1) ->
-                                                    symbols.get(name2).type(this);
-                                            default -> arguments.get(i).type(this);
-                                        };
-                                    }
-
-                                    return new MemberFuncCall(pyVariable, name, arguments.toArray(PyExpr[]::new), getLocation(ctx.NAME()));
-                                }
-                            }
-                            default ->
-                                    throw new RuntimeException("Unsupported primary Python Object Reference:\n" + ctx.getText());
-                        }
-                    }
-                    case JvmClass jvmClass -> {
-                        List<PyExpr> arguments = callArgs == null ? Collections.emptyList() : (List<PyExpr>) visit(this.callArgs);
-                        return new MemberFuncCall(jvmClass, name, arguments.toArray(PyExpr[]::new), getLocation(ctx));
-                    }
-                    case JvmConstructor jvmConstructor ->
-                            throw new RuntimeException("Primary JVM Constructor not supported for:\n" + ctx.getText());
-                    case JvmFunction jvmFunction ->
-                            throw new RuntimeException("Primary JVM Function not supported for:\n" + ctx.getText());
-                    case JvmField jvmField -> {
-                        if (memberContext == MemberContext.FIELD) {
-                            return new MemberField(jvmField.cls(this).field(this, name), name, getLocation(ctx));
-                        } else if (memberContext == MemberContext.FUNCTION) {
-                            List<PyExpr> arguments = (List<PyExpr>) visit(this.callArgs);
-                            return new MemberFuncCall(jvmField, name, arguments.toArray(PyExpr[]::new), getLocation(ctx.NAME()));
-                        }
-                    }
-                    case Self self -> {
-                        if (ctx.LPAR() != null) {
-                            PythonParser.PrimaryContext primary = ctx.primary();
-                            if (primary == null) {
-                                throw new RuntimeException("primary not supported for:\n" + ctx.getText());
-                            }
-
-                            List<PyExpr> arguments = argumentsContext == null ? Collections.emptyList() : (List<PyExpr>) visit(argumentsContext);
-                            return new MemberFuncCall(self, name, arguments.toArray(PyExpr[]::new), getLocation(ctx));
-                        } else {
-                            return new MemberField(self, name, getLocation(ctx));
-                        }
-                    }
-                    case PyClassConstruction classConstruction -> {
-                        if (name != null) {
-                            return new MemberField(classConstruction, name, getLocation(ctx));
-                        }
-                        return classConstruction;
-                    }
-                    case PyVariable var -> {
-                        if (name != null) {
-                            return new MemberField(var, name, getLocation(ctx));
-                        }
-                        return var;
-                    }
-                    case PyExpr expr -> {
-                        if (name != null) {
-                            return new MemberField(expr, name, getLocation(ctx));
-                        }
-                        return expr;
-                    }
-                    default ->
-                            throw new RuntimeException("Primary not supported with owner '" + parent.getClass().getSimpleName() + "' for:\n" + ctx.getText());
+                if (ctx.LPAR() != null) {
+                    @SuppressWarnings("unchecked")
+                    List<PyExpression> visit = (List<PyExpression>) visit(ctx.arguments());
+                    return new MemberCallExpr(new MemberAttrExpr(parent, name, getLocation(ctx)), visit, getLocation(ctx));
                 }
+                return new MemberAttrExpr(parent, name, getLocation(ctx));
+            }
+            if (ctx.LPAR() != null) {
+                PythonParser.ArgumentsContext arguments = ctx.arguments();
+                @SuppressWarnings("unchecked")
+                List<PyExpression> visit = arguments == null ? List.of() : (List<PyExpression>) visit(arguments);
+                return new MemberCallExpr(parent, visit, getLocation(ctx));
             }
             return parent;
         }
 
         PythonParser.AtomContext atom = ctx.atom();
         if (atom != null) {
-            Object visited = visit(atom);
-            PyExpr expr = switch (visited) {
-                case String s -> new PyConstant(s, getLocation(ctx));
-                case Integer s -> new PyConstant(s, getLocation(ctx));
-                case Float s -> new PyConstant(s, getLocation(ctx));
-                case Long s -> new PyConstant(s, getLocation(ctx));
-                case Double s -> new PyConstant(s, getLocation(ctx));
-                case Character s -> new PyConstant(s, getLocation(ctx));
-                case Byte s -> new PyConstant(s, getLocation(ctx));
-                case Short s -> new PyConstant(s, getLocation(ctx));
-                case Boolean s -> new PyConstant(s, getLocation(ctx));
-                case PyExpr pyExpr -> pyExpr;
-                case None none -> new PyConstant(none, getLocation(ctx));
-                default -> throw new RuntimeException("Expression for variable assignment didn't find a match.");
-            };
-            switch (expr) {
-                case PyObjectRef(String name, Location location) -> {
-                    Symbol symbol = symbols.get(name);
-                    if (definingFunction != null && name.equals("self") && !definingFunction.isStatic()) {
-                        return new Self(definingClass.type(this), location);
-                    } else if (symbol == null) {
-                        if (definingFunction != null) {
-                            PyVariable variable = definingFunction.getVariable(name);
-                            if (variable != null) {
-                                return variable;
-                            }
-                        }
-                        throw new CompilerException("No symbol named '" + name + "' found", location);
-                    } else if (symbol instanceof PyImport pyImport) {
-                        if (pyImport.symbol instanceof JvmFunction jvmFunction) {
-                            List<PyExpr> arguments = callArgs == null ? List.of() : (List<PyExpr>) visit(this.callArgs);
-                            return new PyFunctionCall(arguments, jvmFunction, location);
-                        } else if (pyImport.symbol instanceof JvmClass jvmClass) {
-                            return jvmClass;
-                        } else {
-                            throw new RuntimeException("Primary not supported for expression type '" + pyImport.symbol.getClass().getSimpleName() + "' for:\n" + ctx.getText());
-                        }
-                    } else if (symbol instanceof JvmFunction jvmFunction) {
-                        List<PyExpr> arguments = callArgs == null ? List.of() : (List<PyExpr>) visit(this.callArgs);
-                        return new PyFunctionCall(arguments, jvmFunction, location);
-                    } else if (symbol instanceof JvmClass jvmClass) {
-                        return jvmClass;
-                    } else if (symbol instanceof PyVariable variable) {
-                        return variable;
-                    } else if (symbol instanceof ImportedField field) {
-                        return field;
+            PyAST visited = visitAtom(atom);
+            return switch (visited) {
+                case PyExpression pyExpression -> pyExpression;
+                case PyNameReference pyNameReference -> {
+                    if (ctx.LPAR() == null) {
+                        yield new SymbolReferenceExpr(pyNameReference.name(), pyNameReference.location());
                     } else {
-                        throw new RuntimeException("Primary not supported for expression type '" + symbol.getClass().getSimpleName() + "' for:\n" + ctx.getText());
+                        throw new RuntimeException("Failed to find suitable expression for symbol: " + pyNameReference.name() + " at:\n" + getTextFor(ctx));
                     }
                 }
-                case PyConstant constant -> {
-                    return constant;
-                }
-                default ->
-                        throw new RuntimeException("Primary not supported for expression type '" + expr.getClass().getSimpleName() + "' for:\n" + ctx.getText());
-            }
+                default -> throw new RuntimeException("Expression for variable assignment didn't find a match.");
+            };
         }
-        throw new RuntimeException("No supported matching primary found at:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching primary found at:\n" + getTextFor(ctx));
     }
 
     private Location getLocation(TerminalNode name) {
@@ -2807,66 +2310,72 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
     public void pushMemberContext(MemberContext memberContext) {
         this.memberContextStack.push(memberContext);
-        this.memberContext = memberContext;
     }
 
     public void popMemberContext() {
         this.memberContextStack.pop();
         if (this.memberContextStack.isEmpty()) {
-            this.memberContext = null;
             return;
         }
-        this.memberContext = this.memberContextStack.peek();
+        this.memberContextStack.peek();
     }
 
     @Override
-    public Object visitAtom(PythonParser.AtomContext ctx) {
+    public PyAST visitAtom(PythonParser.AtomContext ctx) {
         PythonParser.DictContext dict = ctx.dict();
         if (dict != null) {
-            return visit(dict);
+            throw new TODO();
         }
         PythonParser.ListContext list = ctx.list();
         if (list != null) {
-            return visit(list);
+            throw new TODO();
         }
         PythonParser.SetContext set = ctx.set();
         if (set != null) {
-            return visit(set);
+            throw new TODO();
         }
         TerminalNode ellipsis = ctx.ELLIPSIS();
         if (ellipsis != null) {
-            throw new RuntimeException("atom not supported for:\n" + ctx.getText());
+            throw new CompilerException("Ellipsis aren't supported as of now!", getLocation(ctx.ELLIPSIS()));
         }
         TerminalNode name = ctx.NAME();
         if (name != null) {
-            return new PyObjectRef(name.getText(), getLocation(name.getSymbol()));
+            return new PyNameReference(name.getText(), getLocation(ctx.NAME()));
         }
         PythonParser.StringsContext strings = ctx.strings();
         if (strings != null) {
-            return visit(strings);
+            return (PyAST) visitStrings(strings);
         }
 
         TerminalNode number = ctx.NUMBER();
         if (number != null) {
             if (number.getText().contains(".")) {
-                return Double.parseDouble(number.getText());
+                try {
+                    return new ConstantExpr(Double.parseDouble(number.getText()), getLocation(ctx.NUMBER()));
+                } catch (NumberFormatException e) {
+                    throw new CompilerException("Invalid floating-point number", getLocation(ctx.NUMBER()));
+                }
             } else {
-                return Long.parseLong(number.getText());
+                try {
+                    return new ConstantExpr(Long.parseLong(number.getText()), getLocation(ctx.NUMBER()));
+                } catch (NumberFormatException e) {
+                    throw new CompilerException("Invalid integer", getLocation(ctx.NUMBER()));
+                }
             }
         }
         TerminalNode aTrue = ctx.TRUE();
         if (aTrue != null) {
-            return true;
+            return new ConstantExpr(true, getLocation(ctx.TRUE()));
         }
         TerminalNode aFalse = ctx.FALSE();
         if (aFalse != null) {
-            return false;
+            return new ConstantExpr(false, getLocation(ctx.FALSE()));
         }
         TerminalNode none = ctx.NONE();
         if (none != null) {
-            return None.None;
+            return new ConstantExpr(NoneType.None, getLocation(ctx.NONE()));
         }
-        throw new RuntimeException("No supported matching atom found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching atom found for:\n" + getTextFor(ctx));
     }
 
     private Location getLocation(Token symbol) {
@@ -2878,49 +2387,49 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         List<PythonParser.FstringContext> fstring = ctx.fstring();
         if (fstring != null) {
             if (!fstring.isEmpty()) {
-                throw new RuntimeException("strings not supported for:\n" + ctx.getText());
+                throw new RuntimeException("strings not supported for:\n" + getTextFor(ctx));
             }
         }
         List<PythonParser.StringContext> string = ctx.string();
         if (string != null) {
             if (string.size() == 1) {
-                return visit(string.getFirst());
+                return new ConstantExpr(visitString(string.getFirst()), getLocation(string.getFirst()));
             }
 
-            throw new RuntimeException("strings not supported for:\n" + ctx.getText());
+            throw new RuntimeException("strings not supported for:\n" + getTextFor(ctx));
         }
-        throw new RuntimeException("No supported matching strings found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching strings found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitString(PythonParser.StringContext ctx) {
+    public String visitString(PythonParser.StringContext ctx) {
         TerminalNode STRING = ctx.STRING();
         if (STRING != null) {
             return STRING.getText().substring(1, STRING.getText().length() - 1);
         }
-        throw new RuntimeException("No supported matching string found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching string found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitImport_stmt(PythonParser.Import_stmtContext ctx) {
+    public PyImportStatementLike visitImport_stmt(PythonParser.Import_stmtContext ctx) {
         PythonParser.Import_nameContext importNameContext = ctx.import_name();
         if (importNameContext != null) {
-            return visit(importNameContext);
+//            return visit(importNameContext);
+            throw new RuntimeException("import_name not supported for:\n" + getTextFor(ctx));
         }
         if (ctx.import_from() != null) {
-            return visit(ctx.import_from());
+            return visitImport_from(ctx.import_from());
         }
-        throw new RuntimeException("No supported matching import_stmt found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching import_stmt found for:\n" + getTextFor(ctx));
     }
 
-    @SuppressWarnings("unchecked")
     @Override
-    public Object visitImport_from(PythonParser.Import_fromContext ctx) {
+    public PyFromImportStatement visitImport_from(PythonParser.Import_fromContext ctx) {
         PythonParser.Import_from_targetsContext importFromTargetsContext = ctx.import_from_targets();
         TerminalNode from = ctx.FROM();
         TerminalNode import_ = ctx.IMPORT();
         if (from == null || import_ == null) {
-            throw new RuntimeException("No supported matching import_from found for:\n" + ctx.getText());
+            throw new RuntimeException("No supported matching import_from found for:\n" + getTextFor(ctx));
         }
 
         if (importFromTargetsContext != null) {
@@ -2928,42 +2437,48 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             System.out.println("dottedNameContext = " + dottedNameContext.getText());
             System.out.println("importFromTargetsContext.getText() = " + importFromTargetsContext.getText());
 
-            List<Map.Entry<String, String>> visit = (List<Map.Entry<String, String>>) visit(importFromTargetsContext);
+            PyFromImportStatement.Builder builder = PyFromImportStatement.builder(new ModulePath(dottedNameContext.getText()));
+
+            List<Map.Entry<String, String>> visit = visitImport_from_targets(importFromTargetsContext);
             for (Map.Entry<String, String> s : visit) {
-                String className = ((String) visit(dottedNameContext)).replace(".", "/") + "/" + s.getValue();
-                Type objectType = Type.getObjectType(className);
-                if (!classCache.load(this, objectType)) {
-                    expectations.expectClass(this, dottedNameContext.getText(), s.getValue());
+                visitDotted_name(dottedNameContext);
+
+                if (s.getKey().equals("*")) {
+                    throw new TODO();
                 }
-                JvmClass jClass = classCache.get(objectType);
-                this.imports.add(s.getKey(), jClass);
+
+                if (s.getKey().equals(s.getValue())) {
+                    builder.name(s.getValue());
+                } else {
+                    builder.alias(s.getKey(), s.getValue());
+                }
             }
 
-            return visit(importFromTargetsContext);
+            return builder.build();
         }
-        throw new RuntimeException("No supported matching import_from_targets found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching import_from_targets found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitImport_from_targets(PythonParser.Import_from_targetsContext ctx) {
+    public List<Map.Entry<String, String>> visitImport_from_targets(PythonParser.Import_from_targetsContext ctx) {
         PythonParser.Import_from_as_namesContext importFromAsNamesContext = ctx.import_from_as_names();
         if (importFromAsNamesContext != null) {
-            return visit(importFromAsNamesContext);
+            return visitImport_from_as_names(importFromAsNamesContext);
         }
-        throw new RuntimeException("No supported matching import_from_as_names found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching import_from_as_names found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitImport_from_as_names(PythonParser.Import_from_as_namesContext ctx) {
+    public List<Map.Entry<String, String>> visitImport_from_as_names(PythonParser.Import_from_as_namesContext ctx) {
         List<Map.Entry<String, String>> importFromAsNames = new ArrayList<>();
         for (int i = 0; i < ctx.import_from_as_name().size(); i++) {
-            importFromAsNames.add((Map.Entry<String, String>) visit(ctx.import_from_as_name(i)));
+            importFromAsNames.add(visitImport_from_as_name(ctx.import_from_as_name(i)));
         }
         return importFromAsNames;
     }
 
     @Override
-    public Object visitImport_from_as_name(PythonParser.Import_from_as_nameContext ctx) {
+    public Map.Entry<String, String> visitImport_from_as_name(PythonParser.Import_from_as_nameContext ctx) {
         TerminalNode as = ctx.AS();
         if (as == null) {
             String text = ctx.NAME(0).getText();
@@ -2974,79 +2489,63 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
             return new AbstractMap.SimpleEntry<>(ctx.NAME(1).getText(), ctx.NAME(0).getText());
         }
 
-        throw new RuntimeException("No supported matching import_from_as_name found for:\n" + ctx.getText());
+        throw new RuntimeException("No supported matching import_from_as_name found for:\n" + getTextFor(ctx));
     }
 
     @Override
-    public Object visitDotted_name(PythonParser.Dotted_nameContext ctx) {
+    public String visitDotted_name(PythonParser.Dotted_nameContext ctx) {
         return ctx.getText();
     }
 
     @Override
     public Object visitFile_input(PythonParser.File_inputContext ctx) {
-        PythonParser.StatementsContext statements = ctx.statements();
-        rootCw = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
-        rootCw.visit(V1_8, ACC_PUBLIC, getName(), null, "java/lang/Object", new String[]{"org/python/_internal/PyModule"});
-        cv = rootCw;
+        classCache.init(this);
 
-        definingModule = new PyModule(pathOfFile.resolve(fileName + ".py"), getName(), getLocation(ctx));
-        PyCompileClass oldCompilingClass = compilingClass;
+        PythonParser.StatementsContext statements = ctx.statements();
+
+        ModuleContext context = ModuleContext.pushContext();
+
+        if (imports == null) imports = new PyImports(this);
+        for (PyBuiltinClass builtinClass : builtins.getClasses()) {
+            setSymbol(builtinClass.pyName, builtinClass);
+        }
+
+        for (PyBuiltinFunction builtinFunction : builtins.getFunctions()) {
+            setSymbol(builtinFunction.name(), builtinFunction);
+        }
+
+        definingModule = Module.create(new ModulePath((path + fileName).replace("/", ".")), getLocation(ctx));
+        context.module(definingModule);
+        JvmClassCompilable oldCompilingClass = compilingClass;
         compilingClass = definingModule;
         classCache.add(this, definingModule);
-
-        rootInitMv = rootCw.visitMethod(ACC_PUBLIC | ACC_STATIC, "<clinit>", "()V", null, null);
-        rootInitMv.visitCode();
-
-        // Set the file typedName of the class to fileName
-        rootCw.visitSource(path + fileName + ".py", null);
-
-        FileContext context = new FileContext();
-        pushContext(context);
 
         if (statements == null) {
             return Unit.Instance;
         }
 
-        visit(statements);
+        List<PyStatement> pyStatements = visitStatements(statements);
+        new PyBlock(pyStatements, getLocation(ctx));
+        for (PyStatement statement : pyStatements) {
+            definingModule.addStatement(statement);
+        }
 
-        popContext();
+        definingModule.writeClass(this, writer);
+
+        context.popContext(this);
 
         while (context.needsPop()) {
-            context.pop();
-            rootInitMv.visitInsn(POP);
+            throw new CompilerException("Context still isn't empty after compiling module", writer.lastLocation());
         }
 
-        if (mv != null) {
+        if (methodOut != null) {
             throw new AssertionError("mv != null");
         }
-
-        rootInitMv.visitInsn(RETURN);
-        rootInitMv.visitMaxs(0, 0);
-        rootInitMv.visitEnd();
-        rootInitMv = null;
-        rootCw.visitEnd();
 
         compilingClass = oldCompilingClass;
         definingModule = null;
 
-        try {
-            File file = new File("build/tmp/compilePython/" + getName() + ".class");
-            File parentFile = file.getParentFile();
-            if (!parentFile.exists()) {
-                boolean mkdirs = parentFile.mkdirs();
-                if (!mkdirs) {
-                    throw new IOException("Failed to create directory " + parentFile);
-                }
-            }
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(rootCw.toByteArray());
-            fos.close();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } finally {
-            rootCw = null;
-            cv = null;
-        }
+        classOut = null;
         return Unit.Instance;
     }
 
@@ -3055,6 +2554,7 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     public void compile(File file, File rootDir) throws IOException {
+        CURRENT.set(this);
         String absolutePath = file.getAbsolutePath();
         String absolutePath1 = rootDir.getAbsolutePath();
         if (!absolutePath1.endsWith("/")) {
@@ -3079,51 +2579,24 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
     }
 
-    public void compile(String python, String fileName) {
-        PythonLexer lexer = new PythonLexer(CharStreams.fromString(python));
-        PythonParser parser = new PythonParser(new CommonTokenStream(lexer));
-        PythonParser.File_inputContext fileInputContext = parser.file_input();
-        var p = fileName.substring(0, fileName.length() - ".py".length());
-        this.fileName = p.substring(p.lastIndexOf("/") + 1);
-        this.path = p.substring(0, p.lastIndexOf("/") + 1);
-        this.pathOfFile = Path.of(path);
-
-        try {
-            visit(fileInputContext);
-        } catch (CompilerException e) {
-            e.printStackTrace();
-            compileErrors.add(e);
-        }
-    }
-
-    public void pack(String outputDir, String outputJar) {
-        // Pack "build/rustc/**/*.class"
+    public static void pack(String outputDir, String outputJar) {
         try (JarOutputStream jarOut = new JarOutputStream(new FileOutputStream(outputJar))) {
             Path sourcePath = Paths.get(outputDir);
-            Files.walk(sourcePath)
-                    .filter(path -> !Files.isDirectory(path))
-                    .forEach(path -> {
-                        String entryName = sourcePath.relativize(path).toString().replace("\\", "/");
-                        try {
-                            jarOut.putNextEntry(new ZipEntry(entryName));
-                            Files.copy(path, jarOut);
-                            jarOut.closeEntry();
-                        } catch (IOException e) {
-                            throw new UncheckedIOException(e);
-                        }
-                    });
+            try (var walker = Files.walk(sourcePath)) {
+                walker.filter(path -> !Files.isDirectory(path))
+                        .forEach(path -> {
+                            String entryName = sourcePath.relativize(path).toString().replace("\\", "/");
+                            try {
+                                jarOut.putNextEntry(new ZipEntry(entryName));
+                                Files.copy(path, jarOut);
+                                jarOut.closeEntry();
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        });
+            }
         } catch (IOException e) {
             throw new RuntimeException(e);
-        }
-    }
-
-    static class PythonListener extends PythonParserBaseListener {
-        private final ClassWriter rootClassWriter;
-        private final String fileName;
-
-        public PythonListener(ClassWriter rootClassWriter, String fileName) {
-            this.rootClassWriter = rootClassWriter;
-            this.fileName = fileName;
         }
     }
 
@@ -3135,64 +2608,14 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
         mv.visitInsn(ATHROW);
     }
 
-    public PyVariable createVariable(String name, Type type, PyExpr expr, boolean boxed, Location location) {
+    public AssignmentStatement createVariable(String name, PyExpression expr, Location location) {
         if (definingFunction == null) {
             throw new RuntimeException("Defining function is null");
         }
 
-        return definingFunction.createVariable(this, name, expr, boxed, location);
-    }
-
-    private PyVariable createVariable(String name, Type type, boolean b, Location location) {
-        if (definingFunction == null) {
-            throw new RuntimeException("Defining function is null");
-        }
-        return definingFunction.createVariable(this, name, b, location);
-    }
-
-    public Type typeCheck(Type type, PyExpr expr) {
-        if (!type.equals(Type.getType(String.class)) && !type.equals(Type.LONG_TYPE) && !type.equals(Type.DOUBLE_TYPE)
-                && !type.equals(Type.FLOAT_TYPE) && !type.equals(Type.INT_TYPE) && !type.equals(Type.BOOLEAN_TYPE)
-                && !type.equals(Type.BYTE_TYPE) && !type.equals(Type.SHORT_TYPE)
-                && symbols.get(type.getClassName().substring(type.getClassName().lastIndexOf('.') + 1)) == null) {
-            if (type.getSort() == Type.ARRAY) {
-                Type actualType = type.getElementType();
-                while (actualType.getSort() == Type.ARRAY) {
-                    actualType = actualType.getElementType();
-                }
-                if (!actualType.equals(Type.getType(String.class)) && !actualType.equals(Type.LONG_TYPE) && !actualType.equals(Type.DOUBLE_TYPE)
-                        && !actualType.equals(Type.FLOAT_TYPE) && !actualType.equals(Type.INT_TYPE) && !actualType.equals(Type.BOOLEAN_TYPE)
-                        && !actualType.equals(Type.BYTE_TYPE) && !actualType.equals(Type.SHORT_TYPE)
-                        && symbols.get(actualType.getClassName().substring(actualType.getClassName().lastIndexOf('.') + 1)) == null) {
-                    throw typeNotFound(actualType.getClassName(), expr);
-                }
-
-                return actualType;
-            } else {
-                throw typeNotFound(type.getClassName(), expr);
-            }
-        }
-        return type;
-    }
-
-    CompilerException typeNotFound(String type, PyExpr expr) {
-        return new CompilerException("Type '" + type + "' not found ", getLocation(expr));
-    }
-
-    CompilerException jvmClassNotFound(String type, PyExpr expr) {
-        return new CompilerException("JVM Class '" + type + "' not found ", getLocation(expr));
-    }
-
-    CompilerException functionNotFound(Type owner, String name, PyExpr expr) {
-        return new CompilerException("Function '" + name + "' not found in '" + owner.getClassName() + "' ", getLocation(expr));
-    }
-
-    CompilerException functionNotFound(Type owner, String name, Type[] args, PyExpr expr) {
-        return new CompilerException("Function '" + name + "' not found that matches (" + Arrays.stream(args).map(Type::getClassName).collect(Collectors.joining(", ")) + ") in '" + owner.getClassName() + "' ", getLocation(expr));
-    }
-
-    Location getLocation(PyExpr expr) {
-        return expr.location();
+        VariableExpr variableExpr = definingFunction.defineVariable(name, location);
+        SymbolContext.current().setSymbol(name, variableExpr);
+        return new AssignmentStatement(new Settable[]{variableExpr}, expr, location);
     }
 
     Location getLocation(ParserRuleContext ctx) {
@@ -3200,39 +2623,27 @@ public class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitArguments(PythonParser.ArgumentsContext ctx) {
-        return visit(ctx.args());
+    public List<PyExpression> visitArguments(PythonParser.ArgumentsContext ctx) {
+        return visitArgs(ctx.args());
     }
 
     @Override
-    public Object visitArgs(PythonParser.ArgsContext ctx) {
+    public List<PyExpression> visitArgs(PythonParser.ArgsContext ctx) {
         PythonParser.KwargsContext kwargs = ctx.kwargs();
         if (kwargs != null) {
-            throw new RuntimeException("kwargs not supported for:\n" + ctx.getText());
+            throw new CompilerException("Keyword arguments not supported yet!", getLocation(ctx));
         }
 
-        List<Object> args = new ArrayList<>();
+        List<PyExpression> args = new ArrayList<>();
         for (PythonParser.ExpressionContext expressionContext : ctx.expression()) {
-            Object visit = visit(expressionContext);
+            PyExpression visit = visitExpression(expressionContext);
 
             if (visit == null) {
                 throw new RuntimeException("Unknown visitArgs for expression context: " + expressionContext.getText());
             }
 
 
-            switch (visit) {
-                case String s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Integer s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Float s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Long s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Double s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Character s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Byte s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Short s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case Boolean s -> args.add(new PyConstant(s, getLocation(ctx)));
-                case PyExpr expr -> args.add(expr);
-                default -> throw new UnsupportedOperationException("Not implemented: " + visit.getClass().getName());
-            }
+            args.add(visit);
         }
 
         return args;

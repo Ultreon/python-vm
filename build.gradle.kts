@@ -1,5 +1,6 @@
 plugins {
     id("java")
+    id("groovy")
     application
 }
 
@@ -17,6 +18,19 @@ repositories {
 dependencies {
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+
+    implementation("org.apache.groovy:groovy:4.0.23")
+    implementation("org.apache.groovy:groovy-jsr223:4.0.23")
+}
+
+subprojects {
+    apply(plugin = "java")
+    apply(plugin = "groovy")
+
+    dependencies {
+        implementation("org.apache.groovy:groovy:4.0.23")
+        implementation("org.apache.groovy:groovy-jsr223:4.0.23")
+    }
 }
 
 tasks.test {
@@ -33,7 +47,7 @@ tasks.register<JavaExec>("compilePython") {
     finalizedBy(":testing:compileJava")
     classpath = project(":compiler").sourceSets["main"].runtimeClasspath
     mainClass.set("dev.ultreon.pythonc.App")
-    args = listOf("-o", file("build/libs/example-1.0.jar").path, file("src/main/python").path, file("src/main/resources").path)
+    args = listOf("-j", file("build/libs/example-1.0.jar").path, "-o", file("build/classes/java/main/").path, file("src/main/python").path, file("src/main/resources").path)
 
     group = "python-vm"
     inputs.files("src/main/python", "src/main/resources", "build.gradle.kts", "build/tmp/compilePython")
@@ -52,7 +66,7 @@ tasks.register<JavaExec>("compilePyLib") {
     finalizedBy(":testing:compileJava")
     classpath = project(":compiler").sourceSets["main"].runtimeClasspath
     mainClass.set("dev.ultreon.pythonc.App")
-    args = listOf("-o", file("build/libs/pylib-1.0.jar").path, file("pylib/src/main/python").path)
+    args = listOf("-j", file("build/libs/pylib-1.0.jar").path, "-o", file("build/pylib/classes/").path, file("pylib/src/main/python").path)
 
     group = "python-vm"
     inputs.files("pylib/src/main/python", "pylib/src/main/resources", "build.gradle.kts", "build/tmp/compilePyLib")

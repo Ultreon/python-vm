@@ -1,6 +1,7 @@
 package dev.ultreon.pythonc;
 
 import org.objectweb.asm.Type;
+import org.python._internal.Py;
 
 import java.util.Objects;
 
@@ -13,6 +14,10 @@ public interface Context {
     Type peek();
 
     int stackSize();
+
+    default void popContext(PythonCompiler compiler) {
+        compiler.popContext();
+    }
 
     default void pop(Type type) {
         Type pop = pop();
