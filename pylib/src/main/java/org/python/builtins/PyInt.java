@@ -174,6 +174,6 @@
 //    }
 //
 //    public static byte[] __bytes__(long a) {
-//        throw new AssertionError("not implemented");
+//        throw new IllegalStateException("not implemented");
 //    }
 //}
