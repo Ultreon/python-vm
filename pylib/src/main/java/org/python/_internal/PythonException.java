@@ -65,7 +65,7 @@ public class PythonException extends RuntimeException {
         for (StackTraceElement ste : stackTrace) {
             int lineNumber = ste.getLineNumber();
             if (getFileName(ste).endsWith(".py")) {
-                sb.append("  File \"classpath://").append(getFileName(ste)).append("\", line ").append(lineNumber < 0 ? "???" : lineNumber).append(", in ").append(ste.getClassName()).append("\n");
+                sb.append("  File \"").append(getFileName(ste)).append("\", line ").append(lineNumber < 0 ? "???" : lineNumber).append(", in ").append(ste.getClassName()).append("\n");
                 sb.append("    <compiled method '").append(ste.getMethodName()).append("'").append(ste.isNativeMethod() ? " (Native Method)" : "").append(">\n");
                 continue;
             }

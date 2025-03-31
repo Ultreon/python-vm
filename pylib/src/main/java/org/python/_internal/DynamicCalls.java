@@ -164,37 +164,37 @@ public class DynamicCalls {
             }
         } else if (name.equals("__lt__")) {
             try {
-                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__lt__", MethodType.methodType(Object.class, Object.class, Object.class)));
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__lt__", MethodType.methodType(boolean.class, Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }
         } else if (name.equals("__le__")) {
             try {
-                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__le__", MethodType.methodType(Object.class, Object.class, Object.class)));
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__le__", MethodType.methodType(boolean.class, Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }
         } else if (name.equals("__eq__")) {
             try {
-                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__eq__", MethodType.methodType(Object.class, Object.class, Object.class)));
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__eq__", MethodType.methodType(boolean.class, Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }
         } else if (name.equals("__ne__")) {
             try {
-                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__ne__", MethodType.methodType(Object.class, Object.class, Object.class)));
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__ne__", MethodType.methodType(boolean.class, Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }
         } else if (name.equals("__gt__")) {
             try {
-                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__gt__", MethodType.methodType(Object.class, Object.class, Object.class)));
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__gt__", MethodType.methodType(boolean.class, Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }
         } else if (name.equals("__ge__")) {
             try {
-                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__ge__", MethodType.methodType(Object.class, Object.class, Object.class)));
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__ge__", MethodType.methodType(boolean.class, Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }
@@ -207,6 +207,24 @@ public class DynamicCalls {
         } else if (name.equals("__not__")) {
             try {
                 return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__not__", MethodType.methodType(Object.class, Object.class)));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } else if (name.equals("__iter__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__iter__", MethodType.methodType(Object.class, Object.class)));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } else if (name.equals("__next__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__next__", MethodType.methodType(Object.class, Object.class)));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } else if (name.equals("__hasnext__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__hasnext__", MethodType.methodType(boolean.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }

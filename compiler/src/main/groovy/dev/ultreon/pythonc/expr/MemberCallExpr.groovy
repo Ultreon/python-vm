@@ -19,7 +19,7 @@ class MemberCallExpr extends MemberExpression {
         return new Builder(parent, location)
     }
 
-    List<PyExpression> arguments() {
+    List<PyExpression> getArguments() {
         return arguments
     }
 
@@ -33,7 +33,7 @@ class MemberCallExpr extends MemberExpression {
         if (parent instanceof SymbolReferenceExpr) {
             def expr = parent
             def symbol = expr.symbol()
-            symbol.writeCall compiler, writer, arguments, Map.of()
+            symbol.writeCall compiler, writer, arguments, [:]
             compiler.checkNoPop location
             return
         }
@@ -64,5 +64,25 @@ class MemberCallExpr extends MemberExpression {
         MemberCallExpr build() {
             return new MemberCallExpr(parent, arguments, location)
         }
+    }
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED)
+        builder.append("MemberCall ")
+        builder.append(Location.ANSI_RESET)
+        builder.append("[")
+        builder.append(Location.ANSI_PURPLE)
+        builder.append(parent.toString())
+        builder.append(Location.ANSI_RESET)
+        builder.append("] (")
+        for (PyExpression argument : arguments) {
+            builder.append(argument.toString())
+            builder.append(Location.ANSI_RESET)
+            builder.append(", ")
+        }
+        builder.append(Location.ANSI_RESET)
+        builder.append(")")
     }
 }

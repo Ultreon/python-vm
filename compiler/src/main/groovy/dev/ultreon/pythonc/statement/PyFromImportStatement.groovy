@@ -1,6 +1,12 @@
-package dev.ultreon.pythonc
+package dev.ultreon.pythonc.statement
 
-class PyFromImportStatement extends PyImportStatementLike {
+import dev.ultreon.pythonc.JvmWriter
+import dev.ultreon.pythonc.Location
+import dev.ultreon.pythonc.ModulePath
+import dev.ultreon.pythonc.PyAlias
+import dev.ultreon.pythonc.PythonCompiler
+
+class PyFromImportStatement implements PyImportStatementLike {
     private final ModulePath path
     private final List<PyAlias> names
 
@@ -27,6 +33,19 @@ class PyFromImportStatement extends PyImportStatementLike {
     @Override
     Location getLocation() {
         return null
+    }
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("FromImport").append(Location.ANSI_RESET).append(" (").append(Location.ANSI_PURPLE).append(path).append(Location.ANSI_RESET).append(") :: [")
+        for (int i = 0; i < names.size(); i++) {
+            if (i > 0) builder.append(Location.ANSI_WHITE).append(", ")
+            builder.append(Location.ANSI_RESET).append(names.get(i))
+        }
+        builder.append(Location.ANSI_RESET).append("]").append(Location.ANSI_RESET)
+
+        return builder.toString()
     }
 
     static class Builder {

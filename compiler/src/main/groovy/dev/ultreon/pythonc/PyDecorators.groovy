@@ -1,5 +1,7 @@
 package dev.ultreon.pythonc
 
+import dev.ultreon.pythonc.statement.PyDecorator
+
 class PyDecorators {
     private final List<PyDecorator> decorators = new ArrayList<>()
 

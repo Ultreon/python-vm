@@ -4,7 +4,7 @@ import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.lang.PyAST
 
-abstract class PyRootStatement implements PyAST {
+trait PyRootStatement implements PyAST {
     abstract void writeStatement(PythonCompiler compiler);
 
     @Override

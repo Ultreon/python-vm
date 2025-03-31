@@ -9,7 +9,7 @@ import dev.ultreon.pythonc.statement.PyStatement
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.MethodNode
 
-abstract class PyBaseFunction extends PyStatement implements PySymbol {
+abstract class PyBaseFunction implements PyStatement, PySymbol {
     private final String name
     private final PyParameter[] parameters
     protected JvmClass returnType
@@ -30,14 +30,14 @@ abstract class PyBaseFunction extends PyStatement implements PySymbol {
 
     @Override
     void writeStatement(PythonCompiler compiler, JvmWriter writer) {
-        throw new IllegalStateException("Can't write this function" + writer.lastLocation().toAdvancedString())
+        throw new IllegalStateException("Can't write this function" + writer.lastLocation().formattedText)
     }
 
     String signature() {
         StringJoiner joiner = new StringJoiner("")
         for (PyParameter parameter : parameters()) {
             Type type = parameter.type()
-            if (type == null) type = Type.getType(Object.class)
+            if (type == null) type = Type.getType(Object)
             String descriptor = type.descriptor
             joiner.add(descriptor)
         }

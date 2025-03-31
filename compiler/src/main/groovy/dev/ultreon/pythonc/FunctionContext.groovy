@@ -3,12 +3,14 @@ package dev.ultreon.pythonc
 import dev.ultreon.pythonc.functions.PyFunction
 import dev.ultreon.pythonc.functions.FunctionDefiner
 import dev.ultreon.pythonc.functions.param.PyParameter
+import org.objectweb.asm.Label
 
 class FunctionContext extends SymbolContext {
     private final FunctionDefiner owner
     private final PyFunction function
     private final String name
     private final PyParameter[] parameters
+    Label head
 
     protected FunctionContext(FunctionDefiner owner, PyFunction function, String name, PyParameter[] parameters, SymbolProvider symbolContext) {
         super(symbolContext)

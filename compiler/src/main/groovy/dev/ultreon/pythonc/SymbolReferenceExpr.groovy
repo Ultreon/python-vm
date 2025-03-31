@@ -38,4 +38,12 @@ class SymbolReferenceExpr extends PyExpression {
             return symbol
         }
     }
+
+    @Override
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("Symbol Reference ").append(Location.ANSI_BRIGHT_CYAN).append(name).append(Location.ANSI_RESET)
+        return builder.toString()
+    }
 }

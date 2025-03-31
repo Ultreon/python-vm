@@ -13,6 +13,36 @@ class PyEval extends PyExpression {
 
     enum Operator {
         ADD, SUB, MUL, DIV, MOD, FLOORDIV, AND, LSHIFT, RSHIFT, OR, XOR, UNARY_NOT, UNARY_PLUS, UNARY_MINUS, POW, IS, IS_NOT, IN, NOT_IN, EQ, NE, LT, LE, GT, GE
+
+        String toString(PyExpression left, PyExpression right) {
+            switch (this) {
+                case ADD: return "[$left]$Location.ANSI_RED + $Location.ANSI_RESET[$right]"
+                case SUB: return "[$left]$Location.ANSI_RED - $Location.ANSI_RESET[$right]"
+                case MUL: return "[$left]$Location.ANSI_RED * $Location.ANSI_RESET[$right]"
+                case DIV: return "[$left]$Location.ANSI_RED / $Location.ANSI_RESET[$right]"
+                case MOD: return "[$left]$Location.ANSI_RED % $Location.ANSI_RESET[$right]"
+                case FLOORDIV: return "[$left]$Location.ANSI_RED // $Location.ANSI_RESET[$right]"
+                case AND: return "[$left]$Location.ANSI_RED and $Location.ANSI_RESET[$right]"
+                case LSHIFT: return "[$left]$Location.ANSI_RED << $Location.ANSI_RESET[$right]"
+                case RSHIFT: return "[$left]$Location.ANSI_RED >> $Location.ANSI_RESET[$right]"
+                case OR: return "[$left]$Location.ANSI_RED or $Location.ANSI_RESET[$right]"
+                case XOR: return "[$left]$Location.ANSI_RED xor $Location.ANSI_RESET[$right]"
+                case UNARY_NOT: return "${Location.ANSI_RED}not $Location.ANSI_RESET($left)$Location.ANSI_RESET"
+                case UNARY_PLUS: return "$Location.ANSI_RED+$Location.ANSI_RESET[$left]"
+                case UNARY_MINUS: return "$Location.ANSI_RED-$Location.ANSI_RESET[$left]"
+                case POW: return "[$left]$Location.ANSI_RED ** $Location.ANSI_RESET[$right]"
+                case IS: return "[$left]$Location.ANSI_RED is $Location.ANSI_RESET[$right]"
+                case IS_NOT: return "[$left]$Location.ANSI_RED is not $Location.ANSI_RESET[$right]"
+                case IN: return "[$left]$Location.ANSI_RED in $Location.ANSI_RESET[$right]"
+                case NOT_IN: return "[$left]$Location.ANSI_RED not in $Location.ANSI_RESET[$right]"
+                case EQ: return "[$left]$Location.ANSI_RED == $Location.ANSI_RESET[$right]"
+                case NE: return "[$left]$Location.ANSI_RED != $Location.ANSI_RESET[$right]"
+                case LT: return "[$left]$Location.ANSI_RED < $Location.ANSI_RESET[$right]"
+                case LE: return "[$left]$Location.ANSI_RED <= $Location.ANSI_RESET[$right]"
+                case GT: return "[$left]$Location.ANSI_RED > $Location.ANSI_RESET[$right]"
+                case GE: return "[$left]$Location.ANSI_RED >= $Location.ANSI_RESET[$right]"
+            }
+        }
     }
 
     PyEval(Operator operator, PyExpression finalValue, PyExpression finalAddition, Location location) {
@@ -147,5 +177,16 @@ class PyEval extends PyExpression {
             default:
                 return super.type
         }
+    }
+
+    String toString() {
+        if (finalAddition != null) {
+            return operator.toString(finalValue, finalAddition)
+        }
+        if (operator in [UNARY_MINUS, UNARY_PLUS, UNARY_NOT]) {
+//            return operator.toString(finalValue)
+        }
+
+        return finalValue.toString()
     }
 }

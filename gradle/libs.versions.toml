@@ -16,4 +16,5 @@ antlr-runtime = { module = "org.antlr:antlr4-runtime", version.ref = "antlr4-run
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+asm-util = { module = "org.ow2.asm:asm-util", version.ref = "asm" }
 annotations = { group = "org.jetbrains", name = "annotations", version.ref = "annotations" }

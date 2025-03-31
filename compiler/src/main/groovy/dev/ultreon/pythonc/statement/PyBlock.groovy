@@ -3,8 +3,9 @@ package dev.ultreon.pythonc.statement
 import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
+import org.objectweb.asm.Label
 
-final class PyBlock extends PyStatement {
+final class PyBlock implements PyStatement {
     private final List<PyStatement> statements
     private final Location location
 
@@ -34,6 +35,19 @@ final class PyBlock extends PyStatement {
     @Override
     Location getLocation() {
         return location
+    }
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+        if (statements.size() == 0) return builder.append(Location.ANSI_RED).append("Block ").append(Location.ANSI_RESET).append("{}").toString()
+        if (statements.size() == 1) return statements.get(0).toString()
+        builder.append(Location.ANSI_RED).append("Block ")
+        builder.append(Location.ANSI_RESET).append("{\n")
+        for (PyStatement statement : statements) {
+            builder.append("  ").append(statement.toString().replace("\n", "\n  ")).append("\n")
+        }
+        builder.append(Location.ANSI_RESET).append("}")
+        return builder.toString()
     }
 
     static class Builder {

@@ -4,7 +4,7 @@ import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.lang.PyAST
 
-abstract class PyStatement implements PyAST {
+trait PyStatement implements PyAST {
     @Override
     final void writeCode(PythonCompiler compiler, JvmWriter writer) {
         writeStatement(compiler, writer)

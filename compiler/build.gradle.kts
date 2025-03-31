@@ -42,6 +42,7 @@ dependencies {
   // ASM
   implementation(libs.asm)
   implementation(libs.asm.tree)
+  implementation(libs.asm.util)
 
   implementation(project(":pylib"))
 }

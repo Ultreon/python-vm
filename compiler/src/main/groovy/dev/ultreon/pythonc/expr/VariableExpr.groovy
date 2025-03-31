@@ -8,6 +8,7 @@ import org.objectweb.asm.Type
 class VariableExpr extends PyExpression implements Settable, PySymbol {
     public int index
     public String name
+    Type type
 
     VariableExpr(int index, String name, Location location) {
         super(location)
@@ -42,9 +43,21 @@ class VariableExpr extends PyExpression implements Settable, PySymbol {
             compiler.setSymbol(name, this)
         expr.write(compiler, writer)
         writer.storeObject(index, Type.getType(Object.class))
+        this.type = expr.type
     }
 
     void writeSet(PythonCompiler compiler, JvmWriter writer) {
         writer.storeObject(index, Type.getType(Object.class))
+    }
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED)
+        builder.append("Variable ")
+        builder.append(Location.ANSI_RESET)
+        builder.append(Location.ANSI_BRIGHT_CYAN)
+        builder.append(name)
+        builder.append(Location.ANSI_RESET)
     }
 }

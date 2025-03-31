@@ -1,31 +1,31 @@
 package dev.ultreon.pythonc
 
-import dev.ultreon.pythonc.classes.LangClass
+import dev.ultreon.pythonc.classes.PyClass
 import org.jetbrains.annotations.NotNull
 import org.objectweb.asm.Type
 
 import static org.objectweb.asm.Type.getObjectType as objectType
 
-class PyClasses implements Iterable<LangClass> {
-    private final Map<String, LangClass> byName = new HashMap<>()
-    private final Map<String, LangClass> byClassName = new HashMap<>()
-    private final Map<Type, LangClass> byType = new HashMap<>()
+class PyClasses implements Iterable<PyClass> {
+    private final Map<String, PyClass> byName = new HashMap<>()
+    private final Map<String, PyClass> byClassName = new HashMap<>()
+    private final Map<Type, PyClass> byType = new HashMap<>()
 
-    def add(LangClass pyClass) {
+    def add(PyClass pyClass) {
         byName[pyClass.name] = pyClass
         byClassName[pyClass.className()] = pyClass
         byType[objectType(pyClass.className())] = pyClass
     }
 
-    LangClass byName(String name) {
+    PyClass byName(String name) {
         return byName.get(name)
     }
 
-    LangClass byClassName(String className) {
+    PyClass byClassName(String className) {
         return byClassName.get(className)
     }
 
-    LangClass byType(Type type) {
+    PyClass byType(Type type) {
         return byType.get(type)
     }
 
@@ -42,7 +42,7 @@ class PyClasses implements Iterable<LangClass> {
     }
 
     @Override
-    @NotNull Iterator<LangClass> iterator() {
+    @NotNull Iterator<PyClass> iterator() {
         return byName.values().iterator()
     }
 }

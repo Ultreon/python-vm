@@ -1,9 +1,11 @@
-package dev.ultreon.pythonc
+package dev.ultreon.pythonc.statement
 
-import dev.ultreon.pythonc.statement.PyStatement
+import dev.ultreon.pythonc.JvmWriter
+import dev.ultreon.pythonc.Location
+import dev.ultreon.pythonc.PythonCompiler
 import org.objectweb.asm.Label
 
-class JumpStatement extends PyStatement {
+class JumpStatement implements PyStatement {
     private final Label toLabel
 
     JumpStatement(Label toLabel) {

@@ -5,7 +5,7 @@ import dev.ultreon.pythonc.expr.PyExpression
 import dev.ultreon.pythonc.functions.PyFunction
 import org.objectweb.asm.Type
 
-class ReturnStatement extends PyStatement {
+class ReturnStatement implements PyStatement {
     private final List<StarExpression> starredExpressions
     private final PyFunction function
     private Location location

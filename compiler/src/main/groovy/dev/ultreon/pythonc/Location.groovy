@@ -5,15 +5,35 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 final class Location {
+    public static final String ANSI_BLACK = "\u001B[30m"
     public static final String ANSI_RED = "\u001B[31m"
     public static final String ANSI_GREEN = "\u001B[32m"
-    public static final String ANSI_BLUE = "\u001B[34m"
     public static final String ANSI_YELLOW = "\u001B[33m"
+    public static final String ANSI_BLUE = "\u001B[34m"
     public static final String ANSI_PURPLE = "\u001B[35m"
     public static final String ANSI_CYAN = "\u001B[36m"
     public static final String ANSI_WHITE = "\u001B[37m"
     public static final String ANSI_GRAY = "\u001B[37;1m"
+    public static final String ANSI_BRIGHT_GRAY = "\u001B[90m"
+    public static final String ANSI_BRIGHT_RED = "\u001B[91m"
+    public static final String ANSI_BRIGHT_GREEN = "\u001B[92m"
+    public static final String ANSI_BRIGHT_YELLOW = "\u001B[93m"
+    public static final String ANSI_BRIGHT_BLUE = "\u001B[94m"
+    public static final String ANSI_BRIGHT_PURPLE = "\u001B[95m"
+    public static final String ANSI_BRIGHT_CYAN = "\u001B[96m"
+    public static final String ANSI_BRIGHT_WHITE = "\u001B[97m"
+    public static final String ANSI_DEFAULT = "\u001B[39m"
+
+    public static final String ANSI_BOLD = "\u001B[1m"
+    public static final String ANSI_DIM = "\u001B[2m"
+    public static final String ANSI_ITALIC = "\u001B[3m"
     public static final String ANSI_UNDERLINE = "\u001B[4m"
+    public static final String ANSI_BLINK = "\u001B[5m"
+    public static final String ANSI_RAPID_BLINK = "\u001B[6m"
+    public static final String ANSI_REVERSE = "\u001B[7m"
+    public static final String ANSI_CONCEAL = "\u001B[8m"
+    public static final String ANSI_STRIKETHROUGH = "\u001B[9m"
+    public static final String ANSI_NORMAL = "\u001B[22m"
 
     public static final String ANSI_RESET = "\u001B[0m"
     public static final Location BUILTIN = new Location("<builtin>", 0, 0, 0, 0)
@@ -41,7 +61,7 @@ final class Location {
         return file + ":" + lineStart + ":" + columnStart
     }
 
-    String toAdvancedString() {
+    String getFormattedText() {
         Path resolve = Path.of(file)
 
         List<String> lines
@@ -109,25 +129,24 @@ final class Location {
         return file
     }
 
-    int lineStart() {
+    int getLineStart() {
         return lineStart
     }
 
-    int columnStart() {
+    int getColumnStart() {
         return columnStart
     }
 
-    int lineEnd() {
+    int getLineEnd() {
         return lineEnd
     }
 
-    int columnEnd() {
+    int getColumnEnd() {
         return columnEnd
     }
 
     @Override
     boolean equals(Object obj) {
-        if (obj == this) return true
         if (obj == null || obj.class != this.class) return false
         var that = (Location) obj
         return Objects.equals(this.file, that.file) &&

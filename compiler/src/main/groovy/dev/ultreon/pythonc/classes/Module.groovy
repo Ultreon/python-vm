@@ -35,7 +35,7 @@ class Module extends JvmModule implements JvmClassCompilable, FunctionDefiner {
         this.definition.addStatement(statement)
     }
 
-    void addClass(LangClass type) {
+    void addClass(PyClass type) {
         this.definition.classes.add(type)
     }
 

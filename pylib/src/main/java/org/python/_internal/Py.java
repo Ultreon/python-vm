@@ -156,4 +156,44 @@ public class Py {
     public static Object __xor__(Object self, Object other) {
         return ClassUtils.xor(self, other);
     }
+
+    public static boolean __lt__(Object self, Object other) {
+        return (boolean) ClassUtils.lt(self, other);
+    }
+
+    public static boolean __le__(Object self, Object other) {
+        return (boolean) ClassUtils.le(self, other);
+    }
+
+    public static boolean __gt__(Object self, Object other) {
+        return (boolean) ClassUtils.gt(self, other);
+    }
+
+    public static boolean __ge__(Object self, Object other) {
+        return (boolean) ClassUtils.ge(self, other);
+    }
+
+    public static boolean __eq__(Object self, Object other) {
+        return (boolean) ClassUtils.eq(self, other);
+    }
+
+    public static boolean __ne__(Object self, Object other) {
+        return (boolean) ClassUtils.ne(self, other);
+    }
+
+    public static Object __iter__(Object self) {
+        return ClassUtils.iter(self);
+    }
+
+    public static Object __next__(Object self) {
+        return ClassUtils.next(self);
+    }
+
+    public static boolean __hasnext__(Object self) {
+        return (boolean) ClassUtils.hasNext(self);
+    }
+
+    public static boolean __contains__(Object self, Object other) {
+        return (boolean) ClassUtils.in(self, other);
+    }
 }

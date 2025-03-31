@@ -1,11 +1,12 @@
 package org.python._internal;
 
-import jdk.internal.misc.Unsafe;
+import org.codehaus.groovy.util.ArrayIterator;
 import org.python.builtins.AttributeError;
 import org.python.builtins.TypeError;
 
 import java.lang.reflect.*;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class ClassUtils {
     public static Object initialize(Object obj) {
@@ -40,7 +41,7 @@ public class ClassUtils {
                             else if (e4 instanceof InvocationTargetException && e4.getCause() instanceof AttributeError)
                                 throw (AttributeError) e4.getCause();
                             else if (e4 instanceof NoSuchMethodException) throw new AttributeError(name, obj);
-                            else throw new TypeError(e4.getCause().getMessage());
+                            else throw new TypeError(e4.toString());
                         }
                     }
                 }
@@ -52,7 +53,7 @@ public class ClassUtils {
         try {
             return obj.getClass().getMethod("__getattr__", String.class).invoke(obj, name);
         } catch (IllegalAccessException | InvocationTargetException e) {
-            throw new TypeError(e.getCause().getMessage());
+            throw new TypeError(e.toString());
         } catch (NoSuchMethodException e) {
             Map<String, Object> dict;
             try {
@@ -281,10 +282,34 @@ public class ClassUtils {
         if (value instanceof PyObject) return ((PyObject) value).__call__(args, kwargs);
         if (value instanceof Class<?>) {
             Class<?> aClass = (Class<?>) value;
-            constructors: for (Constructor<?> constructor : aClass.getConstructors())
+            constructors:
+            for (Constructor<?> constructor : aClass.getConstructors())
                 if (constructor.getParameterCount() == args.length) {
-                    for (int i = 0; i < args.length; i++)
-                        if (!constructor.getParameterTypes()[i].isInstance(args[i])) continue constructors;
+                    for (int i = 0; i < args.length; i++) {
+                        if (constructor.getParameterTypes()[i].isPrimitive() && args[i] == null) continue constructors;
+                        if (!constructor.getParameterTypes()[i].isPrimitive() && !constructor.getParameterTypes()[i].isInstance(args[i])) continue constructors;
+                        if (constructor.getParameterTypes()[i].isPrimitive()) {
+                            if (constructor.getParameterTypes()[i] == int.class) {
+                                if (!(args[i] instanceof Integer || args[i] instanceof Long)) continue constructors;
+                                else if (args[i] instanceof Long) args[i] = ((Long) args[i]).intValue();
+                            } else if (constructor.getParameterTypes()[i] == long.class) {
+                                if (!(args[i] instanceof Integer || args[i] instanceof Long)) continue constructors;
+                                else if (args[i] instanceof Integer) args[i] = ((Integer) args[i]).longValue();
+                            } else if (constructor.getParameterTypes()[i] == byte.class) {
+                                if (!(args[i] instanceof Integer || args[i] instanceof Long)) continue constructors;
+                                else if (args[i] instanceof Long) args[i] = ((Long) args[i]).byteValue();
+                            } else if (constructor.getParameterTypes()[i] == short.class) {
+                                if (!(args[i] instanceof Integer || args[i] instanceof Long)) continue constructors;
+                                else if (args[i] instanceof Long) args[i] = ((Long) args[i]).shortValue();
+                            } else if (constructor.getParameterTypes()[i] == float.class) {
+                                if (!(args[i] instanceof Float || args[i] instanceof Double)) continue constructors;
+                                else if (args[i] instanceof Double) args[i] = ((Double) args[i]).floatValue();
+                            } else if (constructor.getParameterTypes()[i] == double.class) {
+                                if (!(args[i] instanceof Float || args[i] instanceof Double)) continue constructors;
+                                else if (args[i] instanceof Float) args[i] = ((Float) args[i]).doubleValue();
+                            }
+                        }
+                    }
                     try {
                         return constructor.newInstance(args);
                     } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
@@ -292,7 +317,8 @@ public class ClassUtils {
                     }
                 }
 
-            call_methods: for (Method method : aClass.getMethods())
+            call_methods:
+            for (Method method : aClass.getMethods())
                 if (method.getName().equals("__call__") && method.getParameterCount() == args.length) {
                     for (int i = 0; i < args.length; i++)
                         if (!method.getParameterTypes()[i].isInstance(args[i])) {
@@ -306,7 +332,7 @@ public class ClassUtils {
                     }
                 }
 
-            throw new TypeError("no matching constructor found for type '" + aClass.getName() + "'");
+            throw new TypeError("no matching constructor found for type '" + aClass.getName() + "' with arguments: (" + Arrays.stream(args).map(o -> o == null ? "None" : o.getClass().getName()).collect(Collectors.joining(", ")) + ")");
         }
         throw new TypeError("object of type '" + value.getClass().getSimpleName() + "' has no __call__()");
     }
@@ -328,7 +354,7 @@ public class ClassUtils {
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __add__()");
     }
-    
+
     public static Object sub(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__sub__(other);
         if (self instanceof Number) {
@@ -337,7 +363,7 @@ public class ClassUtils {
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __sub__()");
     }
-    
+
     public static Object mul(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__mul__(other);
         if (self instanceof Number) {
@@ -346,7 +372,7 @@ public class ClassUtils {
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __mul__()");
     }
-    
+
     public static Object div(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__div__(other);
         if (self instanceof Number) {
@@ -355,7 +381,7 @@ public class ClassUtils {
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __div__()");
     }
-    
+
     public static Object mod(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__mod__(other);
         if (self instanceof Number) {
@@ -417,7 +443,8 @@ public class ClassUtils {
     public static Object lshift(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__lshift__(other);
         if (self instanceof Number) {
-            if (!(isInt(self) || !(isInt(other)))) throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __lshift__()");
+            if (!(isInt(self) || !(isInt(other))))
+                throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __lshift__()");
             return ((Number) self).longValue() << ((Number) other).intValue();
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __lshift__()");
@@ -426,7 +453,8 @@ public class ClassUtils {
     public static Object rshift(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__rshift__(other);
         if (self instanceof Number) {
-            if (!(isInt(self)) || !(isInt(other))) throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __rshift__()");
+            if (!(isInt(self)) || !(isInt(other)))
+                throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __rshift__()");
             return ((Number) self).longValue() >> ((Number) other).intValue();
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __rshift__()");
@@ -435,7 +463,8 @@ public class ClassUtils {
     public static Object and(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__and__(other);
         if (self instanceof Number) {
-            if (!(isInt(self)) || !(isInt(other))) throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __and__()");
+            if (!(isInt(self)) || !(isInt(other)))
+                throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __and__()");
             return ((Number) self).longValue() & ((Number) other).intValue();
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __and__()");
@@ -444,7 +473,8 @@ public class ClassUtils {
     public static Object or(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__or__(other);
         if (self instanceof Number) {
-            if (!(isInt(self)) || !(isInt(other))) throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __or__()");
+            if (!(isInt(self)) || !(isInt(other)))
+                throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __or__()");
             return ((Number) self).longValue() | ((Number) other).intValue();
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __or__()");
@@ -453,7 +483,8 @@ public class ClassUtils {
     public static Object xor(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__xor__(other);
         if (self instanceof Number) {
-            if (!(isInt(self)) || !(isInt(other))) throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __xor__()");
+            if (!(isInt(self)) || !(isInt(other)))
+                throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __xor__()");
             return ((Number) self).longValue() ^ ((Number) other).intValue();
         }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __xor__()");
@@ -487,7 +518,7 @@ public class ClassUtils {
         if (other == null) return false;
         if (other.getClass().isArray()) {
             for (int i = 0; i < Array.getLength(other); i++) {
-                if ((Boolean)getBool(eq(Array.get(other, i), self))) {
+                if ((Boolean) getBool(eq(Array.get(other, i), self))) {
                     return true;
                 }
             }
@@ -538,5 +569,26 @@ public class ClassUtils {
         if (isInt(self)) return ((Number) self).longValue();
         if (self instanceof Number) return Math.abs(((Number) self).doubleValue());
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __abs__()");
+    }
+
+    public static Object iter(Object self) {
+        if (self instanceof PyObject) return ((PyObject) self).__iter__();
+        if (self instanceof Iterable) return ((Iterable<?>) self).iterator();
+        if (self != null && self.getClass().isArray()) return new ArrayIterator<Object>((Object[]) self);
+        if (self instanceof String) return new StringIterator((String) self);
+        if (self instanceof Map) return ((Map<?, ?>) self).entrySet().iterator();
+        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __iter__()");
+    }
+
+    public static Object next(Object self) {
+        if (self instanceof PyObject) return ((PyObject) self).__next__();
+        if (self instanceof Iterator) return ((Iterator<?>) self).next();
+        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __next__()");
+    }
+
+    public static Object hasNext(Object self) {
+        if (self instanceof PyObject) return true;
+        if (self instanceof Iterator) return ((Iterator<?>) self).hasNext();
+        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __next__()");
     }
 }

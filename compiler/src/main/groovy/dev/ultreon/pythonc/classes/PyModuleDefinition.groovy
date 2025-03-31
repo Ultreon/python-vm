@@ -2,19 +2,23 @@ package dev.ultreon.pythonc.classes
 
 import dev.ultreon.pythonc.*
 import dev.ultreon.pythonc.functions.PyFunction
+import dev.ultreon.pythonc.statement.PyCompoundStatement
 import dev.ultreon.pythonc.statement.PyStatement
 
 class PyModuleDefinition extends PyCompoundStatement {
-    private final List<PyStatement> statements = new ArrayList<>()
-    private final List<PyCompoundStatement> compoundStatements = new ArrayList<>()
-    private final String name
-    private final ModulePath parent
-    private final Module type
-    public final PyClasses classes = new PyClasses()
-    public final PyFunctions functions = new PyFunctions()
+    private List<PyStatement> statements = new ArrayList<>()
+    private List<PyCompoundStatement> compoundStatements = new ArrayList<>()
+    private String name
+    private ModulePath parent
+    private Module type
+    PyClasses classes = new PyClasses()
+    PyFunctions functions = new PyFunctions()
+    PyFields fields = new PyFields()
+    ModulePath path
 
     PyModuleDefinition(ModulePath path, Location location, Module type) {
         super(location)
+        this.path = path
         this.parent = path.parent
         this.name = path.name
         this.type = type
@@ -38,7 +42,7 @@ class PyModuleDefinition extends PyCompoundStatement {
         compoundStatements.add(statement)
     }
 
-    def addClass(LangClass clazz) {
+    def addClass(PyClass clazz) {
         classes.add(clazz)
     }
 
@@ -48,7 +52,10 @@ class PyModuleDefinition extends PyCompoundStatement {
 
     @Override
     void writeStatement(PythonCompiler compiler, JvmWriter writer) {
-        compiler.moduleDefinition type.type, {
+        println "Writing module: ${path}"
+        println "Serialized:\n${toString()}"
+
+        compiler.moduleDefinition path, {
             writeClassInit(compiler, writer)
 
             for (function in functions) {
@@ -57,7 +64,7 @@ class PyModuleDefinition extends PyCompoundStatement {
             }
         }
 
-        for (LangClass clazz : classes) {
+        for (PyClass clazz : classes) {
             clazz.writeClass compiler, writer
         }
     }
@@ -70,5 +77,32 @@ class PyModuleDefinition extends PyCompoundStatement {
                 compiler.checkPop(statement.location)
             }
         }
+    }
+
+    @Override
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("Module ").append(Location.ANSI_PURPLE).append(name).append(Location.ANSI_RESET).append(" {\n")
+
+        for (PyStatement statement : statements) {
+            builder.append("  ").append(statement.toString().replace("\n", "\n  ")).append("\n")
+        }
+
+        for (PyCompoundStatement statement : compoundStatements) {
+            builder.append("  ").append(statement.toString().replace("\n", "\n  ")).append("\n")
+        }
+
+        for (PyClass clazz : classes) {
+            builder.append("  ").append(clazz.toString().replace("\n", "\n  ")).append("\n")
+        }
+
+        for (PyFunction function : functions) {
+            builder.append("  ").append(function.toString().replace("\n", "\n  ")).append("\n")
+        }
+
+        builder.append(Location.ANSI_RESET).append("}")
+
+        return builder.toString()
     }
 }

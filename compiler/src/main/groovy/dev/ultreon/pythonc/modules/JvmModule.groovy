@@ -5,6 +5,7 @@ import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.ModulePath
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.classes.JvmClass
+import org.objectweb.asm.Type
 
 class JvmModule extends JvmClass {
     private final ModulePath path

@@ -50,136 +50,139 @@ class TestClass(Runnable):
 
 
 def init():
-    print(Objects.hashCode("Hello, world!"))
-
-    # print(HASHCODE)
-    # print(INTEGER)
-    # print(FLOAT)
-    # print(STRING)
-
-    number = 3.141592653589793
-
-    # testing = Testing()
-    # frame = testing.frame
-    # frame.hello = "Hello Señor"
-
-    hello = "Hello World"
-
-    # print("Frame says:", frame.hello)
-    print("Me says:", hello)
-
-    # test_class = TestClass(1, 2)
-    # test_class.run()
-
-    # print(test_class.a)
-    # print(test_class.b)
-
-    frame = Frame()
-    frame.setVisible(True)
-
-    button = Button("Click me!")
-    button.setLabel("Click me!")
-    frame.add(button)
-
-    listeners = button.getActionListeners()
-    print(listeners)
-
-    print("Hey there!", number)
-
-    # if number != 3.14:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
+    # print(Objects.hashCode("Hello, world!"))
     #
-    # if number == 3.141592653589793:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
+    # # print(HASHCODE)
+    # # print(INTEGER)
+    # # print(FLOAT)
+    # # print(STRING)
     #
-    # if number > 3.14:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
+    # number = 3.141592653589793
     #
-    # if number < 4.0:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
+    # # testing = Testing()
+    # # frame = testing.frame
+    # # frame.hello = "Hello Señor"
     #
-    # if number >= 3.14:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
+    # hello = "Hello World"
     #
-    # if number >= 3.141592653589793:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
+    # # print("Frame says:", frame.hello)
+    # print("Me says:", hello)
     #
-    # if number <= 4.0:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
+    # # test_class = TestClass(1, 2)
+    # # test_class.run()
     #
-    # if number <= 3.141592653589793:
-    #     print("Lucky!")
-    # else:
-    #     print("Unlucky!")
-
-    value = 10 * 3.14
-    print(value)
-
-    value = 10 + 3.14
-    print(value)
-
-    value = 10 - number
-    print(value)
-
-    value = 10 / number
-    print(value)
-
-    value = 104
-    print(value)
-
-    # Floor division
-    value = 10 // 3
-    print(value)
-
-    # Modulo
-    value = 10 % 3
-    print(value)
-
-    # Exponentiation
-    value = 10 ** 3
-    print(value)
-
-    # Bitwise AND
-    value = 10 & 3
-    print(value)
-
-    # Bitwise OR
-    value = 10 | 3
-    print(value)
-
-    # Bitwise XOR
-    value = 10 ^ 3
-    print(value)
-
-    # Bitwise NOT
-    value = ~10
-    print(value)
-
-    # Bitwise left shift
-    value = 10 << 3
-    print(value)
-
-    # Bitwise right shift
-    value = 10 >> 3
-    print(value)
-
-    another_value = None
-    print(another_value)
-
+    # # print(test_class.a)
+    # # print(test_class.b)
+    #
+    # # frame = Frame()
+    # # frame.setVisible(True)
+    # #
+    # # button = Button("Click me!")
+    # # button.setLabel("Click me!")
+    # # frame.add(button)
+    # #
+    # # listeners = button.getActionListeners()
+    # # print(listeners)
+    #
+    # print("Hey there!", number)
+    #
+    # # if number != 3.14:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    # #
+    # # if number == 3.141592653589793:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    # #
+    # # if number > 3.14:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    # #
+    # # if number < 4.0:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    # #
+    # # if number >= 3.14:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    # #
+    # # if number >= 3.141592653589793:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    # #
+    # # if number <= 4.0:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    # #
+    # # if number <= 3.141592653589793:
+    # #     print("Lucky!")
+    # # else:
+    # #     print("Unlucky!")
+    #
+    # value = 10 * 3.14
+    # print(value)
+    #
+    # value = 10 + 3.14
+    # print(value)
+    #
+    # value = 10 - number
+    # print(value)
+    #
+    # value = 10 / number
+    # print(value)
+    #
+    # value = 104
+    # print(value)
+    #
+    # # Floor division
+    # value = 10 // 3
+    # print(value)
+    #
+    # # Modulo
+    # value = 10 % 3
+    # print(value)
+    #
+    # # Exponentiation
+    # value = 10 ** 3
+    # print(value)
+    #
+    # # Bitwise AND
+    # value = 10 & 3
+    # print(value)
+    #
+    # # Bitwise OR
+    # value = 10 | 3
+    # print(value)
+    #
+    # # Bitwise XOR
+    # value = 10 ^ 3
+    # print(value)
+    #
+    # # Bitwise NOT
+    # value = ~10
+    # print(value)
+    #
+    # # Bitwise left shift
+    # value = 10 << 3
+    # print(value)
+    #
+    # # Bitwise right shift
+    # value = 10 >> 3
+    # print(value)
+    #
+    # another_value = None
+    # print(another_value)
+    #
+    # name = "world"
+    # print(f"Hello, {name}!")
+    #
     # i = 0
     # while i < 10:
     #     print(i)
@@ -187,7 +190,7 @@ def init():
     #     i = i + 1
     # else:
     #     print("Done!")
-
+    #
     # i = 0
     # while i < 10:
     #     print(i)
@@ -198,4 +201,19 @@ def init():
     #         break
     # else:
     #     print("Done!")
+    #
+    # for i in range(10):
+    #     print(i)
+    #     print("Hello, world!")
+    # else:
+    #     print("Done!")
+
+    for i in range(10):
+        print(i)
+        print("Hello, world!")
+        if i == 5:
+            print("Break!")
+            break
+    else:
+        print("Done!")
 

@@ -34,4 +34,12 @@ class AssignmentExpr extends PyExpression {
             i++
         }
     }
+
+    @Override
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("Assignment").append(Location.ANSI_WHITE).append("[Expression] ").append(Location.ANSI_RESET).append("(").append(targets[0]).append(")").append(Location.ANSI_RED).append(" = ").append(Location.ANSI_RESET).append("(").append(value).append(")").append(Location.ANSI_RESET)
+        return builder.toString()
+    }
 }

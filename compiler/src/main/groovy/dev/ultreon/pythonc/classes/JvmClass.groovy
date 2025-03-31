@@ -19,6 +19,10 @@ abstract class JvmClass extends PyExpression implements PySymbol {
         this.name = name
     }
 
+    static JvmClass of(Class<?> aClass, Location location) {
+        return PythonCompiler.classCache.require(aClass, location)
+    }
+
     Type getType() {
         return type
     }

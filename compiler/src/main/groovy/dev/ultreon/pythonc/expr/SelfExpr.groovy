@@ -4,7 +4,7 @@ import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.classes.JvmClass
-import dev.ultreon.pythonc.classes.LangClass
+import dev.ultreon.pythonc.classes.PyClass
 import org.jetbrains.annotations.NotNull
 import org.objectweb.asm.Type
 
@@ -26,15 +26,23 @@ class SelfExpr extends PyExpression {
 
     @Override
     void writeCode(PythonCompiler compiler, JvmWriter writer) {
-        writer.loadThis((LangClass) PythonCompiler.classCache.require(compiler, type))
+        writer.loadThis((PyClass) PythonCompiler.classCache.require(compiler, type))
         compiler.checkNoPop(location)
     }
 
-    LangClass typeClass() {
-        return (LangClass) PythonCompiler.classCache.require(type)
+    PyClass typeClass() {
+        return (PyClass) PythonCompiler.classCache.require(type)
     }
 
     MemberAttrExpr attr(String name, Location location) {
         return new MemberAttrExpr(this, name, location)
+    }
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED)
+        builder.append("Self")
+        builder.append(Location.ANSI_RESET)
     }
 }

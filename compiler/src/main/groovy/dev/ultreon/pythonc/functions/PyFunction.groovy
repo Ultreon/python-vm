@@ -12,6 +12,7 @@ import dev.ultreon.pythonc.functions.param.PyParameter
 import dev.ultreon.pythonc.statement.PyBlock
 import dev.ultreon.pythonc.statement.PyStatement
 import org.jetbrains.annotations.Nullable
+import org.objectweb.asm.Label
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.MethodNode
@@ -73,9 +74,28 @@ class PyFunction extends PyBaseFunction {
     void writeFunction(PythonCompiler compiler, JvmWriter writer) {
         FunctionContext functionContext = compiler.startFunction owner, this, name, parameters()
         compiler.swapMethod node, {
+            def head = new Label()
+            writer.label(head)
+            writer.lineNumber(location.lineStart, head)
+            functionContext.head = head
             writeContent(compiler, node)
         }
         compiler.endFunction functionContext
+    }
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        if (isStatic) {
+            builder.append(Location.ANSI_RED).append("Static-").append(Location.ANSI_RESET)
+        }
+
+        if (body == null) {
+            return builder.append(Location.ANSI_RED).append("Function ").append(Location.ANSI_PURPLE).append(name).append(Location.ANSI_RESET).append(Location.ANSI_YELLOW).append(signature()).append(Location.ANSI_RESET).toString()
+        }
+        builder.append(Location.ANSI_RED).append("Function ").append(Location.ANSI_PURPLE).append(name).append(Location.ANSI_RESET).append(Location.ANSI_YELLOW).append(signature()).append(Location.ANSI_RESET).append(" {\n")
+        builder.append("  ").append(body.toString().replace("\n", "\n  ")).append("\n")
+        builder.append(Location.ANSI_RESET).append("}")
     }
 
     @Override

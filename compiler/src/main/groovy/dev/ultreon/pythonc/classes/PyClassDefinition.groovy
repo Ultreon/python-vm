@@ -2,6 +2,7 @@ package dev.ultreon.pythonc.classes
 
 import dev.ultreon.pythonc.*
 import dev.ultreon.pythonc.functions.PyFunction
+import dev.ultreon.pythonc.statement.PyCompoundStatement
 import dev.ultreon.pythonc.statement.PyStatement
 import org.objectweb.asm.FieldVisitor
 import org.objectweb.asm.tree.MethodNode
@@ -13,13 +14,14 @@ class PyClassDefinition extends PyCompoundStatement {
     private final List<PyCompoundStatement> compoundStatements = new ArrayList<>()
     private final String name
     private final ModulePath module
-    public final LangClass type
+    public final PyClass type
     public final PyFunctions functions = new PyFunctions()
+    public final PyFields fields = new PyFields()
 
-    PyClassDefinition(ClassPath path, Location location, LangClass type) {
+    PyClassDefinition(ClassPath path, Location location, PyClass type) {
         super(location)
-        this.name = path.name()
-        this.module = path.path()
+        this.name = path.name
+        this.module = path.path
         this.type = type
     }
 

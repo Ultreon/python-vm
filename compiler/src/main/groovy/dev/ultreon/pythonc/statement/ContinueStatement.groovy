@@ -5,7 +5,7 @@ import dev.ultreon.pythonc.*
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-class ContinueStatement extends PyStatement {
+class ContinueStatement implements PyStatement {
     ContinueStatement() {}
 
     @Override

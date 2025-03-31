@@ -22,7 +22,7 @@ class CompilerException extends RuntimeException {
         StringBuilder builder = new StringBuilder()
 
         Location location = this.location
-        builder.append(ANSI_RED).append("[ERROR]: ").append(ANSI_WHITE).append(message).append(location == null ? "" : location.toAdvancedString()).append(ANSI_RESET)
+        builder.append(ANSI_RED).append("[ERROR]: ").append(ANSI_WHITE).append(message).append(location == null ? "" : location.formattedText).append(ANSI_RESET)
         return builder.toString()
     }
 }

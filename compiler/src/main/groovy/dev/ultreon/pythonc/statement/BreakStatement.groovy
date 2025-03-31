@@ -4,8 +4,11 @@ import dev.ultreon.pythonc.*
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-class BreakStatement extends PyStatement {
-    BreakStatement() {
+class BreakStatement implements PyStatement {
+    Location location
+
+    BreakStatement(Location location) {
+        this.location = location
     }
 
     @Override
@@ -28,11 +31,6 @@ class BreakStatement extends PyStatement {
         if (outsideFunction.get()) throw new CompilerException("Can't break a loop though a function!", location)
         if (outsideClass.get()) throw new CompilerException("Can't break a loop though a class!", location)
 
-        writer.label context.breakLabel
-    }
-
-    @Override
-    Location getLocation() {
-        return null
+        writer.jump context.breakLabel
     }
 }

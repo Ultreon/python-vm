@@ -155,6 +155,21 @@ class ConstantExpr extends PyExpression {
 
     @Override
     String toString() {
+        if (value instanceof String) {
+            return Location.ANSI_BLUE +  "\"" + value.replace("\\", Location.ANSI_RED + "\\\\" + Location.ANSI_BLUE).replace("\"", Location.ANSI_RED + "\\\"" + Location.ANSI_BLUE).replace("\n", Location.ANSI_RED + "\\n" + Location.ANSI_BLUE).replace("\r", Location.ANSI_RED + "\\r" + Location.ANSI_BLUE).replace("\t",  Location.ANSI_RED + "\\t" + Location.ANSI_BLUE).replace("\b", Location.ANSI_RED + "\\b" + Location.ANSI_BLUE).replace("\f", Location.ANSI_RED + "\\f" + Location.ANSI_BLUE) + "\"" + Location.ANSI_RESET
+        }
+        if (value instanceof JvmClass) {
+            return Location.ANSI_YELLOW + value.name + Location.ANSI_RESET
+        }
+        if (value instanceof NoneType) {
+            return Location.ANSI_RED + "None" + Location.ANSI_RESET
+        }
+        if (value instanceof Boolean) {
+            return Location.ANSI_RED + (value ? "True" : "False") + Location.ANSI_RESET
+        }
+        if (value instanceof Number) {
+            return Location.ANSI_GREEN + value + Location.ANSI_RESET
+        }
         return value.toString()
     }
 }

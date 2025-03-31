@@ -6,7 +6,7 @@ import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.StarExpression
 import org.objectweb.asm.Type
 
-class ExpressionStatement extends PyStatement {
+class ExpressionStatement implements PyStatement {
     private final List<StarExpression> expression
     private Location location
 
@@ -31,5 +31,12 @@ class ExpressionStatement extends PyStatement {
     @Override
     Location getLocation() {
         return location
+    }
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("Expression ").append(Location.ANSI_RESET).append("(").append(expression).append(")").append(Location.ANSI_RESET)
+        return builder.toString()
     }
 }

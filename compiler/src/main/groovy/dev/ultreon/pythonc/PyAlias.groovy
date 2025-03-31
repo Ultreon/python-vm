@@ -44,9 +44,13 @@ final class PyAlias {
 
     @Override
     String toString() {
-        return "PyAlias[" +
-                "name=" + name + ", " +
-                "alias=" + alias + ']'
+        StringBuilder builder = new StringBuilder()
+
+        if (alias != null) {
+            builder.append(Location.ANSI_RED).append("<:").append(Location.ANSI_PURPLE).append(name).append(Location.ANSI_RESET).append(":").append(Location.ANSI_PURPLE).append(alias).append(Location.ANSI_RESET).append(":>")
+        } else {
+            builder.append(Location.ANSI_PURPLE).append(name).append(Location.ANSI_RESET)
+        }
     }
 
 }

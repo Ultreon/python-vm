@@ -5,13 +5,14 @@ import dev.ultreon.pythonc.*
 import dev.ultreon.pythonc.functions.FunctionDefiner
 import dev.ultreon.pythonc.functions.PyFunction
 import dev.ultreon.pythonc.functions.StaticLevel
+import dev.ultreon.pythonc.statement.PyStatement
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.ClassNode
 import org.objectweb.asm.tree.MethodNode
 import org.objectweb.asm.tree.ParameterNode
 
-class LangClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
+class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
     private final ClassNode classNode
     private final Module owner
     public final PyClassDefinition definition
@@ -21,7 +22,7 @@ class LangClass extends JvmClass implements JvmClassCompilable, FunctionDefiner 
     private JvmClass[] superClasses
     private JvmClass[] interfaces
 
-    LangClass(ClassNode classNode, Module owner, ClassReference[] extending, Type type, String name, Location location) {
+    PyClass(ClassNode classNode, Module owner, ClassReference[] extending, Type type, String name, Location location) {
         super(type, name, location)
         this.classNode = classNode
         this.owner = owner
@@ -34,7 +35,7 @@ class LangClass extends JvmClass implements JvmClassCompilable, FunctionDefiner 
         return path
     }
 
-    static LangClass create(List<ClassReference> extending, Type objectType, String text, Location location) {
+    static PyClass create(List<ClassReference> extending, Type objectType, String text, Location location) {
         ClassNode classNode = new ClassNode()
         classNode.version = Opcodes.V1_8
         classNode.access = Opcodes.ACC_PUBLIC
@@ -43,7 +44,7 @@ class LangClass extends JvmClass implements JvmClassCompilable, FunctionDefiner 
         if (definingModule == null) {
             throw new RuntimeException("definingModule is null")
         }
-        return new LangClass(classNode, definingModule, extending.toArray(ClassReference[]::new), objectType, text, location)
+        return new PyClass(classNode, definingModule, extending.toArray(ClassReference[]::new), objectType, text, location)
     }
 
     JvmClass[] superClasses() {
@@ -106,7 +107,7 @@ class LangClass extends JvmClass implements JvmClassCompilable, FunctionDefiner 
         getter.visitCode()
 
         compiler.swapMethod(getter, () -> {
-            if (staticLevel == StaticLevel.STATIC) compiler.writer.loadClass(type())
+            if (staticLevel == StaticLevel.STATIC) compiler.writer.loadClass(this.type)
             else compiler.writer.loadThis(this)
             compiler.writer.dynamicGetAttr(name)
             compiler.writer.returnValue(type, location)
@@ -215,5 +216,31 @@ class LangClass extends JvmClass implements JvmClassCompilable, FunctionDefiner 
     @Override
     void addFunction(PyFunction function) {
         definition.functions.add(function)
+    }
+
+    @Override
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("Class ").append(Location.ANSI_PURPLE).append(name).append(Location.ANSI_RESET).append(" <")
+
+        if (superClasses == null || superClasses.length == 0) {
+            builder.append(Location.ANSI_PURPLE).append("object")
+        } else for (int i = 0; i < superClasses.length; i++) {
+            if (i > 0) builder.append(Location.ANSI_RESET).append(", ")
+            builder.append(Location.ANSI_PURPLE).append(superClasses[i].name)
+        }
+
+        builder.append(Location.ANSI_RESET).append("> {")
+
+//        for (PyStatement statement : definition.statements) {
+//            builder.append("\n  ").append(statement.toString().replace("\n", "\n  "))
+//        }
+
+        for (PyFunction function : definition.functions) {
+            builder.append("\n  ").append(function.toString().replace("\n", "\n  "))
+        }
+
+        builder.append("\n}")
     }
 }

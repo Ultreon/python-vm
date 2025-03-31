@@ -6,19 +6,20 @@ import org.jetbrains.annotations.Nullable
 import org.objectweb.asm.Label
 import org.objectweb.asm.Type
 
-class WhileStatement extends PyStatement {
+class WhileStatement implements PyStatement {
     private final PyExpression condition
     private final PyBlock content
     private final @Nullable PyBlock elseBlock
 
-    WhileStatement(PyExpression condition, PyBlock content) {
-        this(condition, content, null)
+    WhileStatement(PyExpression condition, PyBlock content, Location location) {
+        this(condition, content, null, location)
     }
 
-    WhileStatement(PyExpression condition, PyBlock content, @Nullable PyBlock elseBlock) {
+    WhileStatement(PyExpression condition, PyBlock content, @Nullable PyBlock elseBlock, Location location) {
         this.condition = condition
         this.content = content
         this.elseBlock = elseBlock
+        this.location = location
     }
 
     PyExpression condition() {
@@ -47,30 +48,32 @@ class WhileStatement extends PyStatement {
             writer.cast(Type.BOOLEAN_TYPE)
         }
 
-        writer.pushTrue()
-
         if (elseBlock == null) {
             writer.jumpIfNotEqual(endLabel)
             content.write(compiler, writer)
             compiler.checkPop(location)
+            writer.jump(startLabel)
         } else {
             Label elseLabel = new Label()
             writer.jumpIfNotEqual(elseLabel)
             content.write(compiler, writer)
             compiler.checkPop(location)
-            writer.jump(endLabel)
+            writer.jump(startLabel)
             writer.label(elseLabel)
             elseBlock.write(compiler, writer)
             compiler.checkPop(location)
-            writer.jump(endLabel)
         }
-
-        writer.jump(startLabel)
         writer.label(endLabel)
     }
 
-    @Override
-    Location getLocation() {
-        return null
+    Location location
+
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("While ").append(Location.ANSI_RESET).append("(").append(condition).append(") {\n")
+        builder.append("  ").append(content.toString().replace("\n", "\n  ")).append("\n")
+        builder.append(Location.ANSI_RESET).append("}")
+        return builder.toString()
     }
 }

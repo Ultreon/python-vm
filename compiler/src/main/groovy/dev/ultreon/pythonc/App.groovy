@@ -7,6 +7,9 @@ import org.jetbrains.annotations.NotNull
 
 import java.lang.management.ManagementFactory
 
+import static java.util.Objects.equals
+import static java.util.Objects.hash
+
 class App {
     static void main(String[] args) throws IOException {
         String jarFile = ManagementFactory.runtimeMXBean.name.split("@")[0]
@@ -92,18 +95,18 @@ class App {
         }
 
         @Override
-        boolean equals(Object obj) {
+        boolean equals(obj) {
             if (obj == this) return true
             if (obj == null || obj.class != this.class) return false
             var that = (ArgParsed) obj
-            return Objects.equals(this.outputJar, that.outputJar) &&
-                    Objects.equals(this.outputDir, that.outputDir) &&
-                    Objects.equals(this.sources, that.sources)
+            return equals(this.outputJar, that.outputJar) &&
+                    equals(this.outputDir, that.outputDir) &&
+                    equals(this.sources, that.sources)
         }
 
         @Override
         int hashCode() {
-            return Objects.hash(outputJar, outputDir, sources)
+            return hash(outputJar, outputDir, sources)
         }
 
         @Override

@@ -34,16 +34,18 @@ public class MetaDataManager {
             metaData.set("__jenclosingmethod__", obj.getClass().getEnclosingMethod());
             metaData.set("__jenclosingconstructor__", obj.getClass().getEnclosingConstructor());
 
-            Map<String, List<Method>> methods = ClassUtils.methodsByName(obj.getClass());
-            for (Map.Entry<String, List<Method>> entry : methods.entrySet()) {
-                metaData.set(entry.getKey(), PyFunction.fromMethods(entry.getValue()));
-            }
-
-            for (Field field : obj.getClass().getFields()) {
-                if (field.isSynthetic()) {
-                    continue;
+            if (!(obj instanceof PyObject) && !(obj instanceof Class<?> && (PyObject.class.isAssignableFrom((Class<?>) obj) || PyModule.class.isAssignableFrom((Class<?>) obj)))) {
+                Map<String, List<Method>> methods = ClassUtils.methodsByName(obj instanceof Class<?> ? (Class<?>) obj : obj.getClass());
+                for (Map.Entry<String, List<Method>> entry : methods.entrySet()) {
+                    metaData.set(entry.getKey(), PyFunction.fromMethods(obj instanceof Class<?> ? (Class<?>) obj : obj.getClass(), obj, entry.getValue()));
                 }
-                metaData.set(field.getName(), field);
+
+                for (Field field : obj.getClass().getFields()) {
+                    if (field.isSynthetic()) {
+                        continue;
+                    }
+                    metaData.set(field.getName(), field);
+                }
             }
 
             weakHashMap.put(obj, metaData);

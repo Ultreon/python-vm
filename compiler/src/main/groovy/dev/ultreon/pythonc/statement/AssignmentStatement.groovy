@@ -6,7 +6,7 @@ import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.expr.PyExpression
 import dev.ultreon.pythonc.expr.Settable
 
-class AssignmentStatement extends PyStatement {
+class AssignmentStatement implements PyStatement {
     private final Settable[] targets
     private final PyExpression value
     private final Location location
@@ -40,5 +40,14 @@ class AssignmentStatement extends PyStatement {
         }
 
         compiler.checkPop location
+    }
+
+
+    @Override
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED).append("Assignment").append(Location.ANSI_WHITE).append("[Statement] ").append(Location.ANSI_RESET).append("(").append(targets[0]).append(")").append(Location.ANSI_RED).append(" = ").append(Location.ANSI_RESET).append("(").append(value).append(")").append(Location.ANSI_RESET)
+        return builder.toString()
     }
 }

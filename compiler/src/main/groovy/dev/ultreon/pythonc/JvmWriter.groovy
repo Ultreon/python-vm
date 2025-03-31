@@ -3,7 +3,7 @@
 package dev.ultreon.pythonc
 
 import dev.ultreon.pythonc.classes.JvmClass
-import dev.ultreon.pythonc.classes.LangClass
+import dev.ultreon.pythonc.classes.PyClass
 import dev.ultreon.pythonc.expr.ConstantExpr
 import dev.ultreon.pythonc.expr.MemberExpression
 import dev.ultreon.pythonc.expr.PyExpression
@@ -12,11 +12,13 @@ import org.objectweb.asm.*
 import java.util.stream.Collectors
 
 import static org.objectweb.asm.Opcodes.*
+import static org.objectweb.asm.Type.BOOLEAN_TYPE
 import static org.objectweb.asm.Type.getMethodType as methodType
 
 class JvmWriter {
     public final PythonCompiler pc
     def lastLocation = new Location()
+    Label lastLabel
 
     JvmWriter(PythonCompiler pythonCompiler) {
         this.pc = pythonCompiler
@@ -241,7 +243,7 @@ class JvmWriter {
         def methodType = methodType(signature)
 
         def mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitInvokeDynamicInsn interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> {
+        mv.visitInvokeDynamicInsn interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles\$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> {
             String s1
             if (o instanceof String) {
                 s1 = "Ljava/lang/String;"
@@ -274,7 +276,7 @@ class JvmWriter {
 
     def hiddenInvokeDynamic(String interaction, String signature, Object... values) {
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitInvokeDynamicInsn(interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> {
+        mv.visitInvokeDynamicInsn(interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles\$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> {
             String s1
             if (o instanceof String) {
                 s1 = "Ljava/lang/String;"
@@ -881,9 +883,9 @@ class JvmWriter {
 
     def jumpIfEqual(Label label) {
         Context context = context
-        Type pop = context.pop()
-        smartCast(pop, getContext().peek())
-        context.pop(Type.BOOLEAN_TYPE)
+
+        cast(BOOLEAN_TYPE)
+        context.pop()
 
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
         mv.visitJumpInsn(Opcodes.IFEQ, label)
@@ -1094,20 +1096,23 @@ class JvmWriter {
 
     def jumpIfNotEqual(Label label) {
         Context context = context
-        Type pop = context.pop()
 
-        smartCast(pop, getContext().peek())
+        cast(BOOLEAN_TYPE)
         context.pop()
 
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
         mv.visitJumpInsn(Opcodes.IFNE, label)
     }
 
+    def magicIfNotEqual(Label label) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
+        mv.visitJumpInsn(Opcodes.IFNE, label)
+    }
+
     def jumpIfLessThan(Label label) {
         Context context = context
-        Type pop = context.pop()
 
-        smartCast(pop, getContext().peek())
+        cast(BOOLEAN_TYPE)
         context.pop()
 
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
@@ -1116,9 +1121,8 @@ class JvmWriter {
 
     def jumpIfLessThanOrEqual(Label label) {
         Context context = context
-        Type pop = context.pop()
 
-        smartCast(pop, getContext().peek())
+        cast(BOOLEAN_TYPE)
         context.pop()
 
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
@@ -1127,9 +1131,8 @@ class JvmWriter {
 
     def jumpIfGreaterThan(Label label) {
         Context context = context
-        Type pop = context.pop()
 
-        smartCast(pop, getContext().peek())
+        cast(BOOLEAN_TYPE)
         context.pop()
 
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
@@ -1138,9 +1141,8 @@ class JvmWriter {
 
     def jumpIfGreaterThanOrEqual(Label label) {
         Context context = context
-        Type pop = context.pop()
 
-        smartCast(pop, getContext().peek())
+        cast(BOOLEAN_TYPE)
         context.pop()
 
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
@@ -1736,7 +1738,7 @@ class JvmWriter {
         context.push(Type.getType(Object.class))
     }
 
-    def loadThis(LangClass pyClass) {
+    def loadThis(PyClass pyClass) {
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
         mv.visitVarInsn(ALOAD, 0)
         context.push(pyClass.type)
@@ -1783,6 +1785,20 @@ class JvmWriter {
     def lastLocation(Location location) {
         if (location == null) return
         if (location.unknown) return
+        if (lastLocation == location) return
         this.lastLocation = location
+
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
+//        Label label = new Label()
+//        if (mv != null) {
+//            mv.visitLabel(label)
+//            mv.visitLineNumber(location.lineStart, label)
+//        }
+
+//        this.lastLabel = label
+    }
+
+    Label newLabel() {
+        return new Label()
     }
 }
