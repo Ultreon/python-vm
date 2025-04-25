@@ -33,6 +33,34 @@ subprojects {
     }
 }
 
+val compiler = project(":compiler") {
+    java {
+        toolchain {
+            languageVersion.set(JavaLanguageVersion.of(21))
+        }
+    }
+}
+
+project(":pylib") {
+    sourceSets {
+        main {
+            java {
+                srcDirs += rootProject.file("compiler/src/main/java")
+            }
+            groovy {
+                srcDirs += rootProject.file("compiler/src/main/groovy")
+            }
+            resources {
+                srcDirs += rootProject.file("compiler/src/main/resources")
+            }
+        }
+    }
+
+    dependencies {
+
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
 }
@@ -45,9 +73,11 @@ tasks.register<JavaExec>("compilePython") {
         delete(file("build/tmp/compilePython/"))
     }
     finalizedBy(":testing:compileJava")
-    classpath = project(":compiler").sourceSets["main"].runtimeClasspath
+    classpath = project(":compiler").sourceSets["main"].runtimeClasspath + project(":pylib").sourceSets["main"].runtimeClasspath
     mainClass.set("dev.ultreon.pythonc.App")
     args = listOf("-j", file("build/libs/example-1.0.jar").path, "-o", file("build/classes/java/main/").path, file("src/main/python").path, file("src/main/resources").path)
+
+    environment("PYTHONC_DEBUG", "1")
 
     group = "python-vm"
     inputs.files("src/main/python", "src/main/resources", "build.gradle.kts", "build/tmp/compilePython")
@@ -64,10 +94,12 @@ tasks.register<JavaExec>("compilePyLib") {
         delete(file("build/tmp/compilePyLib/"))
     }
     finalizedBy(":testing:compileJava")
-    classpath = project(":compiler").sourceSets["main"].runtimeClasspath
+    classpath = project(":compiler").sourceSets["main"].runtimeClasspath + project(":pylib").sourceSets["main"].runtimeClasspath
     mainClass.set("dev.ultreon.pythonc.App")
     args = listOf("-j", file("build/libs/pylib-1.0.jar").path, "-o", file("build/pylib/classes/").path, file("pylib/src/main/python").path)
 
+    environment("PYTHONC_DEBUG", "1")
+    
     group = "python-vm"
     inputs.files("pylib/src/main/python", "pylib/src/main/resources", "build.gradle.kts", "build/tmp/compilePyLib")
 
@@ -90,7 +122,7 @@ tasks.register<Jar>("jarPython") {
 }
 
 tasks.jar {
-    dependsOn("compilePython")
+    dependsOn("compilePython", "compilePyLib", "jarPython", ":pylib:jar", ":compiler:dist")
     finalizedBy(":testing:compileJava", "sourcesJar")
 
     inputs.files(file("build/libs/example-1.0.jar"))
@@ -103,6 +135,25 @@ tasks.jar {
     from(zipTree("pylib/build/libs/pylib-1.0.jar"))
 
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    finalizedBy(":decompile")
+}
+
+tasks.register<JavaExec>("decompile") {
+    finalizedBy(":testing:compileJava")
+    classpath = files(file("vineflower-1.11.1.jar"))
+
+    group = "python-vm"
+    args = listOf(tasks.jar.get().archiveFile.get().asFile.absolutePath, "build/tmp/decompile")
+
+    inputs.files(tasks.jar.get().archiveFile.get().asFile)
+    outputs.dir("build/tmp/decompile")
+
+    doFirst {
+        delete("build/tmp/decompile")
+    }
+
+    notCompatibleWithConfigurationCache("Dynamically compiles python")
 }
 
 tasks.register<Jar>("sourcesJar") {

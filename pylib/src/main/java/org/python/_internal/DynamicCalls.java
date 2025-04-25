@@ -7,7 +7,7 @@ import java.lang.invoke.MethodType;
 import java.util.Map;
 import java.util.Set;
 
-@SuppressWarnings("t")
+@SuppressWarnings({"t", "unused"})
 public class DynamicCalls {
 
     public static CallSite bootstrap(MethodHandles.Lookup lookup, String attrName, MethodType type, String name, String attrDesc) {
@@ -16,6 +16,12 @@ public class DynamicCalls {
         if (name.equals("__builtincall__")) {
             try {
                 return new ConstantCallSite(MethodHandles.lookup().findStatic(PyBuiltins.class, attrName, type));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } else if (attrName.equals("__import__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.insertArguments(MethodHandles.lookup().findStatic(ClassUtils.class, "importModule", MethodType.methodType(Object.class, String.class, String.class)), 0, name, attrDesc));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
             }

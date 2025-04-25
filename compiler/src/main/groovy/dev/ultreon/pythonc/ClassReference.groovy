@@ -5,6 +5,7 @@ import dev.ultreon.pythonc.expr.MemberAttrExpr
 import dev.ultreon.pythonc.expr.MemberCallExpr
 import dev.ultreon.pythonc.expr.PyExpression
 import dev.ultreon.pythonc.expr.PySymbol
+import dev.ultreon.pythonc.statement.PyFromImportStatement
 import org.objectweb.asm.Type
 
 class ClassReference extends JvmClass implements SymbolReference {
@@ -25,6 +26,12 @@ class ClassReference extends JvmClass implements SymbolReference {
         if (symbol instanceof JvmClass) {
             this.resolved = (JvmClass) symbol
             return (JvmClass) symbol
+        } else if (symbol instanceof PyFromImportStatement.ImportedSymbol) {
+            PyFromImportStatement.ImportedSymbol importedSymbol = (PyFromImportStatement.ImportedSymbol) symbol
+            if (importedSymbol.value instanceof JvmClass) return (JvmClass) importedSymbol.value
+            else {
+                throw new CompilerException("Unresolved class: " + name, location)
+            }
         }
         throw new CompilerException("Unresolved class: " + name, location)
     }

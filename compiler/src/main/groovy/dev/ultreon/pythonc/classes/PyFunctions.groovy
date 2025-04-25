@@ -4,13 +4,13 @@ import dev.ultreon.pythonc.functions.PyFunction
 import org.jetbrains.annotations.NotNull
 
 class PyFunctions implements Iterable<PyFunction> {
-    private final Map<String, List<PyFunction>> functions = new HashMap<>()
+    private final Map<String, SequencedSet<PyFunction>> functions = new HashMap<>()
 
     List<PyFunction> get(String name) {
         return functions.get(name)
     }
 
-    Map<String, List<PyFunction>> functions() {
+    Map<String, SequencedSet<PyFunction>> functions() {
         return functions
     }
 
@@ -23,6 +23,6 @@ class PyFunctions implements Iterable<PyFunction> {
     }
 
     void add(PyFunction function) {
-        functions.computeIfAbsent(function.name, k -> new ArrayList<>()).add function
+        functions.computeIfAbsent(function.name, k -> new LinkedHashSet<>()).add function
     }
 }

@@ -2,10 +2,13 @@ package dev.ultreon.pythonc.classes
 
 import com.google.common.base.CaseFormat
 import dev.ultreon.pythonc.*
+import dev.ultreon.pythonc.expr.MemberAttrExpr
+import dev.ultreon.pythonc.expr.MemberCallExpr
+import dev.ultreon.pythonc.expr.PyExpression
+import dev.ultreon.pythonc.fields.PyField
 import dev.ultreon.pythonc.functions.FunctionDefiner
 import dev.ultreon.pythonc.functions.PyFunction
 import dev.ultreon.pythonc.functions.StaticLevel
-import dev.ultreon.pythonc.statement.PyStatement
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.tree.ClassNode
@@ -52,7 +55,7 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
             return superClasses
         }
 
-        JvmClass[] extending = extendingClasses()
+        JvmClass[] extending = extendingClasses
         List<JvmClass> superClasses = new ArrayList<>()
         for (JvmClass extend : extending) {
             if (!extend.interface) {
@@ -63,13 +66,15 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
         return this.superClasses = superClasses.toArray(JvmClass[]::new)
     }
 
-    private JvmClass[] extendingClasses() {
+    JvmClass[] getExtendingClasses() {
         if (extendingClasses != null) {
             return extendingClasses
         }
         JvmClass[] classes = new JvmClass[extending.length]
+        def i = 0
         for (ClassReference reference : extending) {
-            reference.resolve(PythonCompiler.current)
+            classes[i] = reference.resolve(PythonCompiler.current)
+            i++
         }
 
         return extendingClasses = classes
@@ -80,7 +85,7 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
             return interfaces
         }
 
-        JvmClass[] extending = extendingClasses()
+        JvmClass[] extending = extendingClasses
         List<JvmClass> interfaces = new ArrayList<>()
         for (JvmClass extend : extending) {
             if (extend.interface) {
@@ -130,7 +135,7 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
         setter.parameters.add(new ParameterNode("value", 0))
 
         compiler.swapMethod(setter, () -> {
-            if (staticLevel == StaticLevel.STATIC) compiler.writer.loadClass(type())
+            if (staticLevel == StaticLevel.STATIC) compiler.writer.loadClass(type)
             else compiler.writer.loadThis(this)
             compiler.writer.loadValue(staticLevel == StaticLevel.STATIC ? 0 : 1, type)
             compiler.writer.dynamicSetAttr(name)
@@ -148,13 +153,18 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
         addProperty(compiler, name, type, StaticLevel.INSTANCE)
     }
 
+    @Override
+    MemberCallExpr call(String name, List<PyExpression> args, Map<String, PyExpression> kwargs, Location location) {
+        return new MemberCallExpr(new MemberAttrExpr(this, name, location), args, kwargs, location)
+    }
+
     Module owner() {
         return owner
     }
 
     @Override
     void writeClass(PythonCompiler compiler, JvmWriter writer) {
-        compiler.writeClass(type, classNode)
+        throw new RuntimeException("DEBUG")
     }
 
     @Override
@@ -198,12 +208,12 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
     boolean doesInherit(PythonCompiler compiler, JvmClass type) {
         for (JvmClass superClass : superClasses) {
             if (superClass == null) continue
-            if (superClass.equals(type)) return true
+            if (superClass == type) return true
             if (superClass.doesInherit(compiler, type)) return true
         }
         for (JvmClass anInterface : interfaces) {
             if (anInterface == null) continue
-            if (anInterface.equals(type)) return true
+            if (anInterface == type) return true
             if (anInterface.doesInherit(compiler, type)) return true
         }
         return false
@@ -242,5 +252,12 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
         }
 
         builder.append("\n}")
+    }
+
+    MemberAttrExpr defineVariable(String s, Location location, Type type = Type.getType(Object)) {
+        if (definition.fields.find { it.name == s }) return attr(s, location)
+        def field = new PyField(this, s, type, true, location)
+        definition.fields.plusEquals field
+        return attr(name, location)
     }
 }

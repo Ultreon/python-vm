@@ -6,11 +6,16 @@ import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.classes.JvmClass
+import dev.ultreon.pythonc.classes.PyClass
 import dev.ultreon.pythonc.expr.PyExpression
+import dev.ultreon.pythonc.expr.PySymbol
+import dev.ultreon.pythonc.expr.SelfExpr
 import dev.ultreon.pythonc.expr.VariableExpr
 import dev.ultreon.pythonc.functions.param.PyParameter
 import dev.ultreon.pythonc.statement.PyBlock
 import dev.ultreon.pythonc.statement.PyStatement
+import dev.ultreon.pythonc.statement.ReturnStatement
+import dev.ultreon.pythonc.statement.StatementTracker
 import org.jetbrains.annotations.Nullable
 import org.objectweb.asm.Label
 import org.objectweb.asm.Opcodes
@@ -20,13 +25,14 @@ import org.objectweb.asm.tree.MethodNode
 import java.util.function.Consumer
 
 class PyFunction extends PyBaseFunction {
-    final FunctionDefiner owner
-    PyBlock body
-    final MethodNode node
-    final boolean isStatic
-    final Location location
-    int index
-    final PyVariables variables = new PyVariables()
+    private final FunctionDefiner owner
+    private PyBlock body
+    private final MethodNode node
+    private final boolean isStatic
+    private final Location location
+    private int index
+    private final PyVariables variables = new PyVariables()
+    SelfExpr selfSymbol
 
     PyFunction(FunctionDefiner owner, String name, PyParameter[] parameters, @Nullable JvmClass returnType, boolean isStatic, Location location) {
         super(name, parameters, returnType)
@@ -43,6 +49,11 @@ class PyFunction extends PyBaseFunction {
             VariableExpr variableExpr = defineVariable(parameter.name, location)
             parameter.index = variableExpr.index
         }
+
+        if (!isStatic) {
+            selfSymbol = new SelfExpr(owner.type, location)
+            defineVariable("self", location)
+        }
     }
 
     static PyFunction withContent(FunctionDefiner owner, String name, PyParameter[] parameters, JvmClass returnType, boolean isStatic, Location location, Consumer<MethodNode> content) {
@@ -54,11 +65,11 @@ class PyFunction extends PyBaseFunction {
         }
     }
 
-    MethodNode node() {
+    MethodNode getNode() {
         return node
     }
 
-    FunctionDefiner owner() {
+    FunctionDefiner getOwner() {
         return owner
     }
 
@@ -66,7 +77,7 @@ class PyFunction extends PyBaseFunction {
         return isStatic
     }
 
-    PyBlock body() {
+    PyBlock getBody() {
         return body
     }
 
@@ -79,8 +90,11 @@ class PyFunction extends PyBaseFunction {
             writer.lineNumber(location.lineStart, head)
             functionContext.head = head
             writeContent(compiler, node)
+            if (!(StatementTracker.lastStatement instanceof ReturnStatement)) {
+                writer.autoReturn(returnType)
+            }
+            compiler.endFunction functionContext
         }
-        compiler.endFunction functionContext
     }
 
     String toString() {
@@ -100,9 +114,11 @@ class PyFunction extends PyBaseFunction {
 
     @Override
     void writeContent(PythonCompiler compiler, MethodNode node) {
-        body.writeStatement(compiler, compiler.writer)
-        List<PyStatement> statements = body.statements
-        compiler.checkPop(!statements.empty ? statements.last.location : body.location)
+        if (body != null) {
+            body.write(compiler, compiler.writer)
+            List<PyStatement> statements = body.statements
+            compiler.checkPop(!statements.empty ? statements.last.location : body.location)
+        }
     }
 
     VariableExpr defineVariable(String name, Location location) {
@@ -130,11 +146,11 @@ class PyFunction extends PyBaseFunction {
         return false
     }
 
-    VariableExpr getVariable(String name) {
+    VariableExpr variableByName(String name) {
         return variables.get(name)
     }
 
-    void body(PyBlock visit) {
+    void setBody(PyBlock visit) {
         body = visit
     }
 

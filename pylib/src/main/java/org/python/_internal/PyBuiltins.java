@@ -1,5 +1,12 @@
 package org.python._internal;
 
+import dev.ultreon.pythonc.CompilerException;
+import dev.ultreon.pythonc.PythonCompiler;
+import org.python.builtins.SyntaxError;
+import org.python.builtins.TypeError;
+
+import java.io.IOException;
+import java.lang.invoke.MethodHandles;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Scanner;
@@ -143,5 +150,118 @@ public class PyBuiltins {
         }
 
         return kwargs.get(name);
+    }
+
+    public static Object pow(Object[] args, Map<String, Object> kwargs) {
+        Object base = args.length == 2 ? args[0] : kwargs.get("base");
+        Object exp = args.length == 2 ? args[1] : kwargs.get("exp");
+        return Math.pow((Double) base, (Double) exp);
+    }
+
+    public static Object round(Object[] args, Map<String, Object> kwargs) {
+        Object number = args.length == 1 ? args[0] : kwargs.get("number");
+        return Math.round((Double) number);
+    }
+
+    public static Object ceil(Object[] args, Map<String, Object> kwargs) {
+        Object number = args.length == 1 ? args[0] : kwargs.get("number");
+        return Math.ceil((Double) number);
+    }
+
+    public static Object floor(Object[] args, Map<String, Object> kwargs) {
+        Object number = args.length == 1 ? args[0] : kwargs.get("number");
+        return Math.floor((Double) number);
+    }
+
+    public static Object sum(Object[] args, Map<String, Object> kwargs) {
+        Object iterable = args.length == 1 ? args[0] : kwargs.get("iterable");
+        return ClassUtils.getSum((Collection<?>) iterable);
+    }
+
+    public static Object eval(Object[] args, Map<String, Object> kwargs) {
+        class EvalClassLoader extends ClassLoader {
+            public Class<?> define(byte[] data) {
+                try {
+                    return super.defineClass(null, data, 0, data.length);
+                } catch (Exception e) {
+                    throw new TypeError("Compiled Python code is invalid: " + e.getMessage());
+                }
+            }
+        }
+
+        String code = args.length == 1 ? (String) args[0] : (String) kwargs.get("code");
+        PythonCompiler compiler = new PythonCompiler();
+        byte[] bytes = compiler.evalCompile(code);
+
+        EvalClassLoader loader = new EvalClassLoader();
+        return loader.define(bytes);
+    }
+
+    public static Object exec(Object[] args, Map<String, Object> kwargs) {
+        class ExecClassLoader extends ClassLoader {
+            public Class<?> define(byte[] data) {
+                try {
+                    return super.defineClass(null, data, 0, data.length);
+                } catch (Exception e) {
+                    throw new TypeError("Compiled Python code is invalid: " + e.getMessage());
+                }
+            }
+        }
+
+        String code = args.length == 1 ? (String) args[0] : (String) kwargs.get("code");
+        PythonCompiler compiler = new PythonCompiler();
+        byte[] compile;
+        try {
+            compile = compiler.compile(code);
+        } catch (CompilerException e) {
+            try {
+                throw new SyntaxError(e.toAdvancedString());
+            } catch (SyntaxError | IOException ex) {
+                throw new RuntimeException(ex);
+            }
+        }
+
+        ExecClassLoader loader = new ExecClassLoader();
+        Class<?> define = loader.define(compile);
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        try {
+            lookup.ensureInitialized(define);
+        } catch (IllegalAccessException e) {
+            throw new PythonVMBug(e);
+        }
+        return null;
+    }
+
+    public static Object repr(Object[] args, Map<String, Object> kwargs) {
+        Object o = args.length == 1 ? args[0] : kwargs.get("o");
+        return ClassUtils.getRepr(o);
+    }
+
+    public static Object type(Object[] args, Map<String, Object> kwargs) {
+        Object o = args.length == 1 ? args[0] : kwargs.get("o");
+        try {
+            return ClassUtils.getType(o);
+        } catch (Exception e) {
+            throw new TypeError("object of type '" + o.getClass().getSimpleName() + "' has no __class__ attribute");
+        }
+    }
+
+    public static Object dir(Object[] args, Map<String, Object> kwargs) {
+        Object o = args.length == 1 ? args[0] : kwargs.get("o");
+        return ClassUtils.getDir(o);
+    }
+
+    public static Object open(Object[] args, Map<String, Object> kwargs) {
+        throw new UnsupportedOperationException("Not implemented!");
+    }
+
+    public static Object zip(Object[] args, Map<String, Object> kwargs) {
+        Object iterable = args.length == 1 ? args[0] : kwargs.get("iterable");
+        return ClassUtils.zip(iterable);
+    }
+
+    public static Object enumerate(Object[] args, Map<String, Object> kwargs) {
+        Object iterable = args.length == 1 ? args[0] : kwargs.get("iterable");
+        return ClassUtils.enumerate(iterable);
     }
 }

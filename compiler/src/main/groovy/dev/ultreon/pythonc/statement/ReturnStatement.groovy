@@ -22,7 +22,7 @@ class ReturnStatement implements PyStatement {
             throw new CompilerException("Too many expressions!", starredExpressions.get(1).location)
         }
 
-        if (function.returnType().equals(Type.VOID_TYPE)) {
+        if (function.returnType == Type.VOID_TYPE) {
             if (starredExpressions.size() == 1) {
                 throw new CompilerException("Can't return a value when the function is returning nothing!", location)
             }
@@ -32,7 +32,7 @@ class ReturnStatement implements PyStatement {
             return
         }
 
-        Type type = function.returnType()
+        Type type = function.returnType
 
         if (starredExpressions.size() == 1) {
             PyExpression expression = starredExpressions.get(0).expression()

@@ -14,13 +14,13 @@ repositories {
 }
 
 dependencies {
+    implementation(project(":compiler"))
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
     testImplementation("org.junit.jupiter:junit-jupiter")
+
+    implementation("org.apache.commons:commons-math3:3.6.1")
 }
 
 tasks.test {
     useJUnitPlatform()
 }
-
-java.sourceCompatibility = JavaVersion.VERSION_1_8
-java.targetCompatibility = JavaVersion.VERSION_1_8

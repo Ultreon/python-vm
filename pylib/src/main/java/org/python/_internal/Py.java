@@ -196,4 +196,8 @@ public class Py {
     public static boolean __contains__(Object self, Object other) {
         return (boolean) ClassUtils.in(self, other);
     }
+
+    public static Object __import__(String module, String name) {
+        return ClassUtils.importModule(module, name);
+    }
 }

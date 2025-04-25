@@ -45,4 +45,25 @@ abstract class PyParameter implements PyAST, PySymbol {
         writer.createKwargs(kwargs)
         writer.dynamicCall()
     }
+
+    @Override
+    boolean equals(Object obj) {
+        if (obj instanceof PyParameter) {
+            return index == ((PyParameter) obj).index && type() == ((PyParameter) obj).type()
+        }
+        return false
+    }
+
+    @Override
+    int hashCode() {
+        def hash = 0
+        hash = hash * 31 + index
+        hash = hash * 31 + (type() == null ? Type.getType(Object).hashCode() : type().hashCode())
+        return hash
+    }
+
+    @Override
+    String toString() {
+        return name
+    }
 }

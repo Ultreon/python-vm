@@ -33,4 +33,18 @@ class FStringExpr extends PyExpression {
         writer.dynamicCall("toString")
         compiler.checkNoPop(location)
     }
+
+    @Override
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED)
+        builder.append("FString ")
+        builder.append(Location.ANSI_RESET)
+        builder.append(fStringElements.toString())
+
+        builder.append(Location.ANSI_RESET)
+
+        return builder.toString()
+    }
 }

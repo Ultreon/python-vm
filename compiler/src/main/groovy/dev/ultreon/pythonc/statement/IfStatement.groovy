@@ -12,11 +12,13 @@ class IfStatement implements PyStatement {
     private final PyExpression condition
     private final PyBlock trueBlock
     private final @Nullable PyBlock falseBlock
+    private final Location location
 
-    IfStatement(PyExpression condition, PyBlock trueBlock, @Nullable PyBlock falseBlock) {
+    IfStatement(PyExpression condition, PyBlock trueBlock, @Nullable PyBlock falseBlock, Location location) {
         this.condition = condition
         this.trueBlock = trueBlock
         this.falseBlock = falseBlock
+        this.location = location
     }
 
     PyExpression condition() {
@@ -36,7 +38,7 @@ class IfStatement implements PyStatement {
         Label endLabel = new Label()
 
         Type conditionType = condition.write(compiler, writer)
-        if (!conditionType.equals(Type.BOOLEAN_TYPE)) {
+        if (conditionType != Type.BOOLEAN_TYPE) {
             writer.cast(Type.BOOLEAN_TYPE)
         }
 
@@ -59,6 +61,6 @@ class IfStatement implements PyStatement {
 
     @Override
     Location getLocation() {
-        return null
+        return location
     }
 }

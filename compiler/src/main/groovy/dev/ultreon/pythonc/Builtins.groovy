@@ -11,7 +11,8 @@ class Builtins {
 
     private final Map<Type, PyBuiltinClass> builtinClassTypeMap = new HashMap<>();
     private final PythonCompiler compiler;
-    private final PyBuiltinModule module = new PyBuiltinModule(new ModulePath("builtins"));
+    private final PyBuiltinModule builtins = new PyBuiltinModule(new ModulePath("builtins"));
+    private final PyBuiltinModule typing = new PyBuiltinModule(new ModulePath("typing"));
 
     Builtins(PythonCompiler compiler) {
         this.compiler = compiler;
@@ -43,13 +44,52 @@ class Builtins {
         put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyNotImplementedError;"), "NotImplementedError", "RuntimeException"));
         put(new PyBuiltinClass(Type.getType("Lorg/python/builtins/PyOverflowError;"), "OverflowError", "StackOverflowError"));
 
-        put(new PyBuiltinFunction("asc", module));
-        put(new PyBuiltinFunction("ord", module));
-        put(new PyBuiltinFunction("input", module));
-        put(new PyBuiltinFunction("print", module));
-        put(new PyBuiltinFunction("len", module));
-        put(new PyBuiltinFunction("hash", module));
-        put(new PyBuiltinFunction("type", module));
+        put(new PyBuiltinFunction("asc", builtins));
+        put(new PyBuiltinFunction("ord", builtins));
+        put(new PyBuiltinFunction("input", builtins));
+        put(new PyBuiltinFunction("print", builtins));
+        put(new PyBuiltinFunction("len", builtins));
+        put(new PyBuiltinFunction("hash", builtins));
+        put(new PyBuiltinFunction("type", builtins));
+        put(new PyBuiltinFunction("isinstance", builtins));
+        put(new PyBuiltinFunction("issubclass", builtins));
+        put(new PyBuiltinFunction("iter", builtins));
+        put(new PyBuiltinFunction("next", builtins));
+        put(new PyBuiltinFunction("range", builtins));
+        put(new PyBuiltinFunction("min", builtins));
+        put(new PyBuiltinFunction("max", builtins));
+        put(new PyBuiltinFunction("sum", builtins));
+        put(new PyBuiltinFunction("abs", builtins));
+        put(new PyBuiltinFunction("all", builtins));
+        put(new PyBuiltinFunction("any", builtins));
+        put(new PyBuiltinFunction("enumerate", builtins));
+        put(new PyBuiltinFunction("filter", builtins));
+        put(new PyBuiltinFunction("map", builtins));
+        put(new PyBuiltinFunction("reversed", builtins));
+        put(new PyBuiltinFunction("sorted", builtins));
+        put(new PyBuiltinFunction("zip", builtins));
+        put(new PyBuiltinFunction("pow", builtins));
+        put(new PyBuiltinFunction("round", builtins));
+        put(new PyBuiltinFunction("bin", builtins));
+        put(new PyBuiltinFunction("oct", builtins));
+        put(new PyBuiltinFunction("hex", builtins));
+        put(new PyBuiltinFunction("bool", builtins));
+        put(new PyBuiltinFunction("dir", builtins));
+        put(new PyBuiltinFunction("getattr", builtins));
+        put(new PyBuiltinFunction("setattr", builtins));
+        put(new PyBuiltinFunction("delattr", builtins));
+        put(new PyBuiltinFunction("open", builtins));
+        put(new PyBuiltinFunction("compile", builtins));
+        put(new PyBuiltinFunction("exec", builtins));
+        put(new PyBuiltinFunction("locals", builtins));
+        put(new PyBuiltinFunction("globals", builtins));
+        put(new PyBuiltinFunction("vars", builtins));
+        put(new PyBuiltinFunction("callable", builtins));
+        put(new PyBuiltinFunction("classmethod", builtins));
+        put(new PyBuiltinFunction("staticmethod", builtins));
+        put(new PyBuiltinFunction("super", builtins)); // Hmm
+        put(new PyBuiltinFunction("property", builtins));
+        put(new PyBuiltinFunction("object", builtins));
     }
 
     private put(PyBuiltinClass builtinClass) {

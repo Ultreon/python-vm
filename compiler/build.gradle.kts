@@ -8,6 +8,7 @@
 plugins {
   // Apply the application plugin to add support for building a CLI application in Java.
   application
+  `java-library`
 }
 
 group = "dev.ultreon.pythonvm"
@@ -27,24 +28,22 @@ sourceSets {
 }
 
 dependencies {
-  implementation(libs.annotations)
+  api(libs.annotations)
   // Use JUnit Jupiter for testing.
   testImplementation(libs.junit.jupiter)
 
   testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
   // This dependency is used by the application.
-  implementation(libs.guava)
+  api(libs.guava)
 
   // Antlr4 Runtime
-  implementation(libs.antlr.runtime)
+  api(libs.antlr.runtime)
 
   // ASM
-  implementation(libs.asm)
-  implementation(libs.asm.tree)
-  implementation(libs.asm.util)
-
-  implementation(project(":pylib"))
+  api(libs.asm)
+  api(libs.asm.tree)
+  api(libs.asm.util)
 }
 
 // Apply a specific Java toolchain to ease working on different environments.

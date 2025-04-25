@@ -1,5 +1,6 @@
 package dev.ultreon.pythonc
 
+import dev.ultreon.pythonc.expr.PySymbol
 import dev.ultreon.pythonc.functions.PyFunction
 import dev.ultreon.pythonc.functions.FunctionDefiner
 import dev.ultreon.pythonc.functions.param.PyParameter
@@ -24,6 +25,22 @@ class FunctionContext extends SymbolContext {
         }
     }
 
+    @Override
+    PySymbol getSymbol(String name) {
+        if (name == "self" && !function.static) {
+            return function.selfSymbol
+        }
+
+        def symbol = super.getSymbol(name)
+        if (symbol == null) {
+            if (parent instanceof ModuleContext) {
+                return new PyDynamicSymbol(owner, name, location())
+            }
+        }
+
+        return symbol
+    }
+
     FunctionDefiner owner() {
         return owner
     }
@@ -41,7 +58,7 @@ class FunctionContext extends SymbolContext {
     }
 
     static FunctionContext pushContext(FunctionDefiner owner, PyFunction function, String name, PyParameter[] parameters) {
-        FunctionContext functionContext = new FunctionContext(owner, function, name, parameters, SymbolContext.current())
+        FunctionContext functionContext = new FunctionContext(owner, function, name, parameters, current())
         PythonCompiler.current.pushContext(functionContext)
         return functionContext
     }

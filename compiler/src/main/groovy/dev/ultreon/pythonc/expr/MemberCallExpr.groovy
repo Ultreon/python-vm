@@ -11,6 +11,10 @@ class MemberCallExpr extends MemberExpression {
     private final List<PyExpression> arguments
 
     MemberCallExpr(PyExpression parent, List<PyExpression> arguments, Location location) {
+        this(parent, arguments, new HashMap<String, PyExpression>(), location)
+    }
+
+    MemberCallExpr(PyExpression parent, List<PyExpression> arguments, Map<String, PyExpression> kwargs, Location location) {
         super(parent, location)
         this.arguments = arguments
     }

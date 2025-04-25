@@ -44,9 +44,16 @@ public class PythonException extends RuntimeException {
             StackTraceElement[] stackTrace = getStackTrace();
             StringBuilder sb = new StringBuilder();
             sb.append(pythonifyStackTrace(stackTrace, getClass(), getLocalizedMessage()));
-            if (getCause() != null) {
+            Throwable cause = getCause();
+            while (cause != null) {
                 sb.append("\nWas caused by:\n");
-                sb.append(pythonifyStackTrace(getCause().getStackTrace(), getCause().getClass(), getCause().getLocalizedMessage()).replace("\n", "\n  "));
+                sb.append(pythonifyStackTrace(cause.getStackTrace(), cause.getClass(), cause.getLocalizedMessage()).replace("\n", "\n  "));
+
+                cause = cause.getCause();
+                for (Throwable t : getSuppressed()) {
+                    sb.append("\nSuppressed:\n");
+                    sb.append(pythonifyStackTrace(t.getStackTrace(), cause.getClass(), t.getLocalizedMessage()).replace("\n", "\n  "));
+                }
             }
             for (Throwable t : getSuppressed()) {
                 sb.append("\nSuppressed:\n");

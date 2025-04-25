@@ -8,7 +8,7 @@ import dev.ultreon.pythonc.classes.PyClass
 import org.jetbrains.annotations.NotNull
 import org.objectweb.asm.Type
 
-class SelfExpr extends PyExpression {
+class SelfExpr extends PyExpression implements PySymbol {
     private final Type type
 
     SelfExpr(Type type, Location location) {
@@ -44,5 +44,19 @@ class SelfExpr extends PyExpression {
         builder.append(Location.ANSI_RED)
         builder.append("Self")
         builder.append(Location.ANSI_RESET)
+    }
+
+    @Override
+    String getName() {
+        return "self"
+    }
+
+    @Override
+    void writeCall(PythonCompiler compiler, JvmWriter writer, List<PyExpression> args, Map<String, PyExpression> kwargs) {
+        writer.loadThis((PyClass) PythonCompiler.classCache.require(compiler, type))
+        writer.createArgs(args)
+        writer.createKwargs(kwargs)
+        writer.dynamicCall()
+        compiler.checkNoPop(location)
     }
 }

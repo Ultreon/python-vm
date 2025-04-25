@@ -24,7 +24,7 @@ class PyTypedParameter extends PyParameter {
 
     @Override
     void writeCode(PythonCompiler compiler, JvmWriter writer) {
-        writer.loadValue(index(), type == null ? Type.getType(Object.class) : type.type)
+        writer.loadValue(index(), type == null ? Type.getType(Object) : type.type)
     }
 
     @Override

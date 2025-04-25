@@ -14,6 +14,15 @@ class PyEval extends PyExpression {
     enum Operator {
         ADD, SUB, MUL, DIV, MOD, FLOORDIV, AND, LSHIFT, RSHIFT, OR, XOR, UNARY_NOT, UNARY_PLUS, UNARY_MINUS, POW, IS, IS_NOT, IN, NOT_IN, EQ, NE, LT, LE, GT, GE
 
+        boolean isUnary() {
+            switch (this) {
+                case UNARY_NOT: return true
+                case UNARY_PLUS: return true
+                case UNARY_MINUS: return true
+                default: return false
+            }
+        }
+
         String toString(PyExpression left, PyExpression right) {
             switch (this) {
                 case ADD: return "[$left]$Location.ANSI_RED + $Location.ANSI_RESET[$right]"
@@ -54,16 +63,29 @@ class PyEval extends PyExpression {
 
     @Override
     void writeCode(PythonCompiler compiler, JvmWriter writer) {
+        def stackSize = compiler.context.stackSize
         if (finalAddition != null) {
             finalValue.write(compiler, writer)
-            compiler.writer.cast(type(Object.class))
-            finalAddition.write(compiler, writer)
-            compiler.writer.cast(type(Object.class))
+            compiler.writer.cast(type(Object))
+            if (!operator.unary) {
+                finalAddition.write(compiler, writer)
+                compiler.writer.cast(type(Object))
+            }
             doOperation(compiler)
+            if (writer.context.peek() != type(void)) {
+                if (stackSize + 1 != compiler.context.stackSize) {
+                    throw new CompilerException("Invalid stack size after 'eval' expression", location)
+                }
+            }
             return
         }
         finalValue.write(compiler, writer)
-        compiler.writer.cast(type(Object.class))
+        compiler.writer.cast(type(Object))
+        if (writer.context.peek() != type(void)) {
+            if (stackSize + 1 != compiler.context.stackSize) {
+                throw new CompilerException("Invalid stack size after 'eval' expression", location)
+            }
+        }
     }
 
     private void doOperation(PythonCompiler compiler) {

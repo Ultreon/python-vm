@@ -1,5 +1,8 @@
 package org.python._internal;
 
+import org.python.builtins.AttributeError;
+import org.python.builtins.TypeError;
+
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -12,6 +15,7 @@ public class MetaDataManager {
 
     public static MetaData meta(Object obj) {
         MetaData metaData = weakHashMap.get(obj);
+        if (obj == null) return null;
         if (metaData == null) {
             metaData = new MetaData();
             metaData.set("__class__", obj.getClass());
@@ -45,6 +49,13 @@ public class MetaDataManager {
                         continue;
                     }
                     metaData.set(field.getName(), field);
+                }
+            } else if (obj instanceof PyObject) {
+                Map<String, List<Method>> methods = ClassUtils.methodsByName(obj.getClass());
+                for (Map.Entry<String, List<Method>> entry : methods.entrySet()) {
+                    Object value = PyFunction.fromMethodsNoJava(obj.getClass(), obj, entry.getValue());
+                    if (value == null) continue;
+                    metaData.set(entry.getKey(), value);
                 }
             }
 

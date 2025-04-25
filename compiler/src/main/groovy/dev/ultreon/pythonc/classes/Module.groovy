@@ -2,6 +2,10 @@ package dev.ultreon.pythonc.classes
 
 
 import dev.ultreon.pythonc.*
+import dev.ultreon.pythonc.expr.MemberAttrExpr
+import dev.ultreon.pythonc.expr.MemberCallExpr
+import dev.ultreon.pythonc.expr.PyExpression
+import dev.ultreon.pythonc.fields.PyField
 import dev.ultreon.pythonc.functions.FunctionDefiner
 import dev.ultreon.pythonc.functions.PyFunction
 import dev.ultreon.pythonc.modules.JvmModule
@@ -21,7 +25,7 @@ class Module extends JvmModule implements JvmClassCompilable, FunctionDefiner {
     private final ClassNode classNode
     private final ModuleContext context
     public ModuleExpectations expectations = new ModuleExpectations(this)
-    private final PyModuleDefinition definition
+    final PyModuleDefinition definition
 
     Module(ClassNode classNode, ModulePath path, Location location) {
         super(path, location)
@@ -41,6 +45,13 @@ class Module extends JvmModule implements JvmClassCompilable, FunctionDefiner {
 
     void addFunction(PyFunction function) {
         this.definition.functions.add(function)
+    }
+
+    MemberAttrExpr defineVariable(String name, Location location) {
+        if (this.definition.fields.any { it.name == name }) return attr(name, location)
+        def field = new PyField(this, name, Type.getType(Object), true, location)
+        this.definition.fields.plusEquals field
+        return attr(name, location)
     }
 
     static @NotNull
@@ -105,9 +116,13 @@ class Module extends JvmModule implements JvmClassCompilable, FunctionDefiner {
     }
 
     @Override
+    MemberCallExpr call(String name, List<PyExpression> args, Map<String, PyExpression> kwargs, Location location) {
+        return new MemberCallExpr(new MemberAttrExpr(this, name, location), args, kwargs, location)
+    }
+
+    @Override
     void writeClass(PythonCompiler compiler, JvmWriter writer) {
         definition.write compiler, writer
-        compiler.writeClass type, classNode
     }
 
     ModuleContext context() {

@@ -1,9 +1,11 @@
 package dev.ultreon.pythonc.classes
 
 import dev.ultreon.pythonc.*
+import dev.ultreon.pythonc.fields.PyField
 import dev.ultreon.pythonc.functions.PyFunction
 import dev.ultreon.pythonc.statement.PyCompoundStatement
 import dev.ultreon.pythonc.statement.PyStatement
+import org.objectweb.asm.Type
 
 class PyModuleDefinition extends PyCompoundStatement {
     private List<PyStatement> statements = new ArrayList<>()
@@ -52,20 +54,39 @@ class PyModuleDefinition extends PyCompoundStatement {
 
     @Override
     void writeStatement(PythonCompiler compiler, JvmWriter writer) {
-        println "Writing module: ${path}"
-        println "Serialized:\n${toString()}"
+        if (compiler.debug) {
+            println "Writing module: ${path}"
+            println "Serialized:\n${toString()}"
+        }
 
         compiler.moduleDefinition path, {
+            ModuleContext context
+            context = ModuleContext.pushContext()
+            for (builtinClass in compiler.builtins.classes) {
+                context.setSymbol(builtinClass.pyName, builtinClass)
+            }
+            for (builtinFunction in compiler.builtins.functions) {
+                context.setSymbol(builtinFunction.name, builtinFunction)
+            }
+
+            for (type in classes) {
+                context.setSymbol(type.name, type)
+            }
+            for (field in functions) {
+                context.setSymbol(field.name, field)
+            }
             writeClassInit(compiler, writer)
 
             for (function in functions) {
                 function.writeFunction compiler, writer
-                it.methods.add function.node()
+                it.methods.add function.node
             }
+
+            context.popContext(compiler)
         }
 
         for (PyClass clazz : classes) {
-            clazz.writeClass compiler, writer
+            clazz.definition.write compiler, writer
         }
     }
 
@@ -73,7 +94,7 @@ class PyModuleDefinition extends PyCompoundStatement {
         compiler.classInit {
             for (PyStatement statement : statements) {
                 if (statement instanceof PyCompoundStatement) continue
-                statement.writeStatement(compiler, writer)
+                statement.write(compiler, writer)
                 compiler.checkPop(statement.location)
             }
         }
@@ -104,5 +125,9 @@ class PyModuleDefinition extends PyCompoundStatement {
         builder.append(Location.ANSI_RESET).append("}")
 
         return builder.toString()
+    }
+
+    void defineVariable(String name, Location location) {
+        fields.plusEquals new PyField(type, name, Type.getType(Object), true, location)
     }
 }

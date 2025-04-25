@@ -1,14 +1,17 @@
 package org.python._internal;
 
 import org.codehaus.groovy.util.ArrayIterator;
-import org.python.builtins.AttributeError;
-import org.python.builtins.TypeError;
+import org.python.builtins.*;
 
+import java.io.IOException;
 import java.lang.reflect.*;
+import java.net.URL;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class ClassUtils {
+    private static List<String> modules;
+
     public static Object initialize(Object obj) {
         MetaData metaData = MetaDataManager.meta(obj);
 
@@ -18,6 +21,7 @@ public class ClassUtils {
     }
 
     public static Object getAttribute(Object obj, String name) {
+        if (obj == null) throw new AttributeError(name, null);
         MetaData metaData = MetaDataManager.meta(obj);
         if (metaData.has(name)) return metaData.get(name);
 
@@ -50,6 +54,7 @@ public class ClassUtils {
     }
 
     private static Object getFallbackAttribute(Object obj, String name) throws AttributeError, TypeError {
+        if (obj == null) throw new AttributeError(name, null);
         try {
             return obj.getClass().getMethod("__getattr__", String.class).invoke(obj, name);
         } catch (IllegalAccessException | InvocationTargetException e) {
@@ -70,6 +75,7 @@ public class ClassUtils {
 
     @SuppressWarnings("unchecked")
     public static void setAttribute(Object obj, String name, Object value) {
+        if (obj == null) throw new AttributeError(name, null);
         try {
             obj.getClass().getMethod("set" + name.substring(0, 1).toUpperCase() + name.substring(1), value.getClass()).invoke(obj, value);
         } catch (Exception e) {
@@ -97,6 +103,7 @@ public class ClassUtils {
     }
 
     public static boolean hasAttribute(Object obj, String name) throws Exception {
+        if (obj == null) return false;
         MetaData meta = MetaDataManager.meta(obj);
         if (meta.has(name)) return true;
 
@@ -109,6 +116,7 @@ public class ClassUtils {
     }
 
     public static void delAttribute(Object obj, String name) {
+        if (obj == null) throw new AttributeError(name, null);
         if (obj instanceof PyObject) throw new AttributeError(name);
 
         MetaData meta = MetaDataManager.meta(obj);
@@ -132,10 +140,12 @@ public class ClassUtils {
     }
 
     public static Class<?> getType(Object obj) throws Exception {
+        if (obj == null) return void.class;
         return obj.getClass();
     }
 
     public static Set<String> getDir(Object arg) {
+        if (arg == null) throw new AttributeError("__dir__", null);
         MetaData meta = MetaDataManager.meta(arg);
         if (meta.has("__dir__")) return (Set<String>) meta.get("__dir__");
 
@@ -280,6 +290,16 @@ public class ClassUtils {
         }
 
         if (value instanceof PyObject) return ((PyObject) value).__call__(args, kwargs);
+        if (value instanceof Method) {
+            try {
+                if (Modifier.isStatic(((Method) value).getModifiers())) return ((Method) value).invoke(null, args);
+                else {
+                    return ((Method) value).invoke(args[0], Arrays.copyOfRange(args, 1, args.length));
+                }
+            } catch (Exception e) {
+                throw new TypeError(e.toString());
+            }
+        }
         if (value instanceof Class<?>) {
             Class<?> aClass = (Class<?>) value;
             constructors:
@@ -313,7 +333,7 @@ public class ClassUtils {
                     try {
                         return constructor.newInstance(args);
                     } catch (InstantiationException | IllegalAccessException | InvocationTargetException e) {
-                        throw new PythonException("Error calling constructor: " + e.getMessage(), e);
+                        throw new PythonException("Error calling constructor: " + e, e);
                     }
                 }
 
@@ -340,8 +360,33 @@ public class ClassUtils {
     public static Map<String, List<Method>> methodsByName(Class<?> aClass) {
         Map<String, List<Method>> methodsByName = new HashMap<>();
 
-        for (Method method : aClass.getMethods())
-            methodsByName.computeIfAbsent(method.getName(), k -> new ArrayList<>()).add(method);
+        Stack<Class<?>> stack = new Stack<>();
+        stack.push(aClass);
+        while (!stack.isEmpty()) {
+            for (Method method : aClass.getMethods()) {
+                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), k -> new ArrayList<>());
+                if (methods.contains(method)) continue;
+                methods.add(method);
+            }
+
+            for (Method method : aClass.getDeclaredMethods()) {
+                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), k -> new ArrayList<>());
+                if (methods.contains(method)) continue;
+                methods.add(method);
+            }
+
+            stack.pop();
+            Class<?> superclass = aClass.getSuperclass();
+            if (superclass != null) {
+                stack.push(superclass);
+                aClass = superclass;
+            }
+
+            for (Class<?> anInterface : aClass.getInterfaces()) {
+                stack.push(anInterface);
+                aClass = anInterface;
+            }
+        }
 
         return methodsByName;
     }
@@ -511,9 +556,12 @@ public class ClassUtils {
 
     public static Object in(Object self, Object other) {
         if (other instanceof PyObject) return ((PyObject) other).__contains__(self);
-        if (other instanceof Collection<?>) {
-            Collection<?> collection = (Collection<?>) other;
-            return collection.contains(self);
+        if (other instanceof Collection<?> collection) {
+            for (Object o : collection) {
+                if ((Boolean) eq(o, self)) return true;
+            }
+
+            return false;
         }
         if (other == null) return false;
         if (other.getClass().isArray()) {
@@ -533,6 +581,22 @@ public class ClassUtils {
 
     public static Object eq(Object self, Object other) {
         if (self instanceof PyObject) return ((PyObject) self).__eq__(other);
+        if (self instanceof Number && other instanceof Number) {
+            if (isInt(self) && isInt(other)) return ((Number) self).longValue() == ((Number) other).longValue();
+            return ((Number) self).doubleValue() == ((Number) other).doubleValue();
+        }
+        if (self instanceof Enum<?> && other instanceof String) {
+            return ((Enum<?>) self).name().equals(other);
+        } else if (other instanceof Enum<?> && self instanceof String) {
+            return ((Enum<?>) other).name().equals(self);
+        } else if (self instanceof Enum<?> && other instanceof Number) {
+            return ((Enum<?>) self).ordinal() == ((Number) other).intValue();
+        } else if (other instanceof Enum<?> && self instanceof Number) {
+            return ((Enum<?>) other).ordinal() == ((Number) self).intValue();
+        }
+        if (self instanceof Comparable) {
+            return ((Comparable) self).compareTo(other) == 0;
+        }
         return self.equals(other);
     }
 
@@ -582,7 +646,10 @@ public class ClassUtils {
 
     public static Object next(Object self) {
         if (self instanceof PyObject) return ((PyObject) self).__next__();
-        if (self instanceof Iterator) return ((Iterator<?>) self).next();
+        if (self instanceof Iterator) {
+            if (!((Iterator<?>) self).hasNext()) throw new StopIteration();
+            return ((Iterator<?>) self).next();
+        }
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __next__()");
     }
 
@@ -590,5 +657,78 @@ public class ClassUtils {
         if (self instanceof PyObject) return true;
         if (self instanceof Iterator) return ((Iterator<?>) self).hasNext();
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __next__()");
+    }
+
+    public static Object zip(Object iterable) {
+        throw new NotImplementedError();
+    }
+
+    public static Object enumerate(Object iterable) {
+        if (iterable instanceof PyObject) return ((PyObject) iterable).__enumerate__();
+        if (iterable instanceof Iterable) return new EnumerateIterator((Iterable<?>) iterable);
+        if (iterable != null && iterable.getClass().isArray()) {
+            return new EnumerateIterator(Arrays.asList((Object[]) iterable));
+        }
+        throw new TypeError("object of type '" + iterable.getClass().getSimpleName() + "' has no __enumerate__()");
+    }
+
+    public static List<String> getModules() {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        List<String> modules = new ArrayList<>();
+        try {
+            List<Package> packages = Arrays.asList(classLoader.getDefinedPackages());
+            for (Package pkg : packages) {
+                modules.add(pkg.getName());
+            }
+        } catch (Throwable ignored) {
+            throw new OSError("failed to get modules");
+        }
+        return modules;
+    }
+
+    public static Object importModule(String module, String name) {
+        ClassLoader classLoader = ClassUtils.class.getClassLoader();
+        if (name.equals("*")) return loadClassAttr(module, name, classLoader);
+        try {
+            Class<?> aClass = classLoader.loadClass(module + "." + name);
+            if (aClass == null) throw new OSError("could not import '" + name + "' from '" + module + "'");
+            return aClass;
+        } catch (ClassNotFoundException e) {
+            return loadClassAttr(module, name, classLoader);
+        } catch (Throwable e) {
+            throw new OSError("failed to import '" + name + "' from '" + module + "'");
+        }
+    }
+
+    private static Object loadClassAttr(String module, String name, ClassLoader classLoader) {
+        try {
+            Class<?> aClass = classLoader.loadClass(module);
+            if (aClass == null) throw new OSError("could not import module '" + module + "'");
+            MetaData meta = MetaDataManager.meta(aClass);
+            return meta.get(name);
+        } catch (ClassNotFoundException e1) {
+            return loadPackage(module, name, classLoader);
+        }
+    }
+
+    private static Package loadPackage(String module, String name, ClassLoader classLoader) {
+        try {
+            if (name.equals("*")) {
+                Package definedPackage = classLoader.getDefinedPackage(module);
+                if (definedPackage == null) throw new ImportError("could not import module '" + module + "'");
+                return definedPackage;
+            }
+            Package definedPackage = classLoader.getDefinedPackage(module + "." + name);
+            if (definedPackage == null) throw new ImportError("could not import '" + name + "' from '" + module + "'");
+            return definedPackage;
+        } catch (ImportError e) {
+            throw e;
+        } catch (Throwable e2) {
+            throw new OSError("failed to import '" + name + "' from '" + module + "'");
+        }
+    }
+
+    public static Object importModule(String module) {
+        return importModule(module, "*");
     }
 }

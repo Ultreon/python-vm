@@ -5,10 +5,10 @@ import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
 import org.objectweb.asm.Type
 
-trait PyAST {
-    Type write(PythonCompiler compiler, JvmWriter writer) {
-        writer.lastLocation(location)
+interface PyAST {
+    default Type write(PythonCompiler compiler, JvmWriter writer) {
         this.writeCode compiler, writer
+        writer.lastLocation(location)
         if (writer.context.popNeeded) {
             return writer.context.peek()
         }

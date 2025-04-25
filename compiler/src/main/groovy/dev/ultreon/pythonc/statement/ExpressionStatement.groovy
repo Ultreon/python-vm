@@ -20,7 +20,7 @@ class ExpressionStatement implements PyStatement {
     void writeStatement(PythonCompiler compiler, JvmWriter writer) {
         for (StarExpression expr : expression) {
             Type write = expr.write(compiler, writer)
-            if (!write.equals(Type.VOID_TYPE)) {
+            if (write != Type.VOID_TYPE) {
                 writer.pop()
             }
 

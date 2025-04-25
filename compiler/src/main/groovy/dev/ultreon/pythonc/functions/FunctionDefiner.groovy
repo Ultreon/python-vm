@@ -1,6 +1,10 @@
 package dev.ultreon.pythonc.functions
 
+import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
+import dev.ultreon.pythonc.expr.MemberAttrExpr
+import dev.ultreon.pythonc.expr.MemberCallExpr
+import dev.ultreon.pythonc.expr.PyExpression
 import dev.ultreon.pythonc.lang.PyAST
 import org.objectweb.asm.Type
 
@@ -9,5 +13,9 @@ interface FunctionDefiner extends PyAST {
     default void addProperty(String name, Type type) { addProperty PythonCompiler.current, name, type }
     void addProperty(PythonCompiler compiler, String name, Type type)
     Type getType()
+
+    MemberAttrExpr attr(String name, Location location)
+
+    MemberCallExpr call(String name, List<PyExpression> args, Map<String, PyExpression> kwargs, Location location)
     boolean isModule()
 }

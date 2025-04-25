@@ -4,13 +4,13 @@ import dev.ultreon.pythonc.expr.PySymbol
 
 class SymbolContext extends AbstractContext implements SymbolProvider {
     private final Map<String, PySymbol> symbols = new HashMap<>()
-    private final SymbolProvider parent
+    protected final SymbolProvider parent
 
     protected SymbolContext(SymbolProvider symbolContext) {
         parent = symbolContext
     }
 
-    protected static SymbolProvider current() {
+    public static SymbolProvider current() {
         return PythonCompiler.current.lastContext(SymbolProvider.class)
     }
 
@@ -28,6 +28,10 @@ class SymbolContext extends AbstractContext implements SymbolProvider {
             throw new TODO()
         }
         symbols.put(name, symbol)
+    }
+
+    void popContext(PythonCompiler compiler) {
+        compiler.popContext()
     }
 
     static SymbolContext pushContext(PythonCompiler compiler) {

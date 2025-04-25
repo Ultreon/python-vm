@@ -44,6 +44,7 @@ class VariableExpr extends PyExpression implements Settable, PySymbol {
         expr.write(compiler, writer)
         writer.storeObject(index, Type.getType(Object.class))
         this.type = expr.type
+        compiler.checkPop(location)
     }
 
     void writeSet(PythonCompiler compiler, JvmWriter writer) {

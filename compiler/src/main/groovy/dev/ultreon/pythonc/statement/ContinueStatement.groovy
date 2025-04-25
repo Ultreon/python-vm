@@ -6,7 +6,11 @@ import dev.ultreon.pythonc.*
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ContinueStatement implements PyStatement {
-    ContinueStatement() {}
+    private final Location location
+
+    ContinueStatement(Location location) {
+        this.location = location
+    }
 
     @Override
     void writeStatement(PythonCompiler compiler, JvmWriter writer) {
@@ -33,6 +37,6 @@ class ContinueStatement implements PyStatement {
 
     @Override
     Location getLocation() {
-        return null
+        return location
     }
 }

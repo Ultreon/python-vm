@@ -14,6 +14,11 @@ final class PyBlock implements PyStatement {
         this.location = location
     }
 
+    @Override
+    void trackLast(PyStatement statement) {
+        // Do nothing
+    }
+
     static Builder builder(Location location) {
         return new Builder(location)
     }
@@ -24,9 +29,11 @@ final class PyBlock implements PyStatement {
 
     @Override
     void writeStatement(PythonCompiler compiler, JvmWriter writer) {
-        compiler.checkPop(location)
+        compiler.checkPop(writer.lastLocation())
+        trackLast(this)
         for (PyStatement statement : statements) {
             statement.write(compiler, writer)
+            trackLast(statement)
             compiler.checkPop(statement.location)
         }
         compiler.checkPop(location)

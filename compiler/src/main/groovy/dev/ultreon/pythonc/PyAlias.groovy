@@ -6,26 +6,32 @@ import org.objectweb.asm.Type
 final class PyAlias {
     private final String name
     private final @Nullable String alias
+    private final Location location
 
-    PyAlias(String name, @Nullable String alias) {
+    PyAlias(String name, @Nullable String alias, Location location) {
         this.name = name
         this.alias = alias
+        this.location = location
     }
 
-    PyAlias(String name) {
-        this(name, null)
+    PyAlias(String name, Location location) {
+        this(name, null, location)
     }
 
     Type asType(ModulePath path) {
         return path.getClass(name).asType()
     }
 
-    String name() {
+    String getName() {
         return name
     }
 
-    @Nullable String alias() {
+    @Nullable String getAlias() {
         return alias
+    }
+
+    Location getLocation() {
+        return location
     }
 
     @Override

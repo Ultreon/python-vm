@@ -21,7 +21,7 @@ final class ClassPath {
 
     @Override
     String toString() {
-        return path + "." + name
+        return "$path.$name"
     }
 
     Type asType() {
@@ -39,7 +39,7 @@ final class ClassPath {
 
     @Override
     boolean equals(Object obj) {
-        if (obj == this) return true
+        if (obj === this) return true
         if (obj == null || obj.class != this.class) return false
         var that = (ClassPath) obj
         return Objects.equals(this.path, that.path) &&

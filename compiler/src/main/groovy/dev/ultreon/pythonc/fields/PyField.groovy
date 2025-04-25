@@ -16,7 +16,7 @@ class PyField implements JvmField {
     private boolean isStatic
     private Location location
 
-    PyField(PyClass pyClass, String name, Type type, boolean isStatic, Location location) {
+    PyField(JvmClassCompilable pyClass, String name, Type type, boolean isStatic, Location location) {
         this.pyClass = pyClass
         this.name = name
         this.type = type

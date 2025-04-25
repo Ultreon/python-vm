@@ -299,4 +299,8 @@ public interface PyObject {
     default Object __div__(Object other) {
         throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __div__()");
     }
+
+    default Object __enumerate__() {
+        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __enumerate__()");
+    }
 }

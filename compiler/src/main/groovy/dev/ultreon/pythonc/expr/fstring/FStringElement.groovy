@@ -31,6 +31,20 @@ abstract class FStringElement extends PyExpression {
         void writeCode(PythonCompiler compiler, JvmWriter writer) {
             writer.loadConstant text
         }
+
+        @Override
+        String toString() {
+            StringBuilder builder = new StringBuilder()
+
+            builder.append(Location.ANSI_RED)
+            builder.append("Text ")
+            builder.append(Location.ANSI_RESET)
+            builder.append(Location.ANSI_BRIGHT_CYAN)
+            builder.append(text)
+            builder.append(Location.ANSI_RESET)
+
+            return builder.toString()
+        }
     }
 
     static class Replacement extends FStringElement {
@@ -47,6 +61,20 @@ abstract class FStringElement extends PyExpression {
                 expr.write compiler, writer
                 compiler.checkNoPop(location)
             }
+        }
+
+        @Override
+        String toString() {
+            StringBuilder builder = new StringBuilder()
+
+            builder.append(Location.ANSI_RED)
+            builder.append("Replacement ")
+            builder.append(Location.ANSI_RESET)
+            builder.append(Location.ANSI_BRIGHT_CYAN)
+            builder.append(starExpressions)
+            builder.append(Location.ANSI_RESET)
+
+            return builder.toString()
         }
     }
 }

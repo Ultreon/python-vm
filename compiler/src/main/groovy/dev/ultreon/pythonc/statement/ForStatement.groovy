@@ -5,34 +5,35 @@ import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.WhileLoopContext
 import dev.ultreon.pythonc.expr.PyExpression
-import dev.ultreon.pythonc.expr.VariableExpr
+import dev.ultreon.pythonc.expr.Settable
 import org.jetbrains.annotations.Nullable
 import org.objectweb.asm.Label
 import org.objectweb.asm.Opcodes
-import org.objectweb.asm.Type
 
 class ForStatement implements PyStatement {
     private final PyExpression iterable
-    private final VariableExpr variable
+    private final Settable variable
     private final PyBlock content
     private final @Nullable PyBlock elseBlock
+    private final Location location
 
-    ForStatement(PyExpression iterable, VariableExpr variable, PyBlock content) {
-        this(iterable, variable, content, null)
+    ForStatement(PyExpression iterable, Settable variable, PyBlock content, Location location) {
+        this(iterable, variable, content, null, location)
     }
 
-    ForStatement(PyExpression iterable, VariableExpr variable, PyBlock content, @Nullable PyBlock elseBlock) {
+    ForStatement(PyExpression iterable, Settable variable, PyBlock content, @Nullable PyBlock elseBlock, Location location) {
         this.iterable = iterable
         this.variable = variable
         this.content = content
         this.elseBlock = elseBlock
+        this.location = location
     }
 
     PyExpression iterable() {
         return iterable
     }
 
-    VariableExpr variable() {
+    Settable variable() {
         return variable
     }
 
@@ -63,26 +64,38 @@ class ForStatement implements PyStatement {
             compiler.setSymbol(variable.name, variable)
 
         if (elseBlock == null) {
-            writer.mv().visitInsn(Opcodes.DUP)
-            writer.hiddenInvokeDynamic("__hasnext__", "(Ljava/lang/Object;)Z")
-            writer.mv().visitJumpInsn(Opcodes.IFEQ, endLabel)
-
+            Label nextLabel = new Label();
+            Label nextCatchLabel = new Label();
+            Label endCatchLabel = new Label();
+            writer.mv().visitTryCatchBlock(nextLabel, endCatchLabel, nextCatchLabel, "org/python/builtins/StopIteration")
+            writer.mv().visitLabel(nextLabel)
             writer.mv().visitInsn(Opcodes.DUP)
             writer.hiddenInvokeDynamic("__next__", "(Ljava/lang/Object;)Ljava/lang/Object;")
             writer.mv().visitVarInsn(Opcodes.ASTORE, variable.index)
+            writer.mv().visitJumpInsn(Opcodes.GOTO, endCatchLabel)
+
+            writer.mv().visitLabel(nextCatchLabel)
+            writer.mv().visitJumpInsn(Opcodes.GOTO, endLabel)
+            writer.mv().visitLabel(endCatchLabel)
 
             content.write(compiler, writer)
             compiler.checkPop(content.location)
             writer.jump(startLabel)
         } else {
             Label elseLabel = new Label()
-            writer.mv().visitInsn(Opcodes.DUP)
-            writer.hiddenInvokeDynamic("__hasnext__", "(Ljava/lang/Object;)Z")
-            writer.mv().visitJumpInsn(Opcodes.IFEQ, elseLabel)
-
+            Label nextLabel = new Label();
+            Label nextCatchLabel = new Label();
+            Label endCatchLabel = new Label();
+            writer.mv().visitTryCatchBlock(nextLabel, endCatchLabel, nextCatchLabel, "org/python/builtins/StopIteration")
+            writer.mv().visitLabel(nextLabel)
             writer.mv().visitInsn(Opcodes.DUP)
             writer.hiddenInvokeDynamic("__next__", "(Ljava/lang/Object;)Ljava/lang/Object;")
             writer.mv().visitVarInsn(Opcodes.ASTORE, variable.index)
+            writer.mv().visitJumpInsn(Opcodes.GOTO, endCatchLabel)
+
+            writer.mv().visitLabel(nextCatchLabel)
+            writer.mv().visitJumpInsn(Opcodes.GOTO, elseLabel)
+            writer.mv().visitLabel(endCatchLabel)
 
             content.write(compiler, writer)
             compiler.checkPop(content.location)
@@ -100,6 +113,6 @@ class ForStatement implements PyStatement {
 
     @Override
     Location getLocation() {
-        return null
+        return location
     }
 }

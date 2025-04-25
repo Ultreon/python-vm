@@ -2,11 +2,13 @@
 //file:noinspection GroovyFallthrough
 package dev.ultreon.pythonc
 
+import dev.ultreon.pythonc.Context
 import dev.ultreon.pythonc.classes.JvmClass
 import dev.ultreon.pythonc.classes.PyClass
 import dev.ultreon.pythonc.expr.ConstantExpr
 import dev.ultreon.pythonc.expr.MemberExpression
 import dev.ultreon.pythonc.expr.PyExpression
+import org.jetbrains.annotations.Nullable
 import org.objectweb.asm.*
 
 import java.util.stream.Collectors
@@ -157,7 +159,7 @@ class JvmWriter {
         if (signature.sort != Type.METHOD) throw new IllegalStateException("Not a method signature!")
 
         def context = context
-        def methodType = methodType signature
+        def methodType = signature
         def argumentTypes = methodType.argumentTypes
         for (def arg : argumentTypes) {
             def pop = context.pop()
@@ -206,6 +208,7 @@ class JvmWriter {
         }
 
         def mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
+        if (interaction == null) throw new IllegalStateException()
         mv.visitInvokeDynamicInsn interaction, signature, new Handle(H_INVOKESTATIC, "org/python/_internal/DynamicCalls", "bootstrap", "(Ljava/lang/invoke/MethodHandles\$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;" + Arrays.stream(values).map(o -> {
             String s1
             if (Objects.requireNonNull(o) instanceof String) {
@@ -354,7 +357,7 @@ class JvmWriter {
 
     def pushClass(Type ownerType) {
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitLdcInsn(ownerType)
+        mv.visitLdcInsn(boxType(ownerType))
         context.push(Type.getType(Class.class))
     }
 
@@ -407,34 +410,34 @@ class JvmWriter {
     def loadConstant(char value) {
         Context context = context
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitLdcInsn(value)
+        mv.visitIntInsn(SIPUSH, value)
         context.push(Type.CHAR_TYPE)
     }
 
     def loadConstant(boolean value) {
         Context context = context
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitLdcInsn(value)
+        mv.visitInsn(value ? ICONST_1 : ICONST_0)
         context.push(Type.BOOLEAN_TYPE)
     }
 
     def loadConstant(byte value) {
         Context context = context
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitLdcInsn(value)
+        mv.visitIntInsn(BIPUSH, value)
         context.push(Type.BYTE_TYPE)
     }
 
     def loadConstant(short value) {
         Context context = context
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitLdcInsn(value)
+        mv.visitIntInsn(SIPUSH, value)
         context.push(Type.SHORT_TYPE)
     }
 
     def loadClass(Type type) {
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        mv.visitLdcInsn(type)
+        mv.visitLdcInsn(boxType(type))
         context.push(Type.getType("Ljava/lang/Class;"))
     }
 
@@ -820,8 +823,8 @@ class JvmWriter {
         Context context = context
         Type t1 = context.pop()
         Type t2 = context.pop()
-        context.push(t2)
         context.push(t1)
+        context.push(t2)
     }
 
     def dup2() {
@@ -1344,7 +1347,10 @@ class JvmWriter {
 
     def loadConstant(Object value) {
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
-        if (value instanceof Integer) {
+        if (value instanceof Type) {
+            mv.visitLdcInsn(value)
+            context.push(Type.getType(Class.class))
+        } else if (value instanceof Integer) {
             mv.visitLdcInsn(value)
             context.push(Type.INT_TYPE)
         } else if (value instanceof Long) {
@@ -1402,6 +1408,7 @@ class JvmWriter {
     def createArray(List<PyExpression> arguments, Type type) {
         pushStackByte(arguments.size())
         newArray(type)
+        def stackSize = context.stackSize
         for (int i = 0, argumentsSize = arguments.size(); i < argumentsSize; i++) {
             PyExpression argument = arguments.get(i)
             dup()
@@ -1415,6 +1422,10 @@ class JvmWriter {
             }
 
             arrayStoreObject(type)
+        }
+
+        if (stackSize != context.stackSize) {
+            throw new RuntimeException("Stack size mismatch: " + stackSize + " != " + context.stackSize + " after createArray for [" + arguments.collect { it.class.name }.join(", ") + "]")
         }
     }
 
@@ -1504,6 +1515,7 @@ class JvmWriter {
 
     def dynamicNotIn() {
         invokeDynamic("__contains__", "(Ljava/lang/Object;Ljava/lang/Object;)Z")
+        cast(Type.getType(Object))
         invokeDynamic("__not__", "(Ljava/lang/Object;)Ljava/lang/Object;")
     }
 
@@ -1609,7 +1621,7 @@ class JvmWriter {
             MemberExpression memberExpression = (MemberExpression) owner
             memberExpression.writeAttrOnly(pc, this)
         } else owner.write(pc, this)
-        createArray(arguments, Type.getType(Object.class))
+        createArgs(arguments)
         createKwargs()
         dynamicCall()
     }
@@ -1662,7 +1674,10 @@ class JvmWriter {
     def loadClass(JvmClass jvmClass) {
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
         Type type = jvmClass.type
-        mv.visitLdcInsn(type)
+        if (type.descriptor.contains(".")) {
+            throw new RuntimeException("Invalid type: " + type)
+        }
+        mv.visitLdcInsn(boxType(type))
         Context context = context
         context.push(Type.getType(Class.class))
     }
@@ -1800,5 +1815,48 @@ class JvmWriter {
 
     Label newLabel() {
         return new Label()
+    }
+
+    void autoReturn(Type returnType) {
+        var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
+        if (mv != null) {
+            if (returnType != Type.VOID_TYPE) {
+                switch (returnType.sort) {
+                    case Type.BYTE:
+                    case Type.SHORT:
+                    case Type.INT:
+                    case Type.CHAR:
+                    case Type.BOOLEAN:
+                        mv.visitInsn(ICONST_0)
+                        mv.visitInsn(IRETURN)
+                        break
+                    case Type.LONG:
+                        mv.visitInsn(LCONST_0)
+                        mv.visitInsn(LRETURN)
+                        break
+                    case Type.FLOAT:
+                        mv.visitInsn(FCONST_0)
+                        mv.visitInsn(FRETURN)
+                        break
+                    case Type.DOUBLE:
+                        mv.visitInsn(DCONST_0)
+                        mv.visitInsn(DRETURN)
+                        break
+                    case Type.OBJECT:
+                    case Type.ARRAY:
+                        mv.visitInsn(ACONST_NULL)
+                        mv.visitInsn(ARETURN)
+                        break
+                }
+            } else {
+                mv.visitInsn(RETURN)
+            }
+        } else {
+            throw new IllegalStateException("Outside a method definition!")
+        }
+    }
+
+    void dynamicImport(ModulePath path, @Nullable PyAlias alias) {
+        invokeDynamic("__import__", "()Ljava/lang/Object;", path.toString(), alias == null ? "*" : alias.name)
     }
 }

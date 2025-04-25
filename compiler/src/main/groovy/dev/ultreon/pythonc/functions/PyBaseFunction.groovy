@@ -53,15 +53,32 @@ abstract class PyBaseFunction implements PyStatement, PySymbol {
     }
 
     final Type type() {
-        return returnType()
+        return returnType
     }
 
-    Type returnType() {
+    Type getReturnType() {
         if (returnType == null) return Type.VOID_TYPE
         return returnType.type
     }
 
     JvmClass returnClass() {
         return returnType
+    }
+
+    @Override
+    boolean equals(Object obj) {
+        if (obj instanceof PyBaseFunction) {
+            PyBaseFunction other = (PyBaseFunction) obj
+            return name == other.name && Arrays.equals(parameters, other.parameters)
+        }
+        return false
+    }
+
+    @Override
+    int hashCode() {
+        def hash = 0
+        hash = hash * 31 + name.hashCode()
+        hash = hash * 31 + Arrays.hashCode(parameters)
+        return hash
     }
 }

@@ -6,11 +6,14 @@ import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.classes.JvmClass
 import org.objectweb.asm.Type
 
-class MemberAttrExpr extends MemberExpression implements Settable {
+class MemberAttrExpr extends MemberExpression implements Settable, PySymbol {
     private final String name
 
     MemberAttrExpr(PyExpression parent, String name, Location location) {
         super(parent, location)
+        if (name == null) {
+            throw new IllegalArgumentException("name cannot be null")
+        }
         this.name = name
     }
 
@@ -39,6 +42,16 @@ class MemberAttrExpr extends MemberExpression implements Settable {
     void writeCode(PythonCompiler compiler, JvmWriter writer) {
         parent.write(compiler, writer)
         writer.dynamicGetAttr(name)
+        compiler.checkNoPop(location)
+    }
+
+    @Override
+    void writeCall(PythonCompiler compiler, JvmWriter writer, List<PyExpression> args, Map<String, PyExpression> kwargs) {
+        parent.write(compiler, writer)
+        writer.dynamicGetAttr(name)
+        writer.createArgs(args)
+        writer.createKwargs(kwargs)
+        writer.dynamicCall()
         compiler.checkNoPop(location)
     }
 

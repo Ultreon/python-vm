@@ -1,45 +1,35 @@
 package dev.ultreon.test;
 
 import example.HelloPy;
-//import example.TestButton;
-//import example.TestClass;
-//import example.TestButton;
-//import example.Testing;
-//import example.Testing;
+import example.hello.TestClass;
+import example.hello.Testing;
+import example.to_load.TestButton;
 
 import java.awt.*;
 
 public class Main {
     public static void main(String[] args) {
-//        String string = HelloPy.getString();
-//        System.out.println("YEET: " + string);
-        HelloPy.init();
+        String string = example.HelloPy.getString();
+        System.out.println("YEET: " + string);
 
-//        TestClass testClass = new TestClass(3, 5);
+        TestClass testClass = new TestClass(3, 5);
 
-//        Object a1 = HelloPy.TEST_CLASS.a;
-//        Object b1 = HelloPy.TEST_CLASS.b;
+        HelloPy.run();
 
-        Frame frame = new Frame();
-//        TestButton btn = new TestButton();
+        Object a1 = ((TestClass) example.HelloPy.getTestClass()).__getattr__("a");
+        Object b1 = ((TestClass) example.HelloPy.getTestClass()).__getattr__("b");
 
-//        TestButton btn = new TestButton(3, 5);
-//        long sum = btn.sum();
+        Testing testing = new Testing();
+        Frame o = (Frame) testing.__getattr__("frame");
+        o.setVisible(true);
 
-//        System.out.println(sum);
+        System.out.println("a1 = " + a1);
+        System.out.println("b1 = " + b1);
 
-//        Testing testing = new Testing();
-//        Frame o = (Frame) testing.__getattr__("frame");
-//        o.setVisible(true);
-//        frame.add(btn);
+        Object a = testClass.__getattr__("a");
+        Object b = testClass.__getattr__("b");
 
-//        System.out.println("a1 = " + a1);
-//        System.out.println("b1 = " + b1);
-
-//        Object a = testClass.a;
-//        Object b = testClass.b;
-
-//        System.out.println(a);
-//        System.out.println(b);
+        System.out.println(a);
+        System.out.println(b);
     }
 }
