@@ -438,7 +438,7 @@ class JvmWriter {
     def loadClass(Type type) {
         var mv = pc.methodOut == null ? pc.rootInitMv : pc.methodOut
         mv.visitLdcInsn(boxType(type))
-        context.push(Type.getType("Ljava/lang/Class;"))
+        context.push(Type.getType(Class))
     }
 
     def storeInt(int index) {

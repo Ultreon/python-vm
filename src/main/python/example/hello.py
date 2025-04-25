@@ -4,6 +4,11 @@ from java.lang import Runnable, System, Long, Exception, Long
 from java.util import Objects
 from java.util import Random
 
+try:
+    from non.existing import NonExistingClass
+except Exception as e:
+    print("Successfully failed to import non.existing.NonExistingClass")
+
 STRING: str = "Hello, world!"
 
 HASHCODE: int = Objects.hashCode("Hello, world!")

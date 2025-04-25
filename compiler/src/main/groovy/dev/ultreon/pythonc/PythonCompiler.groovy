@@ -289,8 +289,8 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     void checkNoPop(Location location, Type type) {
         if (!writer.context.popNeeded)
             throw new RuntimeException("Expression should return " + type + " not void!" + location.formattedText)
-        if (classCache.require(this, type).doesInherit(this, classCache.object(this)))
-            throw new RuntimeException("Expression should return " + type + " not void!\n" + location)
+        if (!classCache.require(this, type).doesInherit(this, classCache.require(this, writer.context.peek())))
+            throw new RuntimeException("Expression should return " + type + " not doesn't inherit ${classCache.object(this)}!\n" + location)
     }
 
     void unlock(GlobalSettable globalSettable) {
@@ -671,7 +671,79 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             return visitFor_stmt(forStmtContext)
         }
 
+        PythonParser.Try_stmtContext tryStmtContext = ctx.try_stmt()
+        if (tryStmtContext != null) {
+            return visitTry_stmt(tryStmtContext)
+        }
+
+        PythonParser.With_stmtContext withStmtContext = ctx.with_stmt()
+        if (withStmtContext != null) {
+            return visitWith_stmt(withStmtContext)
+        }
+
         throw new RuntimeException("No supported matching compound_stmt found for:\n" + getTextFor(ctx))
+    }
+
+    @Override
+    TryExceptStatement visitTry_stmt(PythonParser.Try_stmtContext ctx) {
+        PythonParser.BlockContext block = ctx.block()
+        if (block == null) throw new CompilerException("Try statement doesn't have content", locate(ctx))
+    
+        PyBlock tryBlock = visitBlock(block);
+        List<CatchBlock> collect = ctx.except_block().collect { exceptBlock ->
+            PythonParser.BlockContext exceptBlockContent = exceptBlock.block()
+            if (exceptBlockContent == null) throw new CompilerException("Except statement doesn't have content", locate(exceptBlock))
+            
+            // Get exception type (default to Exception if not specified)
+            def exprCtx = exceptBlock.expression()
+            flags.set(F_CPL_TYPE_ANNO)
+            PyExpression expr = exprCtx == null ? null : visitExpression(exprCtx)
+            flags.clear(F_CPL_TYPE_ANNO)
+            Type exceptionType = expr?.type ?: Type.getType(Exception)
+            switch (expr) {
+                case JvmClass:
+                    exceptionType = ((JvmClass) expr).type
+                    break
+                case PySymbol:
+                    exceptionType = getClassSymbol(((PySymbol) expr).name).type
+                    break
+                case SymbolReferenceExpr:
+                    exceptionType = getClassSymbol(((SymbolReferenceExpr) expr).symbol().name).type
+                    break
+                default:
+                    throw new RuntimeException("Unsupported exception type: " + expr.class.name)
+            }
+            
+            // Get exception variable name if it exists
+            String varName = null
+            if (exceptBlock.NAME() != null) {
+                varName = exceptBlock.NAME().getText()
+            }
+            
+            // Create catch block with exception type, variable name, and block content
+            new CatchBlock(
+                exceptionType, 
+                visitBlock(exceptBlockContent),
+                varName
+            )
+        }
+    
+        PyBlock elseBlock = null
+        if (ctx.else_block() != null) {
+            elseBlock = visitElse_block(ctx.else_block())
+        }
+    
+        PyBlock finallyBlock = null
+        if (ctx.finally_block() != null) {
+            finallyBlock = visitFinally_block(ctx.finally_block())
+        }
+    
+        return new TryExceptStatement(tryBlock, finallyBlock, elseBlock, collect.toArray(new CatchBlock[0]) as CatchBlock[], locate(ctx))
+    }
+
+    @Override
+    PyBlock visitFinally_block(PythonParser.Finally_blockContext ctx) {
+        return visitBlock(ctx.block())
     }
 
     @Override

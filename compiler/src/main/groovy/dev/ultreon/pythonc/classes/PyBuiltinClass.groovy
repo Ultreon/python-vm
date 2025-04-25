@@ -76,12 +76,21 @@ class PyBuiltinClass extends JvmClass implements PyBuiltin {
         return false
     }
 
-    private static JvmClass[] interfacesClasses() {
-        return new JvmClass[0]
+    private JvmClass[] interfacesClasses() {
+        def name = Class.forName(jvmType.className)
+        def list = new ArrayList<JvmClass>()
+        def interfaces = name.getInterfaces()
+        for (Class<?> anInterface : interfaces) {
+            list.add(PythonCompiler.classCache.require(anInterface, Location.JAVA))
+        }
+        return list.toArray(new JvmClass[0])
     }
 
-    static JvmClass[] superClasses() {
-        return new JvmClass[0]
+    def JvmClass[] superClasses() {
+        def name = Class.forName(jvmType.className)
+        def list = new ArrayList<JvmClass>()
+        def superclass = name.getSuperclass()
+        return new JvmClass[]{PythonCompiler.classCache.require(superclass, Location.JAVA)}
     }
 
     @Override

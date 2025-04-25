@@ -1,5 +1,7 @@
 package org.python._internal;
 
+import org.python.builtins.ImportError;
+
 import java.lang.invoke.CallSite;
 import java.lang.invoke.ConstantCallSite;
 import java.lang.invoke.MethodHandles;
@@ -24,10 +26,20 @@ public class DynamicCalls {
                 return new ConstantCallSite(MethodHandles.insertArguments(MethodHandles.lookup().findStatic(ClassUtils.class, "importModule", MethodType.methodType(Object.class, String.class, String.class)), 0, name, attrDesc));
             } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new PythonVMBug(e);
+            } catch (ImportError e) {
+                try {
+                    return new ConstantCallSite(MethodHandles.insertArguments(MethodHandles.lookup().findStatic(DynamicCalls.class, "throwError", MethodType.methodType(Object.class, Throwable.class)), 0, e));
+                } catch (NoSuchMethodException | IllegalAccessException ex) {
+                    throw new PythonVMBug(ex);
+                }
             }
         } else {
             throw new PythonVMBug("Unknown bootstrap: " + name);
         }
+    }
+
+    public static void throwError(Throwable t) throws Throwable {
+        throw t;
     }
 
     public static CallSite bootstrap(MethodHandles.Lookup lookup, String attrName, MethodType type, String name) {
