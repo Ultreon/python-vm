@@ -1,18 +1,15 @@
 package dev.ultreon.pythonc
 
 import dev.ultreon.pythonc.expr.PyExpression
-import dev.ultreon.pythonc.lang.PyAST
-import org.objectweb.asm.Type
 
-class StarExpression implements PyAST {
+class PyStarExpression extends PyExpression {
     private final PyExpression expression
     private final boolean star
-    private Location location
 
-    StarExpression(PyExpression expression, boolean star, Location location) {
+    PyStarExpression(PyExpression expression, boolean star, Location location) {
+        super(location)
         this.expression = expression
         this.star = star
-        this.location = location
     }
 
     @Override
@@ -20,11 +17,6 @@ class StarExpression implements PyAST {
         if (star) throw new TODO()
 
         expression.write(compiler, writer)
-    }
-
-    @Override
-    Location getLocation() {
-        return location
     }
 
     PyExpression expression() {

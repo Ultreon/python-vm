@@ -77,6 +77,10 @@ public class Py {
         return ClassUtils.initialize(args[0]);
     }
 
+    public static Object __new__(Class<?> type) {
+        return ClassUtils.newClass(type);
+    }
+
     public static Object __repr__(Object[] args, Map<String, Object> kwargs) {
         return ClassUtils.getRepr(args[0]);
     }

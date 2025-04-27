@@ -5,8 +5,8 @@
 #     def destroy(self):
 #         TkNative.factory().miscDestroy(self)
 #
-#     def deletecommand(self, name):
-#         TkNative.factory().miscDeletecommand(self, name)
+#     def deletecommand(self, co_name):
+#         TkNative.factory().miscDeletecommand(self, co_name)
 #
 #     def tk_strictMotif(self, boolean=None):
 #         return TkNative.factory().miscTkStrictMotif(self, boolean)
@@ -20,8 +20,8 @@
 #     def tk_focusFollowsMouse(self):
 #         TkNative.factory().miscTkFocusFollowsMouse(self)
 #
-#     def wait_variable(self, name='PY_VAR'):
-#         TkNative.factory().miscWaitVariable(self, name)
+#     def wait_variable(self, co_name='PY_VAR'):
+#         TkNative.factory().miscWaitVariable(self, co_name)
 #
 #     def wait_window(self, window=None):
 #         TkNative.factory().miscWaitWindow(self, window)
@@ -29,8 +29,8 @@
 #     def wait_visibility(self, window=None):
 #         TkNative.factory().miscWaitVisibility(self, window)
 #
-#     def setvar(self, name='PY_VAR', value='1'):
-#         TkNative.factory().miscSetvar(self, name, value)
+#     def setvar(self, co_name='PY_VAR', value='1'):
+#         TkNative.factory().miscSetvar(self, co_name, value)
 #
 #     def getint(self, s):
 #         return TkNative.factory().miscGetint(self, s)
@@ -104,8 +104,8 @@
 #     def option_clear(self):
 #         return TkNative.factory().miscOptionClear(self)
 #
-#     def option_get(self, name, className):
-#         return TkNative.factory().miscOptionGet(self, name, className)
+#     def option_get(self, co_name, className):
+#         return TkNative.factory().miscOptionGet(self, co_name, className)
 #
 #     def option_readfile(self, fileName, priority=None):
 #         return TkNative.factory().miscOptionReadfile(self, fileName, priority)
@@ -140,8 +140,8 @@
 #     def info_patchlevel(self):
 #         return TkNative.factory().miscInfoPatchlevel(self)
 #
-#     def winfo_atom(self, name, displayof=0):
-#         return TkNative.factory().miscWinfoAtom(self, name, displayof)
+#     def winfo_atom(self, co_name, displayof=0):
+#         return TkNative.factory().miscWinfoAtom(self, co_name, displayof)
 #
 #     def winfo_atomname(self, id, displayof=0):
 #         return TkNative.factory().miscWinfoAtomname(self, id, displayof)
@@ -341,14 +341,14 @@
 #     def _options(self, kw):
 #         return TkNative.factory().miscOptions0(self, kw)
 #
-#     def nametowidget(self, name):
-#         return TkNative.factory().miscNametowidget0(self, name)
+#     def nametowidget(self, co_name):
+#         return TkNative.factory().miscNametowidget0(self, co_name)
 #
 #     def _register(self, func, subst=None, needcleanup=1):
 #         return TkNative.factory().miscRegister0(self, func, subst, needcleanup)
 #
-#     def register(self, func, name=None, subst=None):
-#         return TkNative.factory().miscRegister(self, func, name, subst)
+#     def register(self, func, co_name=None, subst=None):
+#         return TkNative.factory().miscRegister(self, func, co_name, subst)
 #
 #     def _root(self):
 #         return TkNative.factory().miscRoot0(self)

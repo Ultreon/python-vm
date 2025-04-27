@@ -123,9 +123,14 @@ class Module extends JvmModule implements JvmClassCompilable, FunctionDefiner {
     @Override
     void writeClass(PythonCompiler compiler, JvmWriter writer) {
         definition.write compiler, writer
+        compiler.checkPop(location)
     }
 
     ModuleContext context() {
         return context
+    }
+
+    DynamicAttrExpr dynAttr(String s, Location location) {
+        return new DynamicAttrExpr(this, s, location)
     }
 }

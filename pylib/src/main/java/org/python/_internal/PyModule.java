@@ -1,5 +1,5 @@
 package org.python._internal;
 
-public interface PyModule {
+public interface PyModule extends PyObject {
     // Nothing needed
 }

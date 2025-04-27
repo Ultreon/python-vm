@@ -176,3 +176,15 @@ tasks.register<JavaExec>("runPython") {
 
     group = "python-vm"
 }
+
+tasks.register<JavaExec>("debugPython") {
+    dependsOn("compilePython")
+
+    classpath = project(":testing").sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.ultreon.test.Main")
+    args = listOf("Hello World")
+
+    jvmArgs = listOf("-Ddev.ultreon.pythonvm.verbose=1")
+
+    group = "python-vm"
+}

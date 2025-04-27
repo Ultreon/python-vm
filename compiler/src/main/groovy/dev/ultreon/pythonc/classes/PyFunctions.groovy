@@ -7,7 +7,11 @@ class PyFunctions implements Iterable<PyFunction> {
     private final Map<String, SequencedSet<PyFunction>> functions = new HashMap<>()
 
     List<PyFunction> get(String name) {
-        return functions.get(name)
+        def get = functions.get(name)
+        if (get == null) {
+            return List.of()
+        }
+        return List.copyOf(get)
     }
 
     Map<String, SequencedSet<PyFunction>> functions() {

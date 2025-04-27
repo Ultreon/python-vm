@@ -30,7 +30,7 @@ abstract class PyBaseFunction implements PyStatement, PySymbol {
 
     @Override
     void writeStatement(PythonCompiler compiler, JvmWriter writer) {
-        throw new IllegalStateException("Can't write this function" + writer.lastLocation().formattedText)
+        writeFunction(compiler, writer)
     }
 
     String signature() {

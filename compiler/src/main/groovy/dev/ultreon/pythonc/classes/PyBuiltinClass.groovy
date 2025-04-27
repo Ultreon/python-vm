@@ -90,7 +90,8 @@ class PyBuiltinClass extends JvmClass implements PyBuiltin {
         def name = Class.forName(jvmType.className)
         def list = new ArrayList<JvmClass>()
         def superclass = name.getSuperclass()
-        return new JvmClass[]{PythonCompiler.classCache.require(superclass, Location.JAVA)}
+        if (superclass == null && type == Type.getObjectType("java/lang/Object")) return new JvmClass[]{}
+        return new JvmClass[]{superclass == null ? PythonCompiler.classCache.object(PythonCompiler.current) : PythonCompiler.classCache.require(superclass, Location.JAVA)}
     }
 
     @Override

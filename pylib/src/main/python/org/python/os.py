@@ -68,7 +68,7 @@ def system(command):
 
 
 def getenv(name):
-    # java_map = __System.getenv(name)
+    # java_map = __System.getenv(co_name)
     # dict: dict[str, str] = dict()
     # for key in java_map.keySet():
     #     dict[key] = java_map.get(key)
@@ -98,7 +98,7 @@ def linesep():
 
 
 def devnull():
-    if __System.getProperty("os.name").lower().startswith("windows"):
+    if __System.getProperty("os.co_name").lower().startswith("windows"):
         return "NUL"
     else:
         return "/dev/null"

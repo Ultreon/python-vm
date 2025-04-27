@@ -158,6 +158,10 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
         return new MemberCallExpr(new MemberAttrExpr(this, name, location), args, kwargs, location)
     }
 
+    MemberCallExpr call(List<PyExpression> args, Map<String, PyExpression> kwargs, Location location) {
+        return new MemberCallExpr(this, args, kwargs, location)
+    }
+
     Module owner() {
         return owner
     }
@@ -259,5 +263,9 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
         def field = new PyField(this, s, type, true, location)
         definition.fields.plusEquals field
         return attr(name, location)
+    }
+
+    DynamicAttrExpr dynAttr(String s, Location location) {
+        return new DynamicAttrExpr(this, s, location)
     }
 }

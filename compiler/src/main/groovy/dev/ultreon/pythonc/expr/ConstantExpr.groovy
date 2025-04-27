@@ -13,11 +13,13 @@ class ConstantExpr extends PyExpression {
 
     ConstantExpr(String value, Location location) {
         super(location)
+        requireNonNull(value)
         this.value = value
     }
 
     ConstantExpr(NoneType value, Location location) {
         super(location)
+        requireNonNull(value)
         this.value = value
     }
 
@@ -63,6 +65,7 @@ class ConstantExpr extends PyExpression {
 
     ConstantExpr(JvmClass value, Location location) {
         super(location)
+        requireNonNull(value)
         this.value = value
     }
 

@@ -1,5 +1,7 @@
 package org.python._internal;
 
+import org.python.builtins.AttributeError;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -12,11 +14,18 @@ public class MetaData {
     }
 
     public Object get(String key) {
-        return metadata.get(key);
+        Object o = metadata.get(key);
+        if (o instanceof PyFunction) {
+            ((PyFunction) o).__init__(new Object[0], Map.of());
+        }
+        return o;
     }
 
-    public Object del(String key) {
-        return metadata.remove(key);
+    public void del(String key) {
+        if (metadata.containsKey("#" + key + ":protect")) {
+            throw new AttributeError("cannot delete protected attribute " + key);
+        }
+        metadata.remove(key);
     }
 
     public boolean has(String key) {

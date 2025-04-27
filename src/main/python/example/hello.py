@@ -15,11 +15,13 @@ HASHCODE: int = Objects.hashCode("Hello, world!")
 INTEGER: int = 42
 FLOAT: float = 3.14
 
+LIST: list = [1, 2, 3]
+
 
 class Testing(ActionListener):
     def __init__(self):
-        self.frame = Frame()
-        self.button = Button("Click me!")
+        self.frame: Frame = Frame()
+        self.button: Button = Button("Click me!")
 
         self.frame.add(self.button)
 
@@ -233,3 +235,20 @@ def init():
             break
     else:
         print("Done!")
+
+    LIST[0] = 2
+    print(LIST[1:-1])
+
+    tuple_values = (1, 2, 3)
+    print(tuple_values)
+    print(tuple_values[0])
+    print(tuple_values[1])
+    print(tuple_values[2])
+    print(tuple_values[0:2])
+
+    extract1, extract2, extract3 = tuple_values
+    print(extract1)
+    print(extract2)
+    print(extract3)
+
+    print("Hello, world!")

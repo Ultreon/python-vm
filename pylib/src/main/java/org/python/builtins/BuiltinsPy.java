@@ -107,48 +107,48 @@
 //        return o.hashCode();
 //    }
 //
-//    public static Object getattr(Object o, String name) {
+//    public static Object getattr(Object o, String co_name) {
 //        if (o instanceof PyObject) {
 //            PyObject pyObject = (PyObject) o;
-//            return pyObject.__getattr__(name);
+//            return pyObject.__getattr__(co_name);
 //        }
 //
 //        try {
-//            return ClassUtils.getAttribute(o, name);
+//            return ClassUtils.getAttribute(o, co_name);
 //        } catch (AttributeException e) {
 //            throw e;
 //        } catch (Exception e) {
-//            throw new TypeException("could not get attribute '" + name + "'");
+//            throw new TypeException("could not get attribute '" + co_name + "'");
 //        }
 //    }
 //
-//    public static void setattr(Object o, String name, Object value) {
+//    public static void setattr(Object o, String co_name, Object value) {
 //        if (o instanceof PyObject) {
 //            PyObject pyObject = (PyObject) o;
-//            pyObject.__setattr__(name, value);
+//            pyObject.__setattr__(co_name, value);
 //            return;
 //        }
 //        try {
-//            ClassUtils.setAttribute(o, name, value);
+//            ClassUtils.setAttribute(o, co_name, value);
 //        } catch (AttributeException e) {
 //            throw e;
 //        } catch (Exception e) {
-//            throw new TypeException("could not set attribute '" + name + "'");
+//            throw new TypeException("could not set attribute '" + co_name + "'");
 //        }
 //    }
 //
-//    public static void delattr(Object o, String name) {
+//    public static void delattr(Object o, String co_name) {
 //        if (o instanceof PyObject) {
 //            PyObject pyObject = (PyObject) o;
-//            pyObject.__delattr__(name);
+//            pyObject.__delattr__(co_name);
 //            return;
 //        }
 //        try {
-//            ClassUtils.delAttribute(o, name);
+//            ClassUtils.delAttribute(o, co_name);
 //        } catch (AttributeException e) {
 //            throw e;
 //        } catch (Exception e) {
-//            throw new TypeException("could not delete attribute '" + name + "'");
+//            throw new TypeException("could not delete attribute '" + co_name + "'");
 //        }
 //    }
 //

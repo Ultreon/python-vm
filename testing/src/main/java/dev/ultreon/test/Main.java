@@ -3,21 +3,22 @@ package dev.ultreon.test;
 import example.HelloPy;
 import example.hello.TestClass;
 import example.hello.Testing;
-import example.to_load.TestButton;
 
 import java.awt.*;
 
+import static org.python._internal.ClassUtils.getAttribute;
+
 public class Main {
     public static void main(String[] args) {
-        String string = example.HelloPy.getString();
+        String string = (String) getAttribute(HelloPy.class, "STRING");
         System.out.println("YEET: " + string);
 
         TestClass testClass = new TestClass(3, 5);
 
         HelloPy.run();
 
-        Object a1 = ((TestClass) example.HelloPy.getTestClass()).__getattr__("a");
-        Object b1 = ((TestClass) example.HelloPy.getTestClass()).__getattr__("b");
+        Object a1 = ((TestClass) getAttribute(example.HelloPy.class, "TEST_CLASS")).__getattr__("a");
+        Object b1 = ((TestClass) getAttribute(example.HelloPy.class, "TEST_CLASS")).__getattr__("b");
 
         Testing testing = new Testing();
         Frame o = (Frame) testing.__getattr__("frame");

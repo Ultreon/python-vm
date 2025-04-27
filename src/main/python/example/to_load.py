@@ -3,7 +3,7 @@ class TestButton:
         print("Hello, world!")
 
         self.a = a
-        # self.b = b
+        self.b = b
 
     def sum(self) -> int:
         return self.a + self.b

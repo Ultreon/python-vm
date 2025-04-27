@@ -87,6 +87,9 @@ class JvmClassCache {
     }
 
     JvmClass require(PythonCompiler compiler, Class<?> type, Location location) {
+        if (type == null) {
+            throw new NullPointerException("Class is null")
+        }
         if (!(load(compiler, type))) {
             throw new CompilerException("Class '" + type.name + "' not found", location)
         }

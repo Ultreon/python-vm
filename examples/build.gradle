@@ -1,0 +1,134 @@
+plugins {
+    id 'java'
+}
+
+sourceSets {
+    libgdx {
+        java.srcDirs = []
+        resources.srcDirs = []
+    }
+    awt {
+        java.srcDirs = []
+        resources.srcDirs = []
+    }
+    swt {
+        java.srcDirs = []
+        resources.srcDirs = []
+    }
+}
+
+group = 'dev.ultreon.pythonvm'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+
+    maven {
+        name = 'sonatype-snapshots'
+        url = 'https://oss.sonatype.org/content/repositories/snapshots'
+    }
+
+    maven {
+        name = 'sonatype-releases'
+        url = 'https://oss.sonatype.org/content/repositories/releases'
+    }
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+
+    libgdxImplementation 'com.badlogicgames.gdx:gdx:1.13.1'
+    libgdxImplementation 'com.badlogicgames.gdx:gdx-backend-lwjgl3:1.13.1'
+    libgdxImplementation 'com.badlogicgames.gdx:gdx-platform:1.13.1:natives-desktop'
+    libgdxImplementation 'com.badlogicgames.gdx:gdx-box2d:1.13.1'
+    libgdxImplementation 'com.badlogicgames.gdx:gdx-box2d-platform:1.13.1:natives-desktop'
+    libgdxImplementation 'com.badlogicgames.gdx:gdx-freetype:1.13.1'
+    libgdxImplementation 'com.badlogicgames.gdx:gdx-freetype-platform:1.13.1:natives-desktop'
+
+    awtImplementation 'com.formdev:flatlaf:3.2'
+    awtImplementation 'com.formdev:flatlaf-intellij-themes:3.2'
+    awtImplementation 'com.formdev:flatlaf-extras:3.2'
+}
+
+tasks.register('compilePythonLibgdx', JavaExec) {
+    dependsOn ":compilePyLib"
+
+    classpath = project(":compiler").sourceSets["main"].runtimeClasspath + project(":pylib").sourceSets["main"].runtimeClasspath + sourceSets["libgdx"].runtimeClasspath
+    mainClass.set("dev.ultreon.pythonc.App")
+    args "-j", file("build/libs/libgdx-example-1.0.jar").path, "-o", file("build/classes/java/libgdx/").path, file("src/libgdx/python").path
+
+    environment("PYTHONC_DEBUG", "1")
+
+    group = "python-vm"
+    inputs.files("src/libgdx/python", "src/libgdx/resources", "build.gradle.kts", "build/tmp/compilePythonLibgdx")
+
+    notCompatibleWithConfigurationCache("Dynamically compiles python")
+
+    outputs.file("build/libs/libgdx-example-1.0.jar")
+    outputs.dir("build/tmp/compilePython")
+
+    doFirst {
+        delete("build/tmp/compilePythonLibgdx")
+    }
+
+    finalizedBy('decompileLibgdx')
+}
+
+tasks.register('compilePythonAwt', JavaExec) {
+    dependsOn ":compilePyLib"
+
+    classpath = project(":compiler").sourceSets["main"].runtimeClasspath + project(":pylib").sourceSets["main"].runtimeClasspath
+    mainClass.set("dev.ultreon.pythonc.App")
+    args "-j", file("build/libs/awt-example-1.0.jar").path, "-o", file("build/classes/java/awt/").path, file("src/main/python").path, file("src/main/resources").path
+
+    group = "python-vm"
+    inputs.files("src/awt/python", "src/awt/resources", "build.gradle.kts", "build/tmp/compilePythonAwt")
+
+    notCompatibleWithConfigurationCache("Dynamically compiles python")
+
+    outputs.file("build/libs/awt-example-1.0.jar")
+    outputs.dir("build/tmp/compilePython")
+
+    doFirst {
+        delete("build/tmp/compilePythonAwt")
+    }
+}
+
+tasks.register('decompileLibgdx', JavaExec) {
+    classpath = files(rootProject.file("vineflower-1.11.1.jar"))
+
+    group = "python-vm"
+    args "build/libs/libgdx-example-1.0.jar", "build/tmp/decompileLibgdx"
+
+    inputs.files(file("build/libs/libgdx-example-1.0.jar"))
+    outputs.dir("build/tmp/decompileLibgdx")
+
+    doFirst {
+        delete("build/tmp/decompileLibgdx")
+    }
+
+    notCompatibleWithConfigurationCache("Dynamically compiles python")
+}
+
+tasks.register('runSwt', JavaExec) {
+
+}
+
+tasks.register('runAwt', JavaExec) {
+    classpath = project(":compiler").sourceSets["main"].runtimeClasspath + project(":pylib").sourceSets["main"].runtimeClasspath + sourceSets["awt"].runtimeClasspath
+    mainClass.set("")
+    args file("build/libs/awt-example-1.0.jar").path
+}
+
+tasks.register('runLibgdx', JavaExec) {
+    dependsOn "compilePythonLibgdx"
+
+    classpath = project(":compiler").sourceSets["main"].runtimeClasspath + project(":pylib").sourceSets["main"].runtimeClasspath + sourceSets["libgdx"].runtimeClasspath + files(file("build/libs/libgdx-example-1.0.jar"))
+    mainClass.set("examples.LibgdxExamplePy")
+    args file("build/libs/libgdx-example-1.0.jar").path
+}
+
+test {
+    useJUnitPlatform()
+}

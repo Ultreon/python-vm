@@ -1,14 +1,14 @@
 package org.python._internal;
 
 import org.python.builtins.AttributeError;
-import org.python.builtins.TypeError;
 
 import java.lang.reflect.Field;
 import java.util.Map;
 
+@SuppressWarnings("unused")
 public interface PyObject {
-    default void __init__() {
-        
+    default void __init__(Object[] args, Map<String, Object> kwargs) {
+
     }
 
     default int __hash__() {
@@ -24,7 +24,7 @@ public interface PyObject {
     }
 
     default String __format__(Object[] args) {
-        return __str__();
+        throw new PythonVMBug("__format__ isn't implemented");
     }
 
     default byte[] __bytes__() {
@@ -37,11 +37,11 @@ public interface PyObject {
 
 
     default long __int__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __int__()");
+        throw new AttributeError("__int__", this);
     }
 
     default double __float__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __float__()");
+        throw new AttributeError("__float__", this);
     }
 
     default boolean __nonzero__() {
@@ -49,136 +49,124 @@ public interface PyObject {
     }
 
     default Object __neg__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __neg__()");
+        throw new AttributeError("__neg__", this);
     }
 
     default Object __pos__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __pos__()");
+        throw new AttributeError("__pos__", this);
     }
 
     default Object __invert__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __invert__()");
+        throw new AttributeError("__invert__", this);
     }
 
     default Object __abs__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __abs__()");
+        throw new AttributeError("__abs__", this);
     }
 
     default Object __round__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __round__()");
+        throw new AttributeError("__round__", this);
     }
 
     default Object __floor__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __floor__()");
+        throw new AttributeError("__floor__", this);
     }
 
     default Object __ceil__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __ceil__()");
+        throw new AttributeError("__ceil__", this);
     }
 
     default Object __trunc__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __trunc__()");
+        throw new AttributeError("__trunc__", this);
     }
 
     default Object __complex__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __complex__()");
+        throw new AttributeError("__complex__", this);
     }
 
     default Object __oct__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __oct__()");
+        throw new AttributeError("__oct__", this);
     }
 
     default Object __hex__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __hex__()");
+        throw new AttributeError("__hex__", this);
     }
 
     default Object __index__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __index__()");
+        throw new AttributeError("__index__", this);
     }
 
     default Object __lshift__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __lshift__()");
+        throw new AttributeError("__lshift__", this);
     }
 
     default Object __rshift__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __rshift__()");
+        throw new AttributeError("__rshift__", this);
     }
 
     default Object __and__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __and__()");
+        throw new AttributeError("__and__", this);
     }
 
     default Object __or__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __or__()");
+        throw new AttributeError("__or__", this);
     }
 
     default Object __xor__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __xor__()");
+        throw new AttributeError("__xor__", this);
     }
 
     default Object __pow__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __pow__()");
+        throw new AttributeError("__pow__", this);
     }
 
     default Object __mod__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __mod__()");
+        throw new AttributeError("__mod__", this);
     }
 
     default Object __divmod__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __divmod__()");
+        throw new AttributeError("__divmod__", this);
     }
 
     default Object __rdivmod__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __rdivmod__()");
+        throw new AttributeError("__rdivmod__", this);
     }
 
-    default int __len__() throws TypeError {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no len()");
+    default int __len__() throws AttributeError {
+        throw new AttributeError("object of type '" + getClass().getSimpleName() + "' has no len()");
     }
 
-    default Object __iter__() throws TypeError {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __iter__()");
+    default Object __iter__() throws AttributeError {
+        throw new AttributeError("__iter__", this);
     }
 
-    default Object __next__() throws TypeError {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __next__()");
+    default Object __next__() throws AttributeError {
+        throw new AttributeError("__next__", this);
     }
 
-    default Object __getitem__(Object key) throws TypeError {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __getitem__()");
+    default Object __getitem__(Object key) throws AttributeError {
+        throw new AttributeError("__getitem__", this);
     }
 
-    default Object __setitem__(Object key, Object value) throws TypeError {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __setitem__()");
+    default Object __setitem__(Object key, Object value) throws AttributeError {
+        throw new AttributeError("__setitem__", this);
     }
 
-    default Object __delitem__(Object key) throws TypeError {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __delitem__()");
+    default Object __delitem__(Object key) throws AttributeError {
+        throw new AttributeError("__delitem__", this);
     }
 
-    @SuppressWarnings("unchecked")
     default Object __getattr__(String name) throws AttributeError {
         Object value;
         try {
-            try {
-                return ClassUtils.getAttribute(this, name);
-            } catch (AttributeError e) {
-                Class<? extends PyObject> aClass = getClass();
-                Field field = aClass.getField("__dict__");
-                field.setAccessible(true);
-                value = ((java.util.Map<String, Object>) field.get(this)).get(name);
-            }
+            return ClassUtils.getAttribute(this, name);
+        } catch (AttributeError e) {
+            throw new AttributeError(name, this);
         } catch (Exception ex) {
             throw new RuntimeError("Failed to set attribute '" + name + "'", ex);
         }
-
-        if (value == null) {
-            throw new AttributeError(name);
-        }
-        return value;
     }
 
-    @SuppressWarnings("unchecked")
     default void __setattr__(String name, Object value) {
         ClassUtils.setAttribute(this, name, value);
     }
@@ -205,31 +193,31 @@ public interface PyObject {
     }
 
     default void __setstate__(Object state) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __setstate__()");
+        throw new AttributeError("__setstate__", this);
     }
 
     default Object __getstate__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __getstate__()");
+        throw new AttributeError("__getstate__", this);
     }
 
     default Object __reduce__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __reduce__()");
+        throw new AttributeError("__reduce__", this);
     }
 
     default Object __reduce_ex__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __reduce_ex__()");
+        throw new AttributeError("__reduce_ex__", this);
     }
 
     default Object __getnewargs__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __getnewargs__()");
+        throw new AttributeError("__getnewargs__", this);
     }
 
     default Object __getinitargs__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __getinitargs__()");
+        throw new AttributeError("__getinitargs__", this);
     }
 
     default Map<String, Object> __getinitkwargs__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __getinitkwargs__()");
+        throw new AttributeError("__getinitkwargs__", this);
     }
 
     default boolean __contains__(Object key) {
@@ -237,11 +225,11 @@ public interface PyObject {
     }
 
     default Object __call__(Object[] args, Map<String, Object> kwargs) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' is not callable");
+        throw new AttributeError("object of type '" + getClass().getSimpleName() + "' is not callable");
     }
 
     default boolean __lt__(Object o) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' isn't orderable");
+        throw new AttributeError("object of type '" + getClass().getSimpleName() + "' isn't orderable");
     }
 
     default boolean __le__(Object o) {
@@ -269,38 +257,38 @@ public interface PyObject {
     }
 
     default Object __add__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __add__()");
+        throw new AttributeError("__add__", this);
     }
 
     default Object __sub__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __sub__()");
+        throw new AttributeError("__sub__", this);
     }
 
     default Object __mul__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __mul__()");
+        throw new AttributeError("__mul__", this);
     }
 
     default Object __truediv__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __truediv__()");
+        throw new AttributeError("__truediv__", this);
     }
 
     default Object __floordiv__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __floordiv__()");
+        throw new AttributeError("__floordiv__", this);
     }
 
     default Object __is__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __is__()");
+        throw new AttributeError("__is__", this);
     }
 
     default Object __not__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __not__()");
+        throw new AttributeError("__not__", this);
     }
 
     default Object __div__(Object other) {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __div__()");
+        throw new AttributeError("__div__", this);
     }
 
     default Object __enumerate__() {
-        throw new TypeError("object of type '" + getClass().getSimpleName() + "' has no __enumerate__()");
+        throw new AttributeError("__enumerate__", this);
     }
 }

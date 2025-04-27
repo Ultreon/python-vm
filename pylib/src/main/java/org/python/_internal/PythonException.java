@@ -1,7 +1,6 @@
 package org.python._internal;
 
-import org.codehaus.groovy.runtime.StackTraceUtils;
-
+import java.io.File;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 
@@ -69,16 +68,39 @@ public class PythonException extends RuntimeException {
         StringBuilder sb = new StringBuilder();
         sb.append("\n");
         sb.append("Traceback (most recent call last):\n");
+        int i = 0;
+        int max = stackTrace.length - 1;
         for (StackTraceElement ste : stackTrace) {
-            int lineNumber = ste.getLineNumber();
-            if (getFileName(ste).endsWith(".py")) {
-                sb.append("  File \"").append(getFileName(ste)).append("\", line ").append(lineNumber < 0 ? "???" : lineNumber).append(", in ").append(ste.getClassName()).append("\n");
-                sb.append("    <compiled method '").append(ste.getMethodName()).append("'").append(ste.isNativeMethod() ? " (Native Method)" : "").append(">\n");
+            if (ste.getClassName().startsWith("org.python._internal") && !System.getProperty("dev.ultreon.pythonvm.verbose", "0").equals("1")) {
+                max--;
                 continue;
             }
-            String replace = ste.getClassName().replace('.', '/');
-            sb.append("  File \"classpath://").append(replace.substring(0, replace.lastIndexOf('/') + 1) + getFileName(ste)).append("\", line ").append(lineNumber < 0 ? "???" : lineNumber).append(", in ").append(ste.getClassName()).append("\n");
-            sb.append("    <compiled method '").append(ste.getMethodName()).append("'").append(ste.isNativeMethod() ? " (Native Method)" : "").append(">\n");
+            int lineNumber = ste.getLineNumber();
+            String methodName = ste.getMethodName();
+            String[] classNameElements = ste.getClassName().split("\\.");
+            String simpleName = classNameElements[classNameElements.length - 1];
+            String s = File.separator;
+            if (getFileName(ste).endsWith(".py")) {
+                if (methodName.startsWith("-def-")) {
+                    methodName = methodName.substring(6);
+                } else {
+                    if (i == max - 1) {
+                        methodName = "<ref>" + methodName;
+                    } else {
+                        max--;
+                        continue;
+                    }
+                }
+                sb.append("  File \"").append(s).append(getFileName(ste)).append("\", line ").append(lineNumber <= 0 ? "???" : lineNumber).append(", in ").append(methodName.equals("<clinit>") ? simpleName : methodName).append("\n");
+                max--;
+                continue;
+            }
+            if (methodName.startsWith("-def-")) {
+                methodName = methodName.substring(6);
+            }
+            String replace = ste.getClassName().replace('.', s.charAt(0));
+            sb.append("  File \"").append(s).append(replace, 0, replace.lastIndexOf(s) + 1).append(getFileName(ste)).append("\", line ").append(lineNumber < 0 ? "???" : lineNumber).append(", in ").append(methodName).append("\n");
+            i++;
         }
         String name = clazz.getName();
         if (clazz.getPackage().getName().equals("org.python.builtins")) {
@@ -91,6 +113,7 @@ public class PythonException extends RuntimeException {
 
     private static String getFileName(StackTraceElement ste) {
         String fileName = ste.getFileName();
-        return fileName == null ? "<UNKNOWN>" : fileName;
+        String[] className = ste.getClassName().split("\\.");
+        return fileName == null ? className[className.length - 1] : fileName;
     }
 }

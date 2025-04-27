@@ -1,21 +1,17 @@
 package dev.ultreon.pythonc.functions
 
-
+import com.google.common.base.CaseFormat
 import dev.ultreon.pythonc.FunctionContext
 import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.classes.JvmClass
-import dev.ultreon.pythonc.classes.PyClass
 import dev.ultreon.pythonc.expr.PyExpression
-import dev.ultreon.pythonc.expr.PySymbol
 import dev.ultreon.pythonc.expr.SelfExpr
 import dev.ultreon.pythonc.expr.VariableExpr
 import dev.ultreon.pythonc.functions.param.PyParameter
 import dev.ultreon.pythonc.statement.PyBlock
 import dev.ultreon.pythonc.statement.PyStatement
-import dev.ultreon.pythonc.statement.ReturnStatement
-import dev.ultreon.pythonc.statement.StatementTracker
 import org.jetbrains.annotations.Nullable
 import org.objectweb.asm.Label
 import org.objectweb.asm.Opcodes
@@ -39,7 +35,7 @@ class PyFunction extends PyBaseFunction {
         this.owner = owner
         this.body = body
 
-        node = new MethodNode(Opcodes.ACC_PUBLIC | (isStatic || owner.module ? Opcodes.ACC_STATIC : 0), name, signature(), null, null)
+        node = new MethodNode(Opcodes.ACC_PUBLIC | (isStatic || owner.module ? Opcodes.ACC_STATIC : 0), name == "<init>" ? "<init>" : "-def-" + name, signature(), null, null)
         this.isStatic = isStatic
         this.location = location
 
@@ -83,18 +79,66 @@ class PyFunction extends PyBaseFunction {
 
     @Override
     void writeFunction(PythonCompiler compiler, JvmWriter writer) {
-        FunctionContext functionContext = compiler.startFunction owner, this, name, parameters()
+        FunctionContext functionContext = compiler.startFunction owner, this, name == "<init>" ? "<init>" : "-def-" + name, parameters()
         compiler.swapMethod node, {
+            node.access |= (PythonCompiler.current.debug ? 0 : Opcodes.ACC_SYNTHETIC)
+            if (name == "<init>") {
+                def type = Type.getMethodType(signature())
+                node.desc = Type.getMethodDescriptor(Type.VOID_TYPE, type.argumentTypes)
+            } else {
+                def type = Type.getMethodType(signature())
+                node.desc = Type.getMethodDescriptor(Type.getType(Object), type.argumentTypes)
+            }
+
             def head = new Label()
             writer.label(head)
             writer.lineNumber(location.lineStart, head)
             functionContext.head = head
             writeContent(compiler, node)
-            if (!(StatementTracker.lastStatement instanceof ReturnStatement)) {
-                writer.autoReturn(returnType)
+            if (name == "<init>") {
+                if (writer.context.popNeeded) {
+                    writer.pop()
+                }
+                writer.returnVoid()
+            } else if (writer.context.popNeeded) {
+                writer.cast Object
+                writer.returnObject()
+            } else {
+                writer.pushNull()
+                writer.returnObject()
             }
             compiler.endFunction functionContext
         }
+
+        compiler.classOut.methods.add(node)
+
+        if (name == "<init>") {
+            return
+        }
+        functionContext = compiler.startFunction owner, this, CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.LOWER_CAMEL, name), parameters()
+        MethodNode referenceNode = new MethodNode(Opcodes.ACC_PUBLIC | (isStatic || owner.module ? Opcodes.ACC_STATIC : 0), CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.LOWER_CAMEL, name), signature(), null, null)
+        compiler.swapMethod(referenceNode, () -> {
+            referenceNode.access |= Opcodes.ACC_PUBLIC
+            writer.dynamicCall(isStatic ? (owner.owner as JvmClass) : new SelfExpr((owner.owner as JvmClass).type, location), name, parameters().collect {
+                new VariableExpr(it.index(), it.name, location)
+            })
+            if (returnType == null || returnType == Type.VOID_TYPE) {
+                writer.pop()
+                compiler.checkPop(location)
+                writer.returnVoid()
+            } else {
+                writer.cast returnType
+                writer.returnValue(returnType, location)
+            }
+            referenceNode.visitMaxs(0, 0)
+            referenceNode.visitEnd()
+            referenceNode.signature = null
+            referenceNode.exceptions = null
+
+            compiler.endFunction(functionContext)
+        })
+
+        compiler.classOut.methods.add(referenceNode)
     }
 
     String toString() {

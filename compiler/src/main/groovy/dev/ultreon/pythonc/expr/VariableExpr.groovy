@@ -12,6 +12,8 @@ class VariableExpr extends PyExpression implements Settable, PySymbol {
 
     VariableExpr(int index, String name, Location location) {
         super(location)
+        if (name == null)
+            throw new RuntimeException("Variable name cannot be null around:\n" + location.formattedText)
         this.index = index
         this.name = name
     }
@@ -26,7 +28,7 @@ class VariableExpr extends PyExpression implements Settable, PySymbol {
 
     @Override
     void writeCall(PythonCompiler compiler, JvmWriter writer, List<PyExpression> args, Map<String, PyExpression> kwargs) {
-        writeCode(compiler, writer)
+        write(compiler, writer)
         writer.createArgs(args)
         writer.createKwargs(kwargs)
         writer.dynamicCall()
@@ -44,7 +46,6 @@ class VariableExpr extends PyExpression implements Settable, PySymbol {
         expr.write(compiler, writer)
         writer.storeObject(index, Type.getType(Object.class))
         this.type = expr.type
-        compiler.checkPop(location)
     }
 
     void writeSet(PythonCompiler compiler, JvmWriter writer) {

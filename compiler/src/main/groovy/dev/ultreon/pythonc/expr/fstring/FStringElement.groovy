@@ -3,7 +3,7 @@ package dev.ultreon.pythonc.expr.fstring
 import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
-import dev.ultreon.pythonc.StarExpression
+import dev.ultreon.pythonc.PyStarExpression
 import dev.ultreon.pythonc.expr.PyExpression
 
 abstract class FStringElement extends PyExpression {
@@ -48,9 +48,9 @@ abstract class FStringElement extends PyExpression {
     }
 
     static class Replacement extends FStringElement {
-        List<StarExpression> starExpressions
+        List<PyStarExpression> starExpressions
 
-        Replacement(List<StarExpression> starExpressions, Location location) {
+        Replacement(List<PyStarExpression> starExpressions, Location location) {
             super(location)
             this.starExpressions = starExpressions
         }

@@ -21,7 +21,7 @@ abstract class PyExpression implements PyAST {
         return new MemberAttrExpr(this, name, location)
     }
 
-    MemberCallExpr call(PyExpression parent, String name, List<PyExpression> arguments, Location location) {
+    static MemberCallExpr call(PyExpression parent, String name, List<PyExpression> arguments, Location location) {
         return new MemberCallExpr(parent.attr(name, location), arguments, location)
     }
 
@@ -48,4 +48,7 @@ abstract class PyExpression implements PyAST {
         this.write(compiler, writer)
     }
 
+    void delete(PythonCompiler pythonCompiler, JvmWriter jvmWriter) {
+        // Deletes itself? How useless!
+    }
 }

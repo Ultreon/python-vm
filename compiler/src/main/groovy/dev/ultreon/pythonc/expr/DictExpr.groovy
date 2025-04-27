@@ -41,7 +41,7 @@ class DictExpr extends PyExpression {
             }
             compiler.checkNoPop location
             writer.cast Type.getType(Object)
-            kvPair.value.writeCode compiler, writer
+            kvPair.value.write compiler, writer
 
             if (stackSize + 4 != compiler.context.stackSize) {
                 throw new CompilerException("Invalid stack size (" + (stackSize + 4) + ") != (" + compiler.context.stackSize + ") after dict value " + i, kvPair.value.location)

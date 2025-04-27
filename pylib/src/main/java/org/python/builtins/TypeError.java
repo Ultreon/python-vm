@@ -1,7 +1,7 @@
 package org.python.builtins;
 
 public class TypeError extends PyException {
-    public TypeError(String message) {
+    public TypeError(Object... message) {
         super(message);
     }
 }

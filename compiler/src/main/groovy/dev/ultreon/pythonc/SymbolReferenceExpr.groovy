@@ -4,7 +4,7 @@ import dev.ultreon.pythonc.expr.PyExpression
 import dev.ultreon.pythonc.expr.PySymbol
 
 class SymbolReferenceExpr extends PyExpression {
-    private final String name
+    final String name
 
     SymbolReferenceExpr(String name, Location location) {
         super(location)
@@ -15,7 +15,15 @@ class SymbolReferenceExpr extends PyExpression {
     void writeCode(PythonCompiler compiler, JvmWriter writer) {
         PySymbol symbol = compiler.getSymbol(name)
         if (symbol == null) {
-            throw new CompilerException("Undefined symbol: " + name, location)
+            if (compiler.definingClass != null) {
+                compiler.definingClass.dynAttr(name, location).write(compiler, writer)
+                return
+            } else if (compiler.definingModule != null) {
+                compiler.definingModule.dynAttr(name, location).write(compiler, writer)
+                return
+            } else {
+                throw new CompilerException("Undefined symbol: " + name, location)
+            }
         }
 
         symbol.write(compiler, writer)

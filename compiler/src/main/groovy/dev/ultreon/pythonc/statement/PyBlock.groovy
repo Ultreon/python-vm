@@ -14,11 +14,6 @@ final class PyBlock implements PyStatement {
         this.location = location
     }
 
-    @Override
-    void trackLast(PyStatement statement) {
-        // Do nothing
-    }
-
     static Builder builder(Location location) {
         return new Builder(location)
     }
@@ -37,6 +32,7 @@ final class PyBlock implements PyStatement {
             compiler.checkPop(statement.location)
         }
         compiler.checkPop(location)
+        trackLast(this)
     }
 
     @Override

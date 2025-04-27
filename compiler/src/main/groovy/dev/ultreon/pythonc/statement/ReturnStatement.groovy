@@ -6,11 +6,11 @@ import dev.ultreon.pythonc.functions.PyFunction
 import org.objectweb.asm.Type
 
 class ReturnStatement implements PyStatement {
-    private final List<StarExpression> starredExpressions
+    private final List<PyStarExpression> starredExpressions
     private final PyFunction function
     private Location location
 
-    ReturnStatement(List<StarExpression> starredExpressions, PyFunction function, Location location) {
+    ReturnStatement(List<PyStarExpression> starredExpressions, PyFunction function, Location location) {
         this.starredExpressions = starredExpressions
         this.function = function
         this.location = location
@@ -45,6 +45,22 @@ class ReturnStatement implements PyStatement {
         writer.pushNull()
         writer.returnValue(type, location)
         compiler.checkPop(location)
+    }
+
+    @Override
+    String toString() {
+        StringBuilder builder = new StringBuilder()
+
+        builder.append(Location.ANSI_RED)
+        builder.append("Return ")
+        builder.append(Location.ANSI_RESET)
+        builder.append("[")
+        builder.append(Location.ANSI_PURPLE)
+        builder.append(starredExpressions.toString())
+        builder.append(Location.ANSI_RESET)
+        builder.append("]")
+
+        return builder.toString()
     }
 
     @Override

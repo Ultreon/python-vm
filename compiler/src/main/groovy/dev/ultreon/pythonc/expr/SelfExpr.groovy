@@ -59,4 +59,12 @@ class SelfExpr extends PyExpression implements PySymbol {
         writer.dynamicCall()
         compiler.checkNoPop(location)
     }
+
+    @Override
+    void delete(PythonCompiler pythonCompiler, JvmWriter jvmWriter) {
+        jvmWriter.newInstance(PythonCompiler.classCache.require(pythonCompiler, Type.getObjectType("java/lang/UnsupportedOperationException")), List.of(
+                new ConstantExpr("Stop! Do not try to delete yourself! It's not healthy!", location),
+        ))
+        jvmWriter.throwObject()
+    }
 }

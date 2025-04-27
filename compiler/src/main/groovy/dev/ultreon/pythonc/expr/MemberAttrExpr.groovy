@@ -57,7 +57,7 @@ class MemberAttrExpr extends MemberExpression implements Settable, PySymbol {
 
     @Override
     void writeAttrOnly(PythonCompiler compiler, JvmWriter writer) {
-        writeCode(compiler, writer)
+        write(compiler, writer)
     }
 
     String toString() {
@@ -76,5 +76,12 @@ class MemberAttrExpr extends MemberExpression implements Settable, PySymbol {
         builder.append(Location.ANSI_RESET)
 
         return builder.toString()
+    }
+
+    @Override
+    void delete(PythonCompiler pythonCompiler, JvmWriter jvmWriter) {
+        parent.write(pythonCompiler, jvmWriter)
+        jvmWriter.dynamicDelAttr(name)
+        pythonCompiler.checkPop(location)
     }
 }

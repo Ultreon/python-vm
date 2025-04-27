@@ -14,3 +14,5 @@ rootProject.name = "python-vm"
 include("pylib")
 include("compiler")
 include("testing")
+
+include("examples")

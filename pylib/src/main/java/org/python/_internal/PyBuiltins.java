@@ -97,7 +97,7 @@ public class PyBuiltins {
 
     public static Object getattr(Object[] args, Map<String, Object> kwargs) {
         Object obj = args.length == 2 ? args[0] : get(kwargs, "obj");
-        Object name = args.length == 2 ? args[1] : get(kwargs, "name");
+        Object name = args.length == 2 ? args[1] : get(kwargs, "co_name");
         try {
             return ClassUtils.getAttribute(obj, (String) name);
         } catch (Exception e) {
@@ -107,7 +107,7 @@ public class PyBuiltins {
 
     public static Object setattr(Object[] args, Map<String, Object> kwargs) {
         Object obj = args.length == 3 ? args[0] : get(kwargs, "obj");
-        Object name = args.length == 3 ? args[1] : get(kwargs, "name");
+        Object name = args.length == 3 ? args[1] : get(kwargs, "co_name");
         Object value = args.length == 3 ? args[2] : get(kwargs, "value");
         try {
             ClassUtils.setAttribute(obj, (String) name, value);
@@ -119,7 +119,7 @@ public class PyBuiltins {
 
     public static Object delattr(Object[] args, Map<String, Object> kwargs) {
         Object obj = args.length == 2 ? args[0] : get(kwargs, "obj");
-        Object name = args.length == 2 ? args[1] : get(kwargs, "name");
+        Object name = args.length == 2 ? args[1] : get(kwargs, "co_name");
         try {
             ClassUtils.delAttribute(obj, (String) name);
             return null;
@@ -130,7 +130,7 @@ public class PyBuiltins {
 
     public static Object hasattr(Object[] args, Map<String, Object> kwargs) throws Exception {
         Object obj = args.length == 2 ? args[0] : get(kwargs, "obj");
-        Object name = args.length == 2 ? args[1] : get(kwargs, "name");
+        Object name = args.length == 2 ? args[1] : get(kwargs, "co_name");
         return ClassUtils.hasAttribute(obj, (String) name);
     }
 

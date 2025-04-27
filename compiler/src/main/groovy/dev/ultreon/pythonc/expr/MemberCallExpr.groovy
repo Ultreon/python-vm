@@ -47,7 +47,7 @@ class MemberCallExpr extends MemberExpression {
 
     @Override
     void writeAttrOnly(PythonCompiler compiler, JvmWriter writer) {
-        super.writeCode(compiler, writer)
+        super.write(compiler, writer)
     }
 
     static class Builder {

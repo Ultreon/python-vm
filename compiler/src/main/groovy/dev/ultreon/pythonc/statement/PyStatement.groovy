@@ -7,7 +7,7 @@ import org.objectweb.asm.Label
 
 interface PyStatement extends PyAST {
     default void trackLast(PyStatement statement) {
-        StatementTracker.lastStatement = statement
+        PythonCompiler.current.writer.lastLocation(statement.location)
     }
 
     @Override
@@ -19,8 +19,8 @@ interface PyStatement extends PyAST {
             writer.lineNumber(location.lineStart, label)
         }
         writeStatement(compiler, writer)
-        trackLast(this)
         compiler.checkPop(location)
+        trackLast(this)
     }
 
     abstract void writeStatement(PythonCompiler compiler, JvmWriter writer)

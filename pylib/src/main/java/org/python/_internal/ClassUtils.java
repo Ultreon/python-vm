@@ -1,11 +1,11 @@
 package org.python._internal;
 
+import dev.ultreon.pythonc.classes.PyClass;
 import org.codehaus.groovy.util.ArrayIterator;
 import org.python.builtins.*;
+import org.python.builtins.RuntimeError;
 
-import java.io.IOException;
 import java.lang.reflect.*;
-import java.net.URL;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -13,79 +13,44 @@ public class ClassUtils {
     private static List<String> modules;
 
     public static Object initialize(Object obj) {
-        MetaData metaData = MetaDataManager.meta(obj);
+        MetaData meta = MetaDataManager.meta(obj);
 
-        if (obj instanceof PyObject) ((PyObject) obj).__init__();
+        if (obj instanceof PyObject) ((PyObject) obj).__init__(new Object[0], Map.of());
+        if (meta == null) return obj;
+        if (obj instanceof PyClass) {
+            call(meta.has("__new__"), new Object[]{obj}, Map.of());
+        }
+        if (meta.has("__init__")) {
+            call(meta.get("__init__"), new Object[0], Map.of());
+        }
 
         return obj;
     }
 
     public static Object getAttribute(Object obj, String name) {
+        if (name.startsWith("#")) name = "\\" + name;
         if (obj == null) throw new AttributeError(name, null);
-        MetaData metaData = MetaDataManager.meta(obj);
-        if (metaData.has(name)) return metaData.get(name);
-
+        MetaData meta = MetaDataManager.meta(obj);
+        if (meta == null) throw new AttributeError(name, obj);
+        if (meta.has(name)) return meta.get(name);
+        if (meta.has("#" + name + ":getter")) return call(meta.get("#" + name + ":getter"));
         try {
-            return obj.getClass().getMethod("get" + name.substring(0, 1).toUpperCase() + name.substring(1)).invoke(obj);
-        } catch (Exception e) {
-            try {
-                return obj.getClass().getMethod("is" + name.substring(0, 1).toUpperCase() + name.substring(1));
-            } catch (Exception e1) {
-                try {
-                    return obj.getClass().getMethod(name);
-                } catch (Exception e2) {
-                    try {
-                        return obj.getClass().getField(name).get(obj);
-                    } catch (Exception e3) {
-                        if (obj instanceof PyObject) throw new AttributeError(name, obj);
-                        try {
-                            return obj.getClass().getMethod("__getattribute__", String.class).invoke(obj, name);
-                        } catch (Exception e4) {
-                            if (e4 instanceof AttributeError) return getFallbackAttribute(obj, name);
-                            else if (e4 instanceof InvocationTargetException && e4.getCause() instanceof AttributeError)
-                                throw (AttributeError) e4.getCause();
-                            else if (e4 instanceof NoSuchMethodException) throw new AttributeError(name, obj);
-                            else throw new TypeError(e4.toString());
-                        }
-                    }
-                }
-            }
+            if (meta.has("__getattr__")) return call(meta.get("__getattr__"), name);
+        } catch (AttributeError e) {
+            // ignore
         }
+        if (meta.has("__getattribute__")) return call(meta.get("__getattribute__"), name);
+        throw new AttributeError(name, obj);
     }
 
-    private static Object getFallbackAttribute(Object obj, String name) throws AttributeError, TypeError {
-        if (obj == null) throw new AttributeError(name, null);
-        try {
-            return obj.getClass().getMethod("__getattr__", String.class).invoke(obj, name);
-        } catch (IllegalAccessException | InvocationTargetException e) {
-            throw new TypeError(e.toString());
-        } catch (NoSuchMethodException e) {
-            Map<String, Object> dict;
-            try {
-                dict = (Map<String, Object>) obj.getClass().getField("__dict__").get(obj);
-            } catch (Exception e4) {
-                if (e4 instanceof AttributeError) throw (AttributeError) e4;
-                throw new AttributeError(name, obj);
-            }
-            Object o = dict.get(name);
-            if (o == null) throw new AttributeError(name);
-            return o;
-        }
-    }
-
-    @SuppressWarnings("unchecked")
     public static void setAttribute(Object obj, String name, Object value) {
+        if (name.startsWith("#")) name = "\\" + name;
         if (obj == null) throw new AttributeError(name, null);
         try {
             obj.getClass().getMethod("set" + name.substring(0, 1).toUpperCase() + name.substring(1), value.getClass()).invoke(obj, value);
         } catch (Exception e) {
             if (obj instanceof PyObject) {
-                MetaData metaData = MetaDataManager.meta(obj);
-                Collection<String> slots = ClassUtils.getSlots(obj.getClass());
-                if (slots == null || slots.contains(name)) {
-                    metaData.set(name, value);
-                    return;
-                }
+                if (setAttr0(obj, name, value, e)) return;
                 throw new AttributeError(name);
             }
             try {
@@ -94,18 +59,41 @@ public class ClassUtils {
                 try {
                     obj.getClass().getMethod("__setattr__", String.class, value.getClass()).invoke(obj, name, value);
                 } catch (Exception e2) {
-                    MetaData metaData = MetaDataManager.meta(obj);
-                    Collection<String> slots = ClassUtils.getSlots(obj.getClass());
-                    if (slots == null || slots.contains(name)) metaData.set(name, value);
+                    setAttr0(obj, name, value, e2);
                 }
             }
         }
     }
 
-    public static boolean hasAttribute(Object obj, String name) throws Exception {
+    private static boolean setAttr0(Object obj, String name, Object value, Exception e) {
+        if (name.startsWith("#")) name = "\\" + name;
+        MetaData metaData = MetaDataManager.meta(obj);
+        if (metaData == null) throw new AttributeError(name, obj);
+        Collection<String> slots = ClassUtils.getSlots(obj.getClass());
+        if (slots == null || slots.contains(name)) {
+            Method method = (Method) metaData.get("#" + name + ":getter");
+            if (method != null) {
+                try {
+                    method.invoke(obj, value);
+                    return true;
+                } catch (IllegalAccessException ex) {
+                    throw new TypeError("cannot access property '" + name + "'");
+                } catch (InvocationTargetException ex) {
+                    throw new RuntimeError("failed to set property value for '" + name + "': " + e.getLocalizedMessage());
+                }
+            }
+            metaData.set(name, value);
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean hasAttribute(Object obj, String name) {
+        if (name.startsWith("#")) name = "\\" + name;
         if (obj == null) return false;
         MetaData meta = MetaDataManager.meta(obj);
-        if (meta.has(name)) return true;
+        if (meta == null) throw new AttributeError(name, obj);
+        if (meta.has(name) || meta.has("#" + name + ":getter") || meta.has("#" + name + ":setter")) return true;
 
         try {
             getAttribute(obj, name);
@@ -116,10 +104,12 @@ public class ClassUtils {
     }
 
     public static void delAttribute(Object obj, String name) {
+        if (name.startsWith("#")) name = "\\" + name;
         if (obj == null) throw new AttributeError(name, null);
         if (obj instanceof PyObject) throw new AttributeError(name);
 
         MetaData meta = MetaDataManager.meta(obj);
+        if (meta == null) throw new AttributeError(name, obj);
         if (meta.has(name)) {
             meta.del(name);
             return;
@@ -127,45 +117,45 @@ public class ClassUtils {
 
         try {
             obj.getClass().getMethod("__delattr__", String.class).invoke(obj, name);
+        } catch (PyException e) {
+            throw e;
         } catch (Exception e) {
-            Map<String, Object> dict;
-            try {
-                dict = (Map<String, Object>) obj.getClass().getField("__dict__").get(obj);
-            } catch (Exception e4) {
-                throw new AttributeError(name);
-            }
-            Object remove = dict.remove(name);
-            if (remove == null) throw new AttributeError(name);
+            throw new AttributeError(name);
         }
     }
 
-    public static Class<?> getType(Object obj) throws Exception {
+    public static Class<?> getType(Object obj) {
         if (obj == null) return void.class;
         return obj.getClass();
     }
 
-    public static Set<String> getDir(Object arg) {
-        if (arg == null) throw new AttributeError("__dir__", null);
-        MetaData meta = MetaDataManager.meta(arg);
+    public static Set<String> getDir(Object obj) {
+        if (obj == null) throw new AttributeError("__dir__", null);
+        MetaData meta = MetaDataManager.meta(obj);
+        if (meta == null) throw new AttributeError("__dir__", obj);
         if (meta.has("__dir__")) return (Set<String>) meta.get("__dir__");
-
         return meta.dir();
     }
 
-    public static Object getDict(Object arg) {
-        MetaData meta = MetaDataManager.meta(arg);
+    public static Object getDict(Object obj) {
+        MetaData meta = MetaDataManager.meta(obj);
+        if (meta == null) throw new AttributeError("__dir__", obj);
         if (meta.has("__dict__")) return meta.get("__dict__");
 
         return meta.dict();
     }
 
-    public static int getLength(Object obj) {
+    public static Object getLength(Object obj) {
+        MetaData meta = MetaDataManager.meta(obj);
+        if (meta == null) throw new AttributeError("__len__", obj);
+        if (meta.has("__len__")) return call(meta.get("__len__"));
         if (obj.getClass().isArray()) return Array.getLength(obj);
         if (obj instanceof String) return ((String) obj).length();
         if (obj instanceof Collection<?>) return ((Collection<?>) obj).size();
         throw new TypeError("object of type '" + obj.getClass().getSimpleName() + "' has no len()");
     }
 
+    @SuppressWarnings({"rawtypes", "unchecked"})
     public static Object getMax(Collection<?> iterable) {
         Object max = iterable.iterator().next();
         for (Object o : iterable)
@@ -173,11 +163,10 @@ public class ClassUtils {
                 Comparable comparable = (Comparable) o;
                 try {
                     if (comparable.compareTo(max) > 0) max = o;
-                } catch (RuntimeException e) {
-                    // ignore
+                } catch (Exception e) {
+                    // Ignore
                 }
-            } else if (o instanceof PyObject) {
-                PyObject pyObject = (PyObject) o;
+            } else if (o instanceof PyObject pyObject) {
                 try {
                     if (pyObject.__gt__(max)) max = o;
                 } catch (RuntimeException e) {
@@ -187,9 +176,9 @@ public class ClassUtils {
         return max;
     }
 
-    public static Object getMin(Collection<?> iterable) {
-        Object min = iterable.iterator().next();
-        for (Object o : iterable)
+    public static Object getMin(Collection<?> obj) {
+        Object min = obj.iterator().next();
+        for (Object o : obj)
             if (o instanceof Comparable<?>) {
                 Comparable comparable = (Comparable) o;
                 try {
@@ -197,28 +186,34 @@ public class ClassUtils {
                 } catch (RuntimeException e) {
                     // ignore
                 }
-            } else if (o instanceof PyObject) {
-                PyObject pyObject = (PyObject) o;
+            } else if (o instanceof PyObject pyObject) {
                 try {
                     if (pyObject.__lt__(min)) min = o;
                 } catch (RuntimeException e) {
                     // ignore
                 }
-            } else throw new TypeError("object of type '" + o.getClass().getSimpleName() + "' has no __lt__()");
+            } else {
+                MetaData meta = MetaDataManager.meta(obj);
+                if (meta == null) throw new AttributeError("__lt__", obj);
+                if (meta.has("__lt__")) {
+                    Object lesser = call(meta.get("__lt__"), min);
+                    if (!(lesser instanceof Boolean)) throw new TypeError("Function '__lt__' did not return a bool");
+                    if ((boolean) lesser) min = o;
+                } else throw new AttributeError("__lt__", obj);
+            }
         return min;
     }
 
     public static Object getSum(Collection<?> iterable) {
-        Object sum = 0;
+        Number sum = 0;
         for (Object o : iterable)
-            if (o instanceof Number) sum = ((Number) sum).doubleValue() + ((Number) o).doubleValue();
+            if (o instanceof Number) sum = sum.doubleValue() + ((Number) o).doubleValue();
             else throw new TypeError("object of type '" + o.getClass().getSimpleName() + "' has no __add__()");
         return sum;
     }
 
     public static String stringify(Object arg) {
-        if (arg instanceof PyObject) {
-            PyObject pyObject = (PyObject) arg;
+        if (arg instanceof PyObject pyObject) {
             return pyObject.__str__();
         }
         if (arg == null) return "None";
@@ -239,7 +234,7 @@ public class ClassUtils {
 
     public static Object getBool(Object o) {
         if (o instanceof PyObject) return ((PyObject) o).__bool__();
-        if (o instanceof Boolean) return (Boolean) o;
+        if (o instanceof Boolean) return o;
         return o != null;
     }
 
@@ -268,46 +263,46 @@ public class ClassUtils {
         return null;
     }
 
-    public static Object getInt(Object arg) {
-        if (arg instanceof PyObject) return ((PyObject) arg).__int__();
-        if (arg instanceof Number) return ((Number) arg).longValue();
-        MetaData metaData = MetaDataManager.meta(arg);
-        return call(metaData.get("__int__"), new Object[]{arg}, Collections.emptyMap());
+    public static Object getInt(Object obj) {
+        if (obj instanceof PyObject) return ((PyObject) obj).__int__();
+        if (obj instanceof Number) return ((Number) obj).longValue();
+        MetaData meta = MetaDataManager.meta(obj);
+        if (meta == null) throw new AttributeError("__int__", obj);
+        return call(meta.get("__int__"), new Object[]{obj}, Collections.emptyMap());
     }
 
-    public static Object getFloat(Object arg) {
-        if (arg instanceof PyObject) return ((PyObject) arg).__float__();
-        if (arg instanceof Number) return ((Number) arg).doubleValue();
-        MetaData metaData = MetaDataManager.meta(arg);
-        return call(metaData.get("__float__"), new Object[]{arg}, Collections.emptyMap());
+    public static Object getFloat(Object obj) {
+        if (obj instanceof PyObject) return ((PyObject) obj).__float__();
+        if (obj instanceof Number) return ((Number) obj).doubleValue();
+        MetaData meta = MetaDataManager.meta(obj);
+        if (meta == null) throw new AttributeError("__float__", obj);
+        return call(meta.get("__float__"), new Object[]{obj}, Collections.emptyMap());
+    }
+
+    public static Object call(Object value, Object... args) {
+        return call(value, args, Map.of());
     }
 
     public static Object call(Object value, Object[] args, Map<String, Object> kwargs) {
         MetaData metaData = MetaDataManager.meta(value);
-        if (metaData.has("__call__")) {
-            Object o = metaData.get("__call__");
-            if (o instanceof PyFunction) return ((PyFunction) o).__call__(args, kwargs);
-        }
-
         if (value instanceof PyObject) return ((PyObject) value).__call__(args, kwargs);
-        if (value instanceof Method) {
+        if (value instanceof Method method) {
+            if (!kwargs.isEmpty()) throw new TypeError("java functions do not support keyword arguments");
             try {
-                if (Modifier.isStatic(((Method) value).getModifiers())) return ((Method) value).invoke(null, args);
-                else {
-                    return ((Method) value).invoke(args[0], Arrays.copyOfRange(args, 1, args.length));
-                }
+                if (Modifier.isStatic(method.getModifiers())) return method.invoke(null, args);
+                else return method.invoke(args[0], Arrays.copyOfRange(args, 1, args.length));
             } catch (Exception e) {
                 throw new TypeError(e.toString());
             }
         }
-        if (value instanceof Class<?>) {
-            Class<?> aClass = (Class<?>) value;
+        if (value instanceof Class<?> aClass) {
             constructors:
             for (Constructor<?> constructor : aClass.getConstructors())
                 if (constructor.getParameterCount() == args.length) {
                     for (int i = 0; i < args.length; i++) {
                         if (constructor.getParameterTypes()[i].isPrimitive() && args[i] == null) continue constructors;
-                        if (!constructor.getParameterTypes()[i].isPrimitive() && !constructor.getParameterTypes()[i].isInstance(args[i])) continue constructors;
+                        if (!constructor.getParameterTypes()[i].isPrimitive() && !constructor.getParameterTypes()[i].isInstance(args[i]))
+                            continue constructors;
                         if (constructor.getParameterTypes()[i].isPrimitive()) {
                             if (constructor.getParameterTypes()[i] == int.class) {
                                 if (!(args[i] instanceof Integer || args[i] instanceof Long)) continue constructors;
@@ -354,7 +349,12 @@ public class ClassUtils {
 
             throw new TypeError("no matching constructor found for type '" + aClass.getName() + "' with arguments: (" + Arrays.stream(args).map(o -> o == null ? "None" : o.getClass().getName()).collect(Collectors.joining(", ")) + ")");
         }
-        throw new TypeError("object of type '" + value.getClass().getSimpleName() + "' has no __call__()");
+        if (metaData != null && metaData.has("__call__")) {
+            Object o = metaData.get("__call__");
+            if (o instanceof PyFunction) return ((PyFunction) o).__call__(args, kwargs);
+        }
+
+        throw new AttributeError("__call__", value);
     }
 
     public static Map<String, List<Method>> methodsByName(Class<?> aClass) {
@@ -364,13 +364,13 @@ public class ClassUtils {
         stack.push(aClass);
         while (!stack.isEmpty()) {
             for (Method method : aClass.getMethods()) {
-                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), k -> new ArrayList<>());
+                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), _ -> new ArrayList<>());
                 if (methods.contains(method)) continue;
                 methods.add(method);
             }
 
             for (Method method : aClass.getDeclaredMethods()) {
-                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), k -> new ArrayList<>());
+                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), _ -> new ArrayList<>());
                 if (methods.contains(method)) continue;
                 methods.add(method);
             }
@@ -397,7 +397,7 @@ public class ClassUtils {
             if (isInt(self) && isInt(other)) return ((Number) self).longValue() + ((Number) other).longValue();
             return ((Number) self).doubleValue() + ((Number) other).doubleValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __add__()");
+        throw new AttributeError("__add__", self);
     }
 
     public static Object sub(Object self, Object other) {
@@ -406,7 +406,7 @@ public class ClassUtils {
             if (isInt(self) && isInt(other)) return ((Number) self).longValue() - ((Number) other).longValue();
             return ((Number) self).doubleValue() - ((Number) other).doubleValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __sub__()");
+        throw new AttributeError("__sub__", self);
     }
 
     public static Object mul(Object self, Object other) {
@@ -415,7 +415,7 @@ public class ClassUtils {
             if (isInt(self) && isInt(other)) return ((Number) self).longValue() * ((Number) other).longValue();
             return ((Number) self).doubleValue() * ((Number) other).doubleValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __mul__()");
+        throw new AttributeError("__mul__", self);
     }
 
     public static Object div(Object self, Object other) {
@@ -424,7 +424,7 @@ public class ClassUtils {
             if (isInt(self) && isInt(other)) return ((Number) self).longValue() / ((Number) other).longValue();
             return ((Number) self).doubleValue() / ((Number) other).doubleValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __div__()");
+        throw new AttributeError("__div__", self);
     }
 
     public static Object mod(Object self, Object other) {
@@ -433,7 +433,7 @@ public class ClassUtils {
             if (isInt(self) && isInt(other)) return ((Number) self).longValue() % ((Number) other).longValue();
             return ((Number) self).doubleValue() % ((Number) other).doubleValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __mod__()");
+        throw new AttributeError("__mod__", self);
     }
 
     private static boolean isInt(Object self) {
@@ -465,7 +465,7 @@ public class ClassUtils {
                 return (long) Math.pow(((Number) self).longValue(), ((Number) other).longValue());
             return Math.pow(((Number) self).doubleValue(), ((Number) other).doubleValue());
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __pow__()");
+        throw new AttributeError("__pow__", self);
     }
 
     public static Object floordiv(Object self, Object other) {
@@ -473,7 +473,7 @@ public class ClassUtils {
         if (self instanceof Number) {
             return Math.floorDiv(((Number) self).longValue(), ((Number) other).longValue());
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __floordiv__()");
+        throw new AttributeError("__floordiv__", self);
     }
 
     public static Object truediv(Object self, Object other) {
@@ -482,7 +482,7 @@ public class ClassUtils {
             if (isInt(self) && isInt(other)) return ((Number) self).longValue() / ((Number) other).longValue();
             return ((Number) self).doubleValue() / ((Number) other).doubleValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __truediv__()");
+        throw new AttributeError("__truediv__", self);
     }
 
     public static Object lshift(Object self, Object other) {
@@ -492,7 +492,7 @@ public class ClassUtils {
                 throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __lshift__()");
             return ((Number) self).longValue() << ((Number) other).intValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __lshift__()");
+        throw new AttributeError("__lshift__", self);
     }
 
     public static Object rshift(Object self, Object other) {
@@ -502,7 +502,7 @@ public class ClassUtils {
                 throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __rshift__()");
             return ((Number) self).longValue() >> ((Number) other).intValue();
         }
-        throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __rshift__()");
+        throw new AttributeError("__rshift__", self);
     }
 
     public static Object and(Object self, Object other) {
@@ -659,7 +659,7 @@ public class ClassUtils {
         throw new TypeError("object of type '" + self.getClass().getSimpleName() + "' has no __next__()");
     }
 
-    public static Object zip(Object iterable) {
+    public static Object zip(Object ignoredIterable) {
         throw new NotImplementedError();
     }
 
@@ -676,7 +676,7 @@ public class ClassUtils {
         ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
         List<String> modules = new ArrayList<>();
         try {
-            List<Package> packages = Arrays.asList(classLoader.getDefinedPackages());
+            Package[] packages = classLoader.getDefinedPackages();
             for (Package pkg : packages) {
                 modules.add(pkg.getName());
             }
@@ -730,5 +730,70 @@ public class ClassUtils {
 
     public static Object importModule(String module) {
         return importModule(module, "*");
+    }
+
+    public static Object newClass(Class<?> type) {
+        MetaData meta = MetaDataManager.meta(type);
+        meta.set("__getattr__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
+                        .stackSize(1).flags(0).varNames("key")
+                        .filename("_builtins.class").name("__getattr__").firstLineNo(1).build(),
+                (args, _) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    return meta.get((String) arg);
+                }));
+        meta.set("__getattribute__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
+                        .stackSize(1).flags(0).varNames("key")
+                        .filename("_builtins.class").name("__getattribute__").firstLineNo(1).build(),
+                (args, kwargs) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    if (!meta.has((String) arg)) {
+                        PyObject attr = (PyObject) meta.get("__getattr__");
+                        if (attr == null) throw new AttributeError((String) arg, type);
+                        return attr.__call__(args, kwargs);
+                    }
+                    return meta.get((String) arg);
+                }));
+        meta.set("__setattr__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(2).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
+                        .stackSize(2).flags(0).varNames("key", "value")
+                        .filename("_builtins.class").name("__setattr__").firstLineNo(1).build(),
+                (args, _) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    meta.set((String) arg, args[1]);
+                    return null;
+                }));
+        meta.set("__delattr__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
+                        .stackSize(1).flags(0).varNames("key")
+                        .filename("_builtins.class").name("__delattr__").firstLineNo(1).build(),
+                (args, _) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    meta.del((String) arg);
+                    return null;
+                }));
+        meta.set("__init__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(0).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
+                        .stackSize(2).flags(PyCode.CO_VARARGS | PyCode.CO_VARKEYWORDS).varNames("args", "kwargs")
+                        .filename("_builtins.class").name("__init__").firstLineNo(1).build(),
+                (args, _) -> {
+                    ClassUtils.initialize(args[0]);
+                    return null;
+                }));
+
+        return type;
     }
 }

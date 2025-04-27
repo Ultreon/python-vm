@@ -11,6 +11,13 @@ class PyEval extends PyExpression {
     private final PyExpression finalValue
     private final PyExpression finalAddition
 
+    PyEval(Operator operator, PyExpression finalValue, PyExpression finalAddition, Location location) {
+        super(location)
+        this.operator = operator
+        this.finalValue = finalValue
+        this.finalAddition = finalAddition
+    }
+
     enum Operator {
         ADD, SUB, MUL, DIV, MOD, FLOORDIV, AND, LSHIFT, RSHIFT, OR, XOR, UNARY_NOT, UNARY_PLUS, UNARY_MINUS, POW, IS, IS_NOT, IN, NOT_IN, EQ, NE, LT, LE, GT, GE
 
@@ -50,15 +57,9 @@ class PyEval extends PyExpression {
                 case LE: return "[$left]$Location.ANSI_RED <= $Location.ANSI_RESET[$right]"
                 case GT: return "[$left]$Location.ANSI_RED > $Location.ANSI_RESET[$right]"
                 case GE: return "[$left]$Location.ANSI_RED >= $Location.ANSI_RESET[$right]"
+                default: throw new IllegalStateException()
             }
         }
-    }
-
-    PyEval(Operator operator, PyExpression finalValue, PyExpression finalAddition, Location location) {
-        super(location)
-        this.operator = operator
-        this.finalValue = finalValue
-        this.finalAddition = finalAddition
     }
 
     @Override
@@ -80,11 +81,31 @@ class PyEval extends PyExpression {
             return
         }
         finalValue.write(compiler, writer)
+        if (operator != null && !operator.unary) {
+            doUnaryOperation(compiler)
+            return
+        }
         compiler.writer.cast(type(Object))
         if (writer.context.peek() != type(void)) {
             if (stackSize + 1 != compiler.context.stackSize) {
                 throw new CompilerException("Invalid stack size after 'eval' expression", location)
             }
+        }
+    }
+
+    void doUnaryOperation(PythonCompiler pythonCompiler) {
+        switch (operator) {
+            case UNARY_NOT:
+                pythonCompiler.writer.dynamicNot()
+                break
+            case UNARY_PLUS:
+                pythonCompiler.writer.dynamicPos()
+                break
+            case UNARY_MINUS:
+                pythonCompiler.writer.dynamicNeg()
+                break
+            default:
+                throw new IllegalStateException()
         }
     }
 

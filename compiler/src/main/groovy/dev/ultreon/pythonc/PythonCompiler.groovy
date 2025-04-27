@@ -1,6 +1,7 @@
 package dev.ultreon.pythonc
 
 import com.google.common.base.CaseFormat
+import dev.ultreon.pythonc.Context
 import dev.ultreon.pythonc.classes.*
 import dev.ultreon.pythonc.expr.*
 import dev.ultreon.pythonc.expr.fstring.FStringElement
@@ -34,7 +35,7 @@ import java.util.zip.ZipEntry
 
 import static org.objectweb.asm.Opcodes.*
 
-@SuppressWarnings(value = [ "t" , "UnusedReturnValue" ])
+@SuppressWarnings(value = ["t", "UnusedReturnValue"])
 class PythonCompiler extends PythonParserBaseVisitor<Object> {
     public static final int F_CPL_FUNCTION = 0
     public static final int F_CPL_CLASS = 1
@@ -59,7 +60,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     public builtins = new Builtins(this)
 
     def undefinedClasses = new LinkedHashSet<>()
-    private ClassNode classOut = null
+    public ClassNode classOut = null
     private Path pathOfFile
     private String path = ""
     private String fileName = "Main"
@@ -84,7 +85,8 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     public PyClass definingClass
     @Nullable
     public Module definingModule
-    @Nullable PyClass definingInstance
+    @Nullable
+    PyClass definingInstance
     def PyFunction definingFunction
     private final Stack<MemberContext> memberContextStack = new Stack<>()
     public static final JvmModuleCache moduleCache = new JvmModuleCache()
@@ -611,7 +613,8 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         return statements
     }
 
-    private @Nullable ErrorValue checkPopped(PythonParser.StatementsContext ctx, int i) {
+    private @Nullable
+    ErrorValue checkPopped(PythonParser.StatementsContext ctx, int i) {
         Context context = context(Context.class)
         if (context.popNeeded && i > 0) {
             PythonParser.StatementContext statement = ctx.statement(i - 1)
@@ -688,12 +691,12 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     TryExceptStatement visitTry_stmt(PythonParser.Try_stmtContext ctx) {
         PythonParser.BlockContext block = ctx.block()
         if (block == null) throw new CompilerException("Try statement doesn't have content", locate(ctx))
-    
+
         PyBlock tryBlock = visitBlock(block);
         List<CatchBlock> collect = ctx.except_block().collect { exceptBlock ->
             PythonParser.BlockContext exceptBlockContent = exceptBlock.block()
             if (exceptBlockContent == null) throw new CompilerException("Except statement doesn't have content", locate(exceptBlock))
-            
+
             // Get exception type (default to Exception if not specified)
             def exprCtx = exceptBlock.expression()
             flags.set(F_CPL_TYPE_ANNO)
@@ -713,31 +716,31 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 default:
                     throw new RuntimeException("Unsupported exception type: " + expr.class.name)
             }
-            
+
             // Get exception variable name if it exists
             String varName = null
             if (exceptBlock.NAME() != null) {
                 varName = exceptBlock.NAME().getText()
             }
-            
+
             // Create catch block with exception type, variable name, and block content
             new CatchBlock(
-                exceptionType, 
-                visitBlock(exceptBlockContent),
-                varName
+                    exceptionType,
+                    visitBlock(exceptBlockContent),
+                    varName
             )
         }
-    
+
         PyBlock elseBlock = null
         if (ctx.else_block() != null) {
             elseBlock = visitElse_block(ctx.else_block())
         }
-    
+
         PyBlock finallyBlock = null
         if (ctx.finally_block() != null) {
             finallyBlock = visitFinally_block(ctx.finally_block())
         }
-    
+
         return new TryExceptStatement(tryBlock, finallyBlock, elseBlock, collect.toArray(new CatchBlock[0]) as CatchBlock[], locate(ctx))
     }
 
@@ -752,12 +755,13 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         if (block == null) throw new CompilerException("While statement doesn't have content", locate(ctx))
 
         List<PyExpression> expressions = visitStar_targets(ctx.star_targets())
+        def target = expressions.first
         if (expressions.size() > 1)
-            throw new CompilerException("For statement can only have one target", locate(ctx))
+            target = new TupleExtractionExpr(expressions.toArray(PyExpression[]::new), locate(ctx))
         if (expressions.empty)
             throw new CompilerException("For statement must have at least one target", locate(ctx))
 
-        List<StarExpression> starExpressions = visitStar_expressions(ctx.star_expressions())
+        List<PyStarExpression> starExpressions = visitStar_expressions(ctx.star_expressions())
 
 
         PyBlock elseBlock = null
@@ -765,7 +769,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             elseBlock = visitElse_block(ctx.else_block())
         }
 
-        return new ForStatement(starExpressions.first.expression(), (Settable) expressions.first, visitBlock(block), elseBlock, locate(ctx))
+        return new ForStatement(starExpressions.first.expression(), (Settable) target, visitBlock(block), elseBlock, locate(ctx))
     }
 
     @Override
@@ -975,7 +979,9 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
                 definingFunction = new PyFunction(definingClass, "<init>", parameters.toArray(PyParameter[]::new), classCache.void_(this), false, location)
                 definingFunction.node.visitVarInsn(Opcodes.ALOAD, 0)
-                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false)
+
+                def supers = definingClass.superClasses()
+                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, supers.length == 0 ? "java/lang/Object" : supers[0].type.internalName, "<init>", "()V", false)
 
                 callPyInit(ctx, definingClass, definingFunction.node, parameters, sig)
 
@@ -988,7 +994,9 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             } else {
                 definingFunction = new PyFunction(definingClass, "<init>", parameters.toArray(PyParameter[]::new), classCache.void_(this), false, location)
                 definingFunction.node.visitVarInsn(Opcodes.ALOAD, 0)
-                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false)
+
+                def supers = definingClass.superClasses()
+                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, supers.length == 0 ? "java/lang/Object" : supers[0].type.internalName, "<init>", "()V", false)
 
                 for (JvmClass jvmClass : definingClass.superClasses()) {
                     // TODO Multiple inheritance
@@ -1065,7 +1073,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
         }
 
-        ctorInitMv.visitMethodInsn(INVOKEVIRTUAL, jvmClass.type.internalName, "__init__", "(" + sig + ")Ljava/lang/Object;", false)
+        ctorInitMv.visitMethodInsn(INVOKEVIRTUAL, jvmClass.type.internalName, "-def-__init__", "(" + sig + ")Ljava/lang/Object;", false)
         ctorInitMv.visitInsn(POP)
     }
 
@@ -1110,6 +1118,9 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         PythonParser.StatementsContext statementsContext = ctx.statements()
         if (statementsContext != null) {
             List<PyStatement> statements = visitStatements(statementsContext)
+            if (statements.size() == 1 && statements.first instanceof PyBlock) {
+                return (PyBlock) statements.first
+            }
             return new PyBlock(statements, locate(ctx))
         }
         throw new RuntimeException("No supported matching statements found for:\n" + getTextFor(ctx))
@@ -1436,7 +1447,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         throw new RuntimeException("No supported matching class_def found for:\n" + getTextFor(ctx))
     }
 
-    private String getTextFor(ParserRuleContext ctx) {
+    public String getTextFor(ParserRuleContext ctx) {
         Location location = locate(ctx)
         return location.formattedText
     }
@@ -1492,6 +1503,21 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         this.rootInitMv = methodOut
 
         PyBlock visit = visitBlock(ctx.block())
+
+        boolean first = true
+        for (PyStatement statement : visit.statements) {
+            if (first && statement instanceof ExpressionStatement) {
+                def starExpr = ((ExpressionStatement) statement).expression.first
+                if (!starExpr.star() && starExpr.expression() instanceof ConstantExpr) {
+                    def constantExpr = (ConstantExpr) starExpr.expression()
+                    def value1 = constantExpr.value()
+                    if (value1 instanceof String) {
+                        definingClass.definition.doc = (String) value1
+                    }
+                }
+            }
+            first = false
+        }
         if (visit == null) {
             throw new RuntimeException("block not supported for:\n" + getTextFor(ctx))
         }
@@ -1512,13 +1538,13 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         var oldState = state
         state = State.Decorators
         List<Object> visit = new ArrayList<>()
-        for (PythonParser.Named_expressionContext namedExpressionContext : namedExpressionContexts) {
-            visit.add(visit(namedExpressionContext))
-        }
-        if (state != State.Decorators) {
-            throw new RuntimeException("Not in decorator state!")
-        }
-        state = oldState
+//        for (PythonParser.Named_expressionContext namedExpressionContext : namedExpressionContexts) {
+//            visit.addLast(visit(namedExpressionContext))
+//        }
+//        if (state != State.Decorators) {
+//            throw new RuntimeException("Not in decorator state!")
+//        }
+//        state = oldState
         return visit
     }
 
@@ -1556,7 +1582,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
         PythonParser.Del_stmtContext delStmtContext = ctx.del_stmt()
         if (delStmtContext != null) {
-            throw new RuntimeException("del_stmt not supported for:\n" + delStmtContext.text)
+            return visitDel_stmt(delStmtContext)
         }
 
         PythonParser.Global_stmtContext globalStmtContext = ctx.global_stmt()
@@ -1615,6 +1641,48 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         throw new RuntimeException("No supported matching simple_stmt found of owner " + ctx.class.simpleName + " for:\n" + getTextFor(ctx))
     }
 
+    @Override
+    Object visitDel_stmt(PythonParser.Del_stmtContext ctx) {
+        def targets = visitDel_targets(ctx.del_targets())
+        return new DelStatement(targets, locate(ctx))
+    }
+
+    @Override
+    List<Deletion> visitDel_targets(PythonParser.Del_targetsContext ctx) {
+        return ctx.del_target().collect { visitDel_target(it) }
+    }
+
+    @Override
+    Deletion visitDel_target(PythonParser.Del_targetContext ctx) {
+        def name = ctx.NAME()
+        def atom = ctx.del_t_atom()
+        def primary = ctx.t_primary()
+
+        if (atom != null && primary != null) {
+            throw new RuntimeException("No supported matching del_target found for:\n" + getTextFor(ctx))
+        }
+
+        PyExpression expr
+        if (name != null) {
+            expr = new SymbolReferenceExpr(name.getText(), locate(name))
+        } else {
+            if (atom == null && primary == null) {
+                throw new RuntimeException("No supported matching del_target found for:\n" + getTextFor(ctx))
+            }
+            expr = atom != null ? visitDel_t_atom(atom) : visitT_primary(primary)
+        }
+
+        if (ctx.LSQB() != null && ctx.RSQB() != null) {
+            return new DelSubscript(expr, visitSlices(ctx.slices()), locate(ctx))
+        }
+        return new DelTarget(expr, locate(ctx))
+    }
+
+    @Override
+    PyExpression visitDel_t_atom(PythonParser.Del_t_atomContext ctx) {
+        throw new RuntimeException("No supported matching del_t_atom found for:\n" + getTextFor(ctx))
+    }
+
     RaiseStatement visitRaise_stmt(PythonParser.Raise_stmtContext ctx) {
         List<PythonParser.ExpressionContext> expression = ctx.expression()
         if (expression.size() == 1) {
@@ -1627,10 +1695,27 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     ReturnStatement visitReturn_stmt(PythonParser.Return_stmtContext ctx) {
         PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions()
         if (starExpressionsContext != null) {
-            List<StarExpression> visit = visitStar_expressions(starExpressionsContext)
+            List<PyStarExpression> visit = visitStar_expressions(starExpressionsContext)
             return new ReturnStatement(visit, definingFunction, locate(ctx))
         }
         throw new RuntimeException("No supported matching return_stmt found for:\n" + getTextFor(ctx))
+    }
+
+    @Override
+    Settable visitSingle_subscript_attribute_target(PythonParser.Single_subscript_attribute_targetContext ctx) {
+        def expr = visitT_primary(ctx.t_primary())
+        if (expr == null) {
+            throw new RuntimeException("No supported matching single_subscript_attribute_target found for:\n" + getTextFor(ctx))
+        }
+        if (ctx.DOT() != null && ctx.NAME() != null) {
+            String name = ctx.NAME().text
+            expr = new MemberAttrExpr(expr, name, locate(ctx))
+        }
+        if (ctx.LSQB() != null && ctx.RSQB() != null) {
+            expr = new PySubscriptExpression(expr, visitSlices(ctx.slices()), locate(ctx))
+        }
+
+        return expr
     }
 
     @Override
@@ -1644,6 +1729,50 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
             if (name == null) {
                 List<PythonParser.Star_targetsContext> starTargetsContexts = ctx.star_targets()
+                if (starTargetsContexts.size() == 0) {
+                    def target = ctx.single_subscript_attribute_target()
+                    if (target == null) {
+                        throw new CompilerException("Invalid assignment", locate(ctx))
+                    }
+                    def assignTarget = visitSingle_subscript_attribute_target(target)
+                    if (assignTarget == null) {
+                        throw new CompilerException("Invalid assignment", locate(ctx))
+                    }
+                    Type type = Type.getType(Object)
+                    if (ctx.annotated_rhs() != null) {
+                        flags.set(F_CPL_TYPE_ANNO)
+                        type = visitAnnotated_rhs(ctx.annotated_rhs()).type
+                        flags.clear(F_CPL_TYPE_ANNO)
+                    }
+
+                    if (assignTarget instanceof MemberAttrExpr) {
+                        MemberAttrExpr memberAttrExpr = (MemberAttrExpr) assignTarget
+                        if (memberAttrExpr.parent instanceof SymbolReferenceExpr) {
+                            SymbolReferenceExpr symbolReferenceExpr = (SymbolReferenceExpr) memberAttrExpr.parent
+                            if (symbolReferenceExpr.name == "self" && definingFunction != null && !definingFunction.isStatic()) {
+                                // Add getter and setter methods to self for Java interop
+                                def nam = memberAttrExpr.name
+                                if ("_" in nam) {
+                                    nam = CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, memberAttrExpr.name)
+                                } else {
+                                    nam = CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_CAMEL, memberAttrExpr.name)
+                                }
+                                String getterName = "get" + nam
+                                String setterName = "set" + nam
+                                PyFunction getter = new PyFunction(definingFunction.owner, getterName, new PyParameter[0], classCache.require(this, type), false, locate(ctx))
+                                PyFunction setter = new PyFunction(definingFunction.owner, setterName, new PyParameter[]{new PyTypedParameter("value", classCache.require(this, type), locate(ctx))}, classCache.void_(this), false, locate(ctx))
+                                getter.body = new PyBlock([new ReturnStatement(List.of(new PyStarExpression(memberAttrExpr, false, locate(ctx))), getter, locate(ctx))], locate(ctx))
+                                setter.body = new PyBlock([new AssignmentStatement(new Settable[]{memberAttrExpr}, new VariableExpr(1, "value", locate(ctx)), locate(ctx))], locate(ctx))
+
+                                (definingFunction.owner as PyClass).definition.functions.add(getter)
+                                (definingFunction.owner as PyClass).definition.functions.add(setter)
+
+                                return new AssignmentStatement(new Settable[]{assignTarget}, visitExpression(ctx.expression()), locate(ctx))
+                            }
+                        }
+                    }
+                    return new AssignmentStatement(new Settable[]{assignTarget}, visitExpression(ctx.expression()), locate(ctx))
+                }
                 if (starTargetsContexts.size() != 1) {
                     // TODO Add support for multiple star targets
                     throw new RuntimeException("Expected 1 variable target, got " + starTargetsContexts.size() + " which is unsupported for now, code: " + getTextFor(ctx))
@@ -1659,26 +1788,18 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     throw new RuntimeException("Variable target is not found :\n" + getTextFor(ctx))
                 }
 
-
-                if (starTargetContext.size() != 1) {
-                    // TODO Add support for multiple star targets
-                    throw new RuntimeException("Expected 1 variable target, got " + starTargetContext.size() + " which is unsupported for now.")
-                }
-                PythonParser.Star_targetContext starTargetContext1 = starTargetContext.first
-                if (starTargetContext1 == null) {
+                def target
+                if (starTargetContext.size() > 1) {
+                    target = new TupleExtractionExpr(starTargetContext.collect { visitStar_target(it) }.toArray(new PyExpression[0]), locate(ctx))
+                } else if (starTargetContext.size() == 1) {
+                    target = visitStar_target(starTargetContext.first)
+                } else {
                     throw new RuntimeException("Variable target is not found :\n" + getTextFor(ctx))
                 }
 
-                PythonParser.Target_with_star_atomContext targetWithStarAtomContext = starTargetContext1.target_with_star_atom()
-                if (targetWithStarAtomContext == null) {
-                    throw new RuntimeException("Variable target is not found :\n" + getTextFor(ctx))
-                }
-
-                PythonParser.Star_atomContext targetContext = targetWithStarAtomContext.star_atom()
-                if (targetContext == null) {
-                    List<?> visit = (List<?>) visit(starTargetsContext)
-                    Object first = visit.first
-
+                def targetWithStarAtom = starTargetContext.collect { it.target_with_star_atom() }
+                def targetContext = targetWithStarAtom.collect { it.star_atom() }
+                if (targetContext.empty) {
                     PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions()
                     if (starExpressionsContext == null) {
                         throw new RuntimeException("Value for variable assignment wasn't found.")
@@ -1692,18 +1813,17 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         throw new RuntimeException("Expression for variable assignment wasn't found.")
                     }
 
-                    if (first instanceof MemberAttrExpr) {
-                        MemberAttrExpr field = (MemberAttrExpr) first
-                        return new AssignmentStatement(new Settable[]{field}, expression, locate(ctx))
-                    } else if (first instanceof Settable) {
-                        Settable expr = (Settable) first
-                        return new AssignmentStatement(new Settable[]{expr}, expression, locate(ctx))
-                    } else {
-                        throw new RuntimeException("Variable target is not found for '" + first.class.name + "' at:\n" + getTextFor(ctx))
+                    List<Settable> settables = targetContext.collect { first ->
+                        if (first instanceof MemberAttrExpr) {
+                            return (MemberAttrExpr) first
+                        } else if (first instanceof Settable) {
+                            return (Settable) first
+                        } else {
+                            throw new RuntimeException("Variable target is not found for '" + first.class.name + "' at:\n" + getTextFor(ctx))
+                        }
                     }
+                    return new AssignmentStatement(settables.toArray(new Settable[0]), expression, locate(ctx))
                 }
-
-                name = targetContext.NAME().text
 
                 PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions()
                 if (starExpressionsContext == null) {
@@ -1721,69 +1841,80 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 if (definingFunction == null) {
                     if (definingClass == null) {
                         if (definingModule == null) throw new IllegalStateException("Unknown module!" + getTextFor(ctx))
-                        Type type = Type.getType(Object.class)
-                        @Nullable String finalName = name
-                        JvmClass require = classCache.require(this, type)
-                        def definingModule = this.definingModule
-                        PyFunction getterFunc = PyFunction.withContent(definingModule, getterName(name), new PyParameter[0], require, true, locate(ctx), getterMethod -> {
-                            if (definingModule != null) {
-                                writer.loadClass(definingModule)
-                            } else {
-                                throw new RuntimeException("Not in root class")
-                            }
-                            writer.dynamicGetAttr(finalName)
-                            writer.returnValue(type, locate(ctx))
-                        })
+                        def fields = targetContext.collect { atomic ->
+                            name = atomic.NAME().getText()
+                            Type type = Type.getType(Object.class)
+                            @Nullable String finalName = name
+                            JvmClass require = classCache.require(this, type)
+                            def definingModule = this.definingModule
+                            PyFunction getterFunc = PyFunction.withContent(definingModule, getterName(name), new PyParameter[0], require, true, locate(ctx), getterMethod -> {
+                                if (definingModule != null) {
+                                    writer.loadClass(definingModule)
+                                } else {
+                                    throw new RuntimeException("Not in root class")
+                                }
+                                writer.dynamicGetAttr(finalName)
+                                writer.returnValue(type, locate(ctx))
+                            })
 
-                        definingModule.addFunction(getterFunc)
+                            definingModule.addFunction(getterFunc)
 
-                        PyFunction setterFunc = PyFunction.withContent(definingModule, setterName(name), new PyParameter[]{new PyTypedParameter("value", classCache.object(this), locate(ctx))}, classCache.void_(this), true, locate(ctx), setterMethod -> {
-                            if (definingModule != null) {
-                                writer.loadClass(definingModule)
-                            } else {
-                                throw new RuntimeException("Not in root class")
-                            }
-                            writer.loadValue(0, type)
-                            writer.cast(Type.getType(Object.class))
-                            writer.dynamicSetAttr(finalName)
-                            writer.returnVoid()
-                        })
+                            PyFunction setterFunc = PyFunction.withContent(definingModule, setterName(name), new PyParameter[]{new PyTypedParameter("value", classCache.object(this), locate(ctx))}, classCache.void_(this), true, locate(ctx), setterMethod -> {
+                                if (definingModule != null) {
+                                    writer.loadClass(definingModule.type)
+                                } else {
+                                    throw new RuntimeException("Not in root class")
+                                }
+                                writer.loadValue(0, type)
+                                writer.cast(Type.getType(Object.class))
+                                writer.dynamicSetAttr(finalName)
+                                writer.returnVoid()
+                            })
+                            definingModule.addFunction(setterFunc)
 
-                        definingModule.addFunction(setterFunc)
-                        return new AssignmentStatement(new Settable[]{new MemberAttrExpr(definingModule, finalName, locate(ctx))}, visit1, locate(ctx))
+                            new MemberAttrExpr(this.definingModule, finalName, locate(ctx))
+                        }
+
+                        return new AssignmentStatement(fields.toArray(new Settable[0]), visit1, locate(ctx))
                     } else {
                         if (definingClass == null) throw new IllegalStateException("Unknown module!" + getTextFor(ctx))
-                        Type type = Type.getType(Object.class)
-                        @Nullable String finalName = name
-                        JvmClass require = classCache.require(this, type)
+                        def fields = targetContext.collect { atomic ->
+                            name = atomic.NAME().getText()
 
-                        def definingClass = this.definingClass
-                        PyFunction getterFunc = PyFunction.withContent(definingClass, getterName(name), new PyParameter[0], require, true, locate(ctx), getterMethod -> {
-                            if (definingClass != null) {
-                                writer.loadClass(definingClass)
-                            } else {
-                                throw new RuntimeException("Not in root class")
-                            }
-                            writer.dynamicGetAttr(finalName)
-                            writer.returnValue(type, locate(ctx))
-                        })
+                            Type type = Type.getType(Object.class)
+                            @Nullable String finalName = name
+                            JvmClass require = classCache.require(this, type)
 
-                        definingClass.addFunction(getterFunc)
+                            def definingClass = this.definingClass
+                            PyFunction getterFunc = PyFunction.withContent(definingClass, getterName(name), new PyParameter[0], require, true, locate(ctx), getterMethod -> {
+                                if (definingClass != null) {
+                                    writer.loadClass(definingClass)
+                                } else {
+                                    throw new RuntimeException("Not in root class")
+                                }
+                                writer.dynamicGetAttr(finalName)
+                                writer.returnValue(type, locate(ctx))
+                            })
 
-                        PyFunction setterFunc = PyFunction.withContent(definingClass, setterName(name), new PyParameter[]{new PyTypedParameter("value", classCache.object(this), locate(ctx))}, classCache.void_(this), true, locate(ctx), setterMethod -> {
-                            if (definingClass != null) {
-                                writer.loadClass(definingClass)
-                            } else {
-                                throw new RuntimeException("Not in root class")
-                            }
-                            writer.loadValue(0, type)
-                            writer.cast(Type.getType(Object.class))
-                            writer.dynamicSetAttr(finalName)
-                            writer.returnVoid()
-                        })
+                            definingClass.addFunction(getterFunc)
 
-                        definingClass.addFunction(setterFunc)
-                        return new AssignmentStatement(new Settable[]{new MemberAttrExpr(definingClass, finalName, locate(ctx))}, visit1, locate(ctx))
+                            PyFunction setterFunc = PyFunction.withContent(definingClass, setterName(name), new PyParameter[]{new PyTypedParameter("value", classCache.object(this), locate(ctx))}, classCache.void_(this), true, locate(ctx), setterMethod -> {
+                                if (definingClass != null) {
+                                    writer.loadClass(definingClass)
+                                } else {
+                                    throw new RuntimeException("Not in root class")
+                                }
+                                writer.loadValue(0, type)
+                                writer.cast(Type.getType(Object.class))
+                                writer.dynamicSetAttr(finalName)
+                                writer.returnVoid()
+                            })
+                            definingClass.addFunction(setterFunc)
+
+                            new MemberAttrExpr(this.definingClass, finalName, locate(ctx))
+                        }
+
+                        return new AssignmentStatement(fields.toArray(new Settable[0]), visit1, locate(ctx))
                     }
                 } else if (hasSymbol(name)) {
                     PySymbol symbol = getSymbol(name)
@@ -1796,7 +1927,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                         throw new IllegalStateException("Unknown symbol type! Got: " + symbol.class.name)
                     }
                 } else {
-                    createVariable(name, visit1, locate(ctx))
+                    return new AssignmentStatement(new Settable[]{target}, visit1, locate(ctx))
                 }
             }
 
@@ -1805,7 +1936,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 throw new RuntimeException("augassign not supported for:\n" + getTextFor(ctx))
             }
             PythonParser.Star_expressionsContext starExpressionsContext = ctx.star_expressions()
-            List<StarExpression> starExpressions = null
+            List<PyStarExpression> starExpressions = null
             if (starExpressionsContext != null) {
                 starExpressions = visitStar_expressions(starExpressionsContext)
             }
@@ -1932,7 +2063,48 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             } else {
                 if (definingFunction.name == "<init>" || definingFunction.name == "__init__") {
                     if (definingModule == null) throw new RuntimeException("Not in a module?" + locate(ctx))
-                    throw new CompilerException("Annotated RHS is required " + locate(ctx))
+
+                    if (ctx.star_targets().empty) {
+                        throw new CompilerException("Targets are required ", locate(ctx))
+                    }
+
+                    List<PythonParser.Star_targetsContext> starTargetsContexts = ctx.star_targets()
+                    if (starTargetsContexts.size() != 1) {
+                        throw new CompilerException("Not supported", locate(ctx))
+                    }
+
+                    List<PyExpression> first = visitStar_targets(starTargetsContexts.first)
+                    if (first.size() != 1) {
+                        throw new CompilerException("Not supported", locate(ctx))
+                    }
+
+                    if (first.first instanceof MemberAttrExpr) {
+                        MemberAttrExpr memberAttrExpr = (MemberAttrExpr) first.first
+                        if (memberAttrExpr.parent instanceof SelfExpr) {
+                            // Add fields for assignment
+                            def nam = memberAttrExpr.name
+                            if ("_" in nam) {
+                                nam = CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, nam)
+                            } else {
+                                nam = CaseFormat.LOWER_CAMEL.to(CaseFormat.UPPER_CAMEL, nam)
+                            }
+
+                            PyFunction getter = new PyFunction(definingFunction.owner, nam, new PyParameter[0], classCache.object(this), false, locate(ctx))
+                            PyFunction setter = new PyFunction(definingFunction.owner, "set" + nam, new PyParameter[]{new PyTypedParameter("value", classCache.object(this), locate(ctx))}, classCache.void_(this), false, locate(ctx))
+
+                            getter.body = PyBlock.builder(locate(ctx))
+                                    .statement(new ReturnStatement(List.of(new PyStarExpression(memberAttrExpr, false, locate(ctx))), definingFunction, locate(ctx)))
+                                    .build()
+
+                            setter.body = PyBlock.builder(locate(ctx))
+                                    .statement(new AssignmentStatement(new Settable[]{memberAttrExpr}, new VariableExpr(1, "value", locate(ctx)), locate(ctx)))
+                                    .build()
+
+                            definingFunction.owner.addFunction(getter)
+                            definingFunction.owner.addFunction(setter)
+                        }
+                    }
+                    return new AssignmentStatement(first.toArray(Settable[]::new), starExpressions.first.expression(), locate(ctx))
                 } else {
                     if (starExpressions == null) {
                         throw new CompilerException("Annotated RHS is required ", locate(ctx))
@@ -1985,12 +2157,12 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             throw new CompilerException("Generators (yield) are not supported yet!", locate(yieldExprContext))
         }
 
-        List<StarExpression> o = visitStar_expressions(ctx.star_expressions())
+        List<PyStarExpression> o = visitStar_expressions(ctx.star_expressions())
         if (o.size() > 1)
             throw new CompilerException("Too many expressions for annotation!", locate(ctx.star_expressions()))
         if (o.empty)
             throw new CompilerException("Expected an annotation", locate(ctx.star_expressions()))
-        StarExpression first = o.first
+        PyStarExpression first = o.first
         if (first.expression() instanceof PyExpression) {
             PyExpression expression = first.expression()
             return expression
@@ -1999,10 +2171,13 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     void swapMethod(MethodNode methodNode, Closure func) {
+        def prot = AbstractContext.isProtected()
+        if (prot) AbstractContext.unprotect()
         def oldMethodOut = methodOut
         methodOut = methodNode
         func()
         methodOut = oldMethodOut
+        if (prot) AbstractContext.protect()
     }
 
     void swapClass(ClassNode classNode, Closure func) {
@@ -2023,7 +2198,9 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     @Override
     List<PyExpression> visitStar_targets(PythonParser.Star_targetsContext ctx) {
         if (ctx.star_target().size() != 1) {
-            throw new TODO()
+            return ctx.star_target().collect {
+                visitStar_target(it)
+            }
         }
         return List.of(visitStar_target(ctx.star_target(0)))
     }
@@ -2044,11 +2221,49 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
+    List<PyExpression> visitSlices(PythonParser.SlicesContext ctx) {
+        return ctx.starred_expression().collect {
+            visitStarred_expression(it)
+        }.toList() as List<PyExpression> + ctx.slice().collect {
+            visitSlice(it)
+        }
+    }
+
+    @Override
+    PyExpression visitSlice(PythonParser.SliceContext ctx) {
+        if (ctx.COLON().size() == 0) {
+            if (ctx.expression().size() == 1) {
+                return visitExpression(ctx.expression(0))
+            } else if (ctx.named_expression() != null) {
+                return visitNamed_expression(ctx.named_expression())
+            }
+        } else if (ctx.COLON().size() == 1 && ctx.expression().size() == 2) {
+            return new SliceExpr(visitExpression(ctx.expression(0)), visitExpression(ctx.expression(1)), locate(ctx))
+        }
+        throw new TODO("DEBUG: visitSlice\n" + getTextFor(ctx))
+    }
+
+    @Override
     PyExpression visitTarget_with_star_atom(PythonParser.Target_with_star_atomContext ctx) {
-        if (ctx.LSQB() != null)
-            throw new IllegalStateException("DEBUG")
-        if (ctx.RSQB() != null)
-            throw new IllegalStateException("DEBUG")
+        if (ctx.LSQB() != null && ctx.RSQB() != null) {
+            if (ctx.t_primary() != null) {
+                if (ctx.slices() != null) {
+                    def primary = visitT_primary(ctx.t_primary())
+                    def slices = visitSlices(ctx.slices())
+                    switch (primary) {
+                        case PyNameReference:
+                            def set = new SymbolReferenceExpr(((PyNameReference) primary).name, primary.location)
+                            return new PySubscriptExpression(set, slices, locate(ctx))
+                        case PyExpression:
+                            return new PySubscriptExpression((PyExpression) primary, slices, locate(ctx))
+                        default:
+                            throw new RuntimeException("No supported matching target_with_star_atom found for:\n" + getTextFor(ctx))
+                    }
+                }
+            }
+
+            throw new RuntimeException("No supported matching target_with_star_atom found for:\n" + getTextFor(ctx))
+        }
         if (ctx.star_atom() != null) {
             Object o = visitStar_atom(ctx.star_atom())
             if (o instanceof Settable && (Settable) o instanceof PyExpression) {
@@ -2111,7 +2326,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 return new MemberAttrExpr(self, name.text, locate(tPrimaryContext))
             }
             return attr
-        } else if (visit instanceof PyNameReference && definingFunction != null) {
+        } else if (visit instanceof SymbolReferenceExpr && definingFunction != null) {
             if (definingInstance != null && visit.name == "self") {
                 return new MemberAttrExpr(new SelfExpr(definingInstance.type, visit.location), name.text, locate(ctx))
             }
@@ -2124,14 +2339,14 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                     Settable settable = (Settable) symbolToSet
                     PyExpression expression = (PyExpression) settable
                     return expression
-                } else throw new RuntimeException("E")
+                } else throw new CompilerException("Unknown symbol type! Got: " + symbolToSet.class.name, locate(ctx))
             }
             return definingFunction.defineVariable(visit.name, visit.location)
         } else if (visit instanceof PyNameReference) {
             throw new IllegalStateException("DEBUG")
+        } else {
+            throw new CompilerException("Unexpected primary '" + visit.class.name + "' for:\n" + getTextFor(ctx))
         }
-
-        throw new IllegalStateException("DEBUG")
     }
 
     static PySymbol getSymbolToSet(String name) {
@@ -2185,26 +2400,26 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    List<StarExpression> visitStar_expressions(PythonParser.Star_expressionsContext ctx) {
+    List<PyStarExpression> visitStar_expressions(PythonParser.Star_expressionsContext ctx) {
         if (ctx.star_expression().size() == 1) {
             return List.of(visitStar_expression(ctx.star_expression(0)))
         } else {
-            throw new RuntimeException("star_expressions not supported for:\n" + getTextFor(ctx))
+            return List.of(new PyStarExpression(new TupleExpr(ctx.star_expression().collect { PythonParser.Star_expressionContext it -> visitStar_expression(it) }, locate(ctx)), false, locate(ctx)))
         }
     }
 
     @Override
-    StarExpression visitStar_expression(PythonParser.Star_expressionContext ctx) {
+    PyStarExpression visitStar_expression(PythonParser.Star_expressionContext ctx) {
         PythonParser.Bitwise_orContext bitwiseOrContext = ctx.bitwise_or()
         if (ctx.STAR() != null) {
             throw new CompilerException("STAR not supported yet!", locate(ctx.STAR()))
         }
         if (bitwiseOrContext != null) {
-            return new StarExpression(visitBitwise_or(bitwiseOrContext), ctx.STAR() != null, locate(ctx))
+            return new PyStarExpression(visitBitwise_or(bitwiseOrContext), ctx.STAR() != null, locate(ctx))
         }
         PythonParser.ExpressionContext expression = ctx.expression()
         if (expression != null) {
-            return new StarExpression(visitExpression(expression), ctx.STAR() != null, locate(ctx))
+            return new PyStarExpression(visitExpression(expression), ctx.STAR() != null, locate(ctx))
         }
         throw new RuntimeException("No supported matching star_expression found for:\n" + getTextFor(ctx))
     }
@@ -2588,7 +2803,6 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
     @Override
     PyExpression visitFactor(PythonParser.FactorContext ctx) {
-        ctx.factor()
         if (ctx.MINUS() != null) {
             PythonParser.FactorContext otherContext = ctx.factor()
 
@@ -2598,12 +2812,25 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             } else {
                 value = visitPower(ctx.power())
             }
+            if (value instanceof ConstantExpr) {
+                def val = value.value()
+                if (val instanceof Integer) {
+                    value = new ConstantExpr(-val, locate(ctx))
+                } else if (val instanceof Long) {
+                    value = new ConstantExpr(-val, locate(ctx))
+                } else if (val instanceof Float) {
+                    value = new ConstantExpr(-val, locate(ctx))
+                } else if (val instanceof Double) {
+                    value = new ConstantExpr(-val, locate(ctx))
+                } else if (val instanceof Byte) {
+                    value = new ConstantExpr(-val, locate(ctx))
+                } else if (val instanceof Short) {
+                    value = new ConstantExpr(-val, locate(ctx))
+                }
+            }
             PyExpression finalValue = value
             PyEval.Operator operator = PyEval.Operator.UNARY_MINUS
             if (shouldNotCreateEval()) {
-                if (value != null) {
-                    return value
-                }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.start.line + ":" + ctx.start.charPositionInLine + ")")
             }
             return new PyEval(operator, finalValue, null, locate(ctx))
@@ -2621,9 +2848,6 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             PyExpression finalValue = value
             PyEval.Operator operator = PyEval.Operator.UNARY_PLUS
             if (shouldNotCreateEval()) {
-                if (value != null) {
-                    return value
-                }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.start.line + ":" + ctx.start.charPositionInLine + ")")
             }
             return new PyEval(operator, finalValue, null, locate(ctx))
@@ -2641,9 +2865,6 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             PyExpression finalValue = value
             PyEval.Operator operator = PyEval.Operator.UNARY_NOT
             if (shouldNotCreateEval()) {
-                if (value != null) {
-                    return value
-                }
                 throw new RuntimeException("Unary operator is not allowed in owner annotations (at " + fileName + ":" + ctx.start.line + ":" + ctx.start.charPositionInLine + ")")
             }
             return new PyEval(operator, finalValue, null, locate(ctx))
@@ -2707,53 +2928,64 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     }
 
     @Override
-    Object visitT_primary(PythonParser.T_primaryContext ctx) {
+    PyExpression visitT_primary(PythonParser.T_primaryContext ctx) {
         PythonParser.AtomContext atom = ctx.atom()
         PythonParser.T_primaryContext tPrimaryContext = ctx.t_primary()
-        if (tPrimaryContext != null) {
-            throw new RuntimeException("t_primary not supported for:\n" + getTextFor(ctx))
+        if (atom != null && tPrimaryContext != null) {
+            throw new CompilerException("Can't have both atom and t_primary", locate(ctx))
         }
-        PythonParser.ArgumentsContext arguments = ctx.arguments()
-        if (arguments != null) {
-            throw new RuntimeException("t_primary not supported for:\n" + getTextFor(ctx))
+        def expr = atom != null ? loadAtom(atom) : visitT_primary(tPrimaryContext)
+        if (ctx.LSQB() != null && ctx.RSQB() != null) {
+            expr = new PySubscriptExpression(expr, visitSlices(ctx.slices()), locate(ctx))
         }
-        if (atom != null) {
-            return visit(atom)
+        if (ctx.LPAR() != null) {
+            PythonParser.ArgumentsContext arguments = ctx.arguments()
+            List<PyExpression> parameters = visitArguments(arguments)
+            return new MemberCallExpr(expr, parameters, locate(ctx))
         }
-        throw new RuntimeException("No supported matching t_primary found for:\n" + getTextFor(ctx))
+        if (ctx.genexp() != null) {
+            throw new CompilerException("Generator expressions aren't supported yet!", locate(ctx))
+        }
+        if (ctx.DOT() != null && ctx.NAME() != null) {
+            String name = ctx.NAME().text
+            expr = new MemberAttrExpr(expr, name, locate(ctx))
+        }
+        if (ctx.NAME() != null && ctx.DOT() == null) {
+            throw new CompilerException("SyntaxError: invalid syntax", locate(ctx))
+        }
+        return expr
     }
 
     @Override
     PyExpression visitPrimary(PythonParser.PrimaryContext ctx) {
         PythonParser.PrimaryContext primaryContext = ctx.primary()
-        ctx.arguments()
+        def expr
         if (primaryContext != null) {
-            if (primaryContext.LPAR() == null) {
-                this.pushMemberContext(MemberContext.FIELD)
-            }
-            PyExpression parent = (PyExpression) visit(primaryContext)
-            if (primaryContext.LPAR() == null) {
-                this.popMemberContext()
-            }
-            if (ctx.DOT() != null && ctx.NAME() != null) {
-                String name = ctx.NAME().text
-                if (ctx.LPAR() != null) {
-                    @SuppressWarnings("unchecked")
-                    List<PyExpression> visit = (List<PyExpression>) visit(ctx.arguments())
-                    return new MemberCallExpr(new MemberAttrExpr(parent, name, locate(ctx)), visit, locate(ctx))
-                }
-                return new MemberAttrExpr(parent, name, locate(ctx))
-            }
-            if (ctx.LPAR() != null) {
-                PythonParser.ArgumentsContext arguments = ctx.arguments()
-                @SuppressWarnings("unchecked")
-                List<PyExpression> visit = arguments == null ? List.of() : visit(arguments) as List<PyExpression>
-                return new MemberCallExpr(parent, visit, locate(ctx))
-            }
-            return parent
+            expr = visitPrimary(primaryContext)
+        } else {
+            expr = loadAtom(ctx.atom())
+        }
+        if (ctx.LSQB() != null && ctx.RSQB() != null) {
+            expr = new PySubscriptExpression(expr, visitSlices(ctx.slices()), locate(ctx))
+        }
+        if (ctx.LPAR() != null) {
+            PythonParser.ArgumentsContext arguments = ctx.arguments()
+            @SuppressWarnings("unchecked")
+            List<PyExpression> visit = arguments == null ? List.<PyExpression> of() : visitArguments(arguments) as List<PyExpression>
+            expr = new MemberCallExpr(expr, visit, locate(ctx))
+        }
+        if (ctx.DOT() != null && ctx.NAME() != null) {
+            String name = ctx.NAME().text
+            expr = new MemberAttrExpr(expr, name, locate(ctx))
+        }
+        if (ctx.genexp() != null) {
+            throw new CompilerException("Generators (yield) are not supported yet!", locate(ctx))
         }
 
-        PythonParser.AtomContext atom = ctx.atom()
+        return expr
+    }
+
+    private PyExpression loadAtom(PythonParser.AtomContext atom) {
         if (atom != null) {
             PyAST visited = visitAtom(atom)
             if (Objects.requireNonNull(visited) instanceof PyExpression) {
@@ -2761,11 +2993,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 return pyExpression
             } else if (visited instanceof PyNameReference) {
                 PyNameReference pyNameReference = (PyNameReference) visited
-                if (ctx.LPAR() == null) {
-                    return new SymbolReferenceExpr(pyNameReference.name, pyNameReference.location)
-                } else {
-                    throw new RuntimeException("Failed to find suitable expression for symbol: " + pyNameReference.name + " at:\n" + getTextFor(ctx))
-                }
+                return new SymbolReferenceExpr(pyNameReference.name, pyNameReference.location)
             }
             throw new RuntimeException("Expression for variable assignment didn't find a match.")
         }
@@ -2867,7 +3095,28 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         if (group != null) {
             return visitGroup(group)
         }
+        def tuple = ctx.tuple()
+        if (tuple != null) {
+            return visitTuple(tuple)
+        }
         throw new RuntimeException("No supported matching atom found for:\n" + getTextFor(ctx))
+    }
+
+    @Override
+    PyExpression visitTuple(PythonParser.TupleContext ctx) {
+        List<PyExpression> expressions = []
+        def expression = ctx.star_named_expression()
+        if (expression != null) {
+            expressions.add(visitStar_named_expression(expression))
+            if (!ctx.star_named_expressions().empty) {
+                expressions.addAll(visitStar_named_expressions(ctx.star_named_expressions()))
+            }
+        } else if (!ctx.star_named_expressions().empty) {
+            expressions.addAll(visitStar_named_expressions(ctx.star_named_expressions()))
+        } else {
+            throw new RuntimeException("No supported matching tuple found for:\n" + getTextFor(ctx))
+        }
+        return new TupleExpr(expressions, locate(ctx))
     }
 
     PyExpression visitGroup(PythonParser.GroupContext ctx) {
@@ -3008,13 +3257,31 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
     def visitImport_stmt(PythonParser.Import_stmtContext ctx) {
         PythonParser.Import_nameContext importNameContext = ctx.import_name()
         if (importNameContext != null) {
-//            return visit(importNameContext);
+            return visitImport_name(importNameContext);
             throw new RuntimeException("import_name not supported for:\n" + getTextFor(ctx))
         }
         if (ctx.import_from() != null) {
             return visitImport_from(ctx.import_from())
         }
         throw new RuntimeException("No supported matching import_stmt found for:\n" + getTextFor(ctx))
+    }
+
+    @Override
+    Object visitImport_name(PythonParser.Import_nameContext ctx) {
+        def aliases = ctx.dotted_as_names().dotted_as_name().collect { visitDotted_as_name(it) }
+        return new PyImportStatement(aliases, locate(ctx))
+    }
+
+    @Override
+    PyAlias visitDotted_as_name(PythonParser.Dotted_as_nameContext ctx) {
+        def dottedName = ctx.dotted_name().text
+        def name = ctx.NAME()
+
+        if (name == null && dottedName.count(".") >= 1) {
+            throw new CompilerException("Can't compile import for " + dottedName, locate(ctx))
+        }
+
+        return new PyAlias(dottedName, name ?: dottedName, locate(ctx))
     }
 
     @Override
@@ -3097,8 +3364,8 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         PythonParser.StatementsContext statements = ctx.statements()
 
-        ModuleContext context = ModuleContext.pushContext()
-
+        definingModule = Module.create(new ModulePath((path + fileName).replace("/", ".")), locate(ctx))
+        pushContext(definingModule.context())
         for (PyBuiltinClass builtinClass : (builtins.classes)) {
             setSymbol(builtinClass.pyName, builtinClass)
         }
@@ -3118,17 +3385,37 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
 
         List<PyStatement> pyStatements = visitStatements(statements)
+        boolean first = true
         for (PyStatement statement : pyStatements) {
+            if (first && statement instanceof ExpressionStatement) {
+                def starExpr = ((ExpressionStatement) statement).expression.first
+                if (!starExpr.star() && starExpr.expression() instanceof ConstantExpr) {
+                    def constantExpr = (ConstantExpr) starExpr.expression()
+                    def value = constantExpr.value()
+                    if (value instanceof String) {
+                        definingModule.definition.doc = (String) value
+                    }
+                }
+            }
+            first = false
             definingModule.addStatement(statement)
         }
 
-        definingModule.writeClass(this, writer)
-
-        context.popContext(this)
+        AbstractContext.unprotect()
+        try {
+            definingModule.writeClass(this, writer)
+        } catch (e) {
+            AbstractContext.reset()
+            throw e
+        } finally {
+            AbstractContext.protect()
+        }
 
         while (context.popNeeded) {
             throw new CompilerException("Context still isn't empty after compiling module", writer.lastLocation())
         }
+        checkPop(writer.lastLocation())
+        context.popContext(this)
 
         if (methodOut != null) {
             throw new IllegalStateException("mv != null")
