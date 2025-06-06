@@ -6,6 +6,7 @@ import dev.ultreon.pythonc.JvmWriter
 import dev.ultreon.pythonc.Location
 import dev.ultreon.pythonc.PythonCompiler
 import dev.ultreon.pythonc.classes.JvmClass
+import dev.ultreon.pythonc.classes.PyClass
 import dev.ultreon.pythonc.expr.PyExpression
 import dev.ultreon.pythonc.expr.SelfExpr
 import dev.ultreon.pythonc.expr.VariableExpr

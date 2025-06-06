@@ -4,16 +4,35 @@ import dev.ultreon.pythonc.classes.PyClass;
 import org.codehaus.groovy.util.ArrayIterator;
 import org.python.builtins.*;
 import org.python.builtins.RuntimeError;
+import sun.misc.Unsafe;
 
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static org.python._internal.MetaDataManager.meta;
+
 public class ClassUtils {
+    private static final Unsafe unsafe;
+
+    static {
+        try {
+            Field field = Unsafe.class.getDeclaredField("theUnsafe");
+            field.setAccessible(true);
+            unsafe = (Unsafe) field.get(null);
+        } catch (Exception e) {
+            throw new PythonVMBug("Failed to get Unsafe instance: " + e.getMessage(), e);
+        }
+    }
+
     private static List<String> modules;
 
+    private ClassUtils() {
+
+    }
+
     public static Object initialize(Object obj) {
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
 
         if (obj instanceof PyObject) ((PyObject) obj).__init__(new Object[0], Map.of());
         if (meta == null) return obj;
@@ -27,10 +46,35 @@ public class ClassUtils {
         return obj;
     }
 
+    public static Object superCall(Object self) {
+        MetaData meta = meta(self);
+        Object o = meta.get("#supers");
+        if (o != null) {
+            return o;
+        }
+        Class<?>[] superClasses = (Class<?>[]) meta.get("#superClasses");
+        Object[] superObjects = new Object[superClasses.length];
+
+        for (int i = 0; i < superClasses.length; i++) {
+            superObjects[i] = newGhostObject(superClasses[i]);
+        }
+
+        meta.set("#supers", superObjects);
+        return self;
+    }
+
+    public static Object newGhostObject(Class<?> cls) {
+        try {
+            return unsafe.allocateInstance(cls);
+        } catch (InstantiationException e) {
+            throw new PythonVMBug("Failed to allocate instance of " + cls.getName() + ": " + e.getMessage(), e);
+        }
+    }
+
     public static Object getAttribute(Object obj, String name) {
         if (name.startsWith("#")) name = "\\" + name;
         if (obj == null) throw new AttributeError(name, null);
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError(name, obj);
         if (meta.has(name)) return meta.get(name);
         if (meta.has("#" + name + ":getter")) return call(meta.get("#" + name + ":getter"));
@@ -67,7 +111,7 @@ public class ClassUtils {
 
     private static boolean setAttr0(Object obj, String name, Object value, Exception e) {
         if (name.startsWith("#")) name = "\\" + name;
-        MetaData metaData = MetaDataManager.meta(obj);
+        MetaData metaData = meta(obj);
         if (metaData == null) throw new AttributeError(name, obj);
         Collection<String> slots = ClassUtils.getSlots(obj.getClass());
         if (slots == null || slots.contains(name)) {
@@ -91,7 +135,7 @@ public class ClassUtils {
     public static boolean hasAttribute(Object obj, String name) {
         if (name.startsWith("#")) name = "\\" + name;
         if (obj == null) return false;
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError(name, obj);
         if (meta.has(name) || meta.has("#" + name + ":getter") || meta.has("#" + name + ":setter")) return true;
 
@@ -108,7 +152,7 @@ public class ClassUtils {
         if (obj == null) throw new AttributeError(name, null);
         if (obj instanceof PyObject) throw new AttributeError(name);
 
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError(name, obj);
         if (meta.has(name)) {
             meta.del(name);
@@ -131,14 +175,14 @@ public class ClassUtils {
 
     public static Set<String> getDir(Object obj) {
         if (obj == null) throw new AttributeError("__dir__", null);
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError("__dir__", obj);
         if (meta.has("__dir__")) return (Set<String>) meta.get("__dir__");
         return meta.dir();
     }
 
     public static Object getDict(Object obj) {
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError("__dir__", obj);
         if (meta.has("__dict__")) return meta.get("__dict__");
 
@@ -146,7 +190,7 @@ public class ClassUtils {
     }
 
     public static Object getLength(Object obj) {
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError("__len__", obj);
         if (meta.has("__len__")) return call(meta.get("__len__"));
         if (obj.getClass().isArray()) return Array.getLength(obj);
@@ -193,7 +237,7 @@ public class ClassUtils {
                     // ignore
                 }
             } else {
-                MetaData meta = MetaDataManager.meta(obj);
+                MetaData meta = meta(obj);
                 if (meta == null) throw new AttributeError("__lt__", obj);
                 if (meta.has("__lt__")) {
                     Object lesser = call(meta.get("__lt__"), min);
@@ -266,7 +310,7 @@ public class ClassUtils {
     public static Object getInt(Object obj) {
         if (obj instanceof PyObject) return ((PyObject) obj).__int__();
         if (obj instanceof Number) return ((Number) obj).longValue();
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError("__int__", obj);
         return call(meta.get("__int__"), new Object[]{obj}, Collections.emptyMap());
     }
@@ -274,7 +318,7 @@ public class ClassUtils {
     public static Object getFloat(Object obj) {
         if (obj instanceof PyObject) return ((PyObject) obj).__float__();
         if (obj instanceof Number) return ((Number) obj).doubleValue();
-        MetaData meta = MetaDataManager.meta(obj);
+        MetaData meta = meta(obj);
         if (meta == null) throw new AttributeError("__float__", obj);
         return call(meta.get("__float__"), new Object[]{obj}, Collections.emptyMap());
     }
@@ -284,7 +328,7 @@ public class ClassUtils {
     }
 
     public static Object call(Object value, Object[] args, Map<String, Object> kwargs) {
-        MetaData metaData = MetaDataManager.meta(value);
+        MetaData metaData = meta(value);
         if (value instanceof PyObject) return ((PyObject) value).__call__(args, kwargs);
         if (value instanceof Method method) {
             if (!kwargs.isEmpty()) throw new TypeError("java functions do not support keyword arguments");
@@ -704,7 +748,7 @@ public class ClassUtils {
         try {
             Class<?> aClass = classLoader.loadClass(module);
             if (aClass == null) throw new OSError("could not import module '" + module + "'");
-            MetaData meta = MetaDataManager.meta(aClass);
+            MetaData meta = meta(aClass);
             return meta.get(name);
         } catch (ClassNotFoundException e1) {
             return loadPackage(module, name, classLoader);
@@ -732,8 +776,72 @@ public class ClassUtils {
         return importModule(module, "*");
     }
 
+    public static Object newModule(Class<?> type) {
+        MetaData meta = meta(type);
+        meta.set("__getattr__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
+                        .stackSize(1).flags(0).varNames("key")
+                        .filename("_builtins.class").name("__getattr__").firstLineNo(1).build(),
+                (args, _) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    return meta.get((String) arg);
+                }));
+        meta.set("__getattribute__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
+                        .stackSize(1).flags(0).varNames("key")
+                        .filename("_builtins.class").name("__getattribute__").firstLineNo(1).build(),
+                (args, kwargs) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    if (!meta.has((String) arg)) {
+                        PyObject attr = (PyObject) meta.get("__getattr__");
+                        if (attr == null) throw new AttributeError((String) arg, type);
+                        return attr.__call__(args, kwargs);
+                    }
+                    return meta.get((String) arg);
+                }));
+        meta.set("__setattr__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(2).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
+                        .stackSize(2).flags(0).varNames("key", "value")
+                        .filename("_builtins.class").name("__setattr__").firstLineNo(1).build(),
+                (args, _) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    meta.set((String) arg, args[1]);
+                    return null;
+                }));
+        meta.set("__delattr__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
+                        .stackSize(1).flags(0).varNames("key")
+                        .filename("_builtins.class").name("__delattr__").firstLineNo(1).build(),
+                (args, _) -> {
+                    Object arg = args[0];
+                    if (!(arg instanceof String))
+                        throw new TypeError("attribute co_name should be a str");
+
+                    meta.del((String) arg);
+                    return null;
+                }));
+        meta.set("__init__", PyFunction.dynamic(PyCode.builder()
+                        .argCount(0).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
+                        .stackSize(2).flags(PyCode.CO_VARARGS | PyCode.CO_VARKEYWORDS).varNames("args", "kwargs")
+                        .filename("_builtins.class").name("__init__").firstLineNo(1).build(),
+                (args, _) -> {
+                    ClassUtils.initialize(args[0]);
+                    return null;
+                }));
+
+        return type;
+    }
     public static Object newClass(Class<?> type) {
-        MetaData meta = MetaDataManager.meta(type);
+        MetaData meta = meta(type);
         meta.set("__getattr__", PyFunction.dynamic(PyCode.builder()
                         .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
                         .stackSize(1).flags(0).varNames("key")

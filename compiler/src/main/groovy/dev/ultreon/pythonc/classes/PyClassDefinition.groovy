@@ -1,12 +1,16 @@
 package dev.ultreon.pythonc.classes
 
 import dev.ultreon.pythonc.*
+import dev.ultreon.pythonc.expr.ConstantExpr
+import dev.ultreon.pythonc.expr.PyExpression
 import dev.ultreon.pythonc.functions.PyFunction
 import dev.ultreon.pythonc.statement.ClassContext
 import dev.ultreon.pythonc.statement.PyCompoundStatement
 import dev.ultreon.pythonc.statement.PyStatement
+import groovyjarjarasm.asm.tree.InnerClassNode
 import org.objectweb.asm.Label
 import org.objectweb.asm.Opcodes
+import org.objectweb.asm.Type
 import org.objectweb.asm.tree.FieldNode
 import org.objectweb.asm.tree.MethodNode
 
@@ -21,6 +25,7 @@ class PyClassDefinition extends PyCompoundStatement {
     public final PyFunctions functions = new PyFunctions()
     public final PyFields fields = new PyFields()
     String doc
+    PyModuleDefinition parent
 
     PyClassDefinition(ClassPath path, Location location, PyClass type) {
         super(location)
@@ -34,17 +39,24 @@ class PyClassDefinition extends PyCompoundStatement {
         ClassContext context = new ClassContext(this, SymbolContext.current())
         compiler.pushContext(context)
         compiler.classDefinition(type.type, classNode -> {
+            classNode.nestMembers = [parent.path.asType().internalName]
+            classNode.innerClasses = [new org.objectweb.asm.tree.InnerClassNode(type.type.internalName, parent.path.asType().internalName, type.name, Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC)]
+            def extendingPyClasses = []
             for (extendingClass in type.extendingClasses) {
                 if (extendingClass == null) continue
                 if (extendingClass.interface) {
                     classNode.interfaces.add extendingClass.type.internalName
                 } else {
-                    if (classNode.superName != null && classNode.superName != "java/lang/Object") throw new CompilerException("Class " + classNode.name + " cannot extend " + classNode.superName + " and " + extendingClass.type.internalName + " at the same time!", location)
-                    classNode.superName = extendingClass.type.internalName
+                    if (extendingClass instanceof JavaClass) {
+                        if (classNode.superName != null && classNode.superName != "java/lang/Object") throw new CompilerException("Class " + classNode.name + " cannot extend " + classNode.superName + " and " + extendingClass.type.internalName + " at the same time!", location)
+                        classNode.superName = extendingClass.type.internalName
+                    } else {
+                        extendingPyClasses.add(extendingClass)
+                    }
                 }
             }
 
-            writerClassInit(compiler, writer)
+            writerClassInit(compiler, writer, extendingPyClasses)
 
             for (PyCompoundStatement statement : compoundStatements) {
                 throw new TODO()
@@ -127,8 +139,20 @@ class PyClassDefinition extends PyCompoundStatement {
         })
     }
 
-    private void writerClassInit(PythonCompiler compiler, JvmWriter writer) {
-        compiler.classInit(methodNode -> {
+    private void writerClassInit(PythonCompiler compiler, JvmWriter writer, List extendingPyClasses) {
+        compiler.classInit(it -> {
+            initClassValue("__doc__", new ConstantExpr(doc ?: NoneType.None, location))
+            initClassValue("__builtins__", new ConstantExpr("builtins", location))
+
+            writer.loadClass(type)
+            writer.createArray(extendingPyClasses as List<PyClass>, Type.getType(Class))
+            writer.cast(Object)
+            writer.dynamicSetAttr("#superClasses")
+
+            it.visitLdcInsn(type.type)
+            it.visitMethodInsn(INVOKESTATIC, "org/python/_internal/ClassUtils", "newClass", "(Ljava/lang/Class;)Ljava/lang/Object;", false)
+            it.visitInsn(POP)
+
             for (PyStatement statement : statements) {
                 if (statement instanceof PyCompoundStatement) continue
                 statement.write compiler, writer
@@ -136,5 +160,14 @@ class PyClassDefinition extends PyCompoundStatement {
             }
             compiler.checkPop(location)
         })
+    }
+
+    void initClassValue(String name, PyExpression expr) {
+        def compiler = PythonCompiler.current
+        def writer = compiler.writer
+
+        writer.pushClass(type.type)
+        expr.write(compiler, writer)
+        writer.dynamicSetAttr(name)
     }
 }

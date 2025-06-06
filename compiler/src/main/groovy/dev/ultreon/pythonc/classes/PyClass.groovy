@@ -24,6 +24,7 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
     private JvmClass[] extendingClasses
     private JvmClass[] superClasses
     private JvmClass[] interfaces
+    Module parent
 
     PyClass(ClassNode classNode, Module owner, ClassReference[] extending, Type type, String name, Location location) {
         super(type, name, location)
@@ -38,11 +39,12 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
         return path
     }
 
-    static PyClass create(List<ClassReference> extending, Type objectType, String text, Location location) {
+    static PyClass create(List<ClassReference> extending, Type objectType, Type host, String text, Location location) {
         ClassNode classNode = new ClassNode()
         classNode.version = Opcodes.V1_8
-        classNode.access = Opcodes.ACC_PUBLIC
+        classNode.access = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC
         classNode.name = text
+        classNode.outerClass = host
         Module definingModule = PythonCompiler.current.definingModule
         if (definingModule == null) {
             throw new RuntimeException("definingModule is null")
@@ -55,7 +57,7 @@ class PyClass extends JvmClass implements JvmClassCompilable, FunctionDefiner {
             return superClasses
         }
 
-        JvmClass[] extending = extendingClasses
+        JvmClass[] extending = getExtendingClasses()
         List<JvmClass> superClasses = new ArrayList<>()
         for (JvmClass extend : extending) {
             if (!extend.interface) {

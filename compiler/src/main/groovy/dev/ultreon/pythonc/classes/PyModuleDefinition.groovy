@@ -9,6 +9,7 @@ import dev.ultreon.pythonc.statement.PyCompoundStatement
 import dev.ultreon.pythonc.statement.PyStatement
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
+import org.objectweb.asm.tree.InnerClassNode
 import org.objectweb.asm.tree.MethodNode
 
 import static org.objectweb.asm.Opcodes.*
@@ -54,6 +55,8 @@ class PyModuleDefinition extends PyCompoundStatement {
 
     def addClass(PyClass clazz) {
         classes.add(clazz)
+        clazz.parent = this.type
+        clazz.definition.parent = this
     }
 
     def addFunction(PyFunction function) {
@@ -78,7 +81,12 @@ class PyModuleDefinition extends PyCompoundStatement {
                 context.setSymbol(builtinFunction.name, builtinFunction)
             }
 
+            it.innerClasses = []
+            it.nestMembers = []
             for (type in classes) {
+                it.innerClasses.add(new InnerClassNode(type.type.internalName, this.type.type.internalName, type.name.substring(type.name.lastIndexOf('$') + 1), Opcodes.ACC_PUBLIC + Opcodes.ACC_STATIC))
+                it.nestMembers.add(type.type.internalName)
+
                 context.setSymbol(type.name, type)
             }
             for (field in functions) {
@@ -120,7 +128,7 @@ class PyModuleDefinition extends PyCompoundStatement {
     def writeClassInit(PythonCompiler compiler, JvmWriter writer) {
         compiler.classInit {
             it.visitLdcInsn(type.type)
-            it.visitMethodInsn(INVOKESTATIC, "org/python/_internal/ClassUtils", "newClass", "(Ljava/lang/Class;)Ljava/lang/Object;", false)
+            it.visitMethodInsn(INVOKESTATIC, "org/python/_internal/ClassUtils", "newModule", "(Ljava/lang/Class;)Ljava/lang/Object;", false)
             it.visitInsn(POP)
 
             initClassValue("__module__", new ConstantExpr(path.toString(), location))

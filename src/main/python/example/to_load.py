@@ -1,4 +1,8 @@
 class TestButton:
+    """
+    Hello Sir!
+    """
+
     def __init__(self, a: int, b: int):
         print("Hello, world!")
 
@@ -7,6 +11,17 @@ class TestButton:
 
     def sum(self) -> int:
         return self.a + self.b
+
+
+class HelloWorld:
+    def __init__(self, a: int, b: int):
+        print("a = ", a, " b = ", b, " sum = ", a + b, "")
+
+
+class TestButton2(HelloWorld):
+    def __init__(self, a: int, b: int):
+        while True:
+            super().__init__(a, b)
 
 
 def init():

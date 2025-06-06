@@ -22,7 +22,8 @@ class ClassReference extends JvmClass implements SymbolReference {
     @Override
     JvmClass resolve(PythonCompiler compiler) {
         if (resolved != null) return resolved
-        PySymbol symbol = name.symbol()
+        def name = name.name
+        PySymbol symbol = this.name.symbol()
         if (symbol instanceof JvmClass) {
             this.resolved = (JvmClass) symbol
             return (JvmClass) symbol
@@ -30,10 +31,10 @@ class ClassReference extends JvmClass implements SymbolReference {
             PyFromImportStatement.ImportedSymbol importedSymbol = (PyFromImportStatement.ImportedSymbol) symbol
             if (importedSymbol.value instanceof JvmClass) return (JvmClass) importedSymbol.value
             else {
-                throw new CompilerException("Unresolved class: " + name, location)
+                throw new CompilerException("Unresolved class: " + this.name, location)
             }
         }
-        throw new CompilerException("Unresolved class: " + name, location)
+        throw new CompilerException("Unresolved class: " + this.name, location)
     }
 
     @Override

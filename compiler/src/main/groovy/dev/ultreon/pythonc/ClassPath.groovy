@@ -25,8 +25,8 @@ final class ClassPath {
     }
 
     Type asType() {
-        String internalPath = path.toString().replace(".", "/")
-        return Type.getObjectType(internalPath + "/" + name)
+        String internalPath = path.asType().internalName
+        return Type.getObjectType(internalPath + "\$" + name)
     }
 
     ModulePath path() {

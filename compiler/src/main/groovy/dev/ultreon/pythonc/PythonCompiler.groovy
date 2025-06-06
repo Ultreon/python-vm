@@ -1,7 +1,6 @@
 package dev.ultreon.pythonc
 
 import com.google.common.base.CaseFormat
-import dev.ultreon.pythonc.Context
 import dev.ultreon.pythonc.classes.*
 import dev.ultreon.pythonc.expr.*
 import dev.ultreon.pythonc.expr.fstring.FStringElement
@@ -980,8 +979,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 definingFunction = new PyFunction(definingClass, "<init>", parameters.toArray(PyParameter[]::new), classCache.void_(this), false, location)
                 definingFunction.node.visitVarInsn(Opcodes.ALOAD, 0)
 
-                def supers = definingClass.superClasses()
-                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, supers.length == 0 ? "java/lang/Object" : supers[0].type.internalName, "<init>", "()V", false)
+                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false)
 
                 callPyInit(ctx, definingClass, definingFunction.node, parameters, sig)
 
@@ -995,8 +993,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
                 definingFunction = new PyFunction(definingClass, "<init>", parameters.toArray(PyParameter[]::new), classCache.void_(this), false, location)
                 definingFunction.node.visitVarInsn(Opcodes.ALOAD, 0)
 
-                def supers = definingClass.superClasses()
-                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, supers.length == 0 ? "java/lang/Object" : supers[0].type.internalName, "<init>", "()V", false)
+                definingFunction.node.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false)
 
                 for (JvmClass jvmClass : definingClass.superClasses()) {
                     // TODO Multiple inheritance
@@ -1488,12 +1485,11 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
             }
         }
 
-        String classname = (path + fileName + "/" + name.text).replace("/", ".")
-        PyClass value = PyClass.create(extending, Type.getObjectType(classname.replace(".", "/")), name.text, locate(ctx))
+        PyClass value = PyClass.create(extending, new ClassPath(definingModule.path(), name.text).asType(), definingModule.path().asType(), name.text, locate(ctx))
         this.definingClass = value
         JvmClassCompilable oldCompilingClass = compilingClass
         this.compilingClass = value
-        undefinedClasses.remove(classname)
+        undefinedClasses.remove(new ClassPath(definingModule.path(), name.text).asType().className)
 
         classes.add(value)
         classCache.add(this, value)
@@ -1523,6 +1519,7 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
         }
 
         this.methodOut = null
+        setSymbol(name.getText(), compilingClass)
 
         compilingClass = oldCompilingClass
 
@@ -3426,10 +3423,6 @@ class PythonCompiler extends PythonParserBaseVisitor<Object> {
 
         classOut = null
         return Unit.Instance
-    }
-
-    private String getName() {
-        return path + CaseFormat.LOWER_UNDERSCORE.to(CaseFormat.UPPER_CAMEL, fileName) + "Py"
     }
 
     byte[] evalCompile(String code) {

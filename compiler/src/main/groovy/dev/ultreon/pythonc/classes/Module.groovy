@@ -40,11 +40,11 @@ class Module extends JvmModule implements JvmClassCompilable, FunctionDefiner {
     }
 
     void addClass(PyClass type) {
-        this.definition.classes.add(type)
+        this.definition.addClass(type)
     }
 
     void addFunction(PyFunction function) {
-        this.definition.functions.add(function)
+        this.definition.addFunction(function)
     }
 
     MemberAttrExpr defineVariable(String name, Location location) {

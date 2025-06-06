@@ -1,11 +1,11 @@
 package org.python._internal;
 
+import org.python.builtins.AttributeError;
 import org.python.builtins.ImportError;
+import sun.misc.Unsafe;
 
-import java.lang.invoke.CallSite;
-import java.lang.invoke.ConstantCallSite;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
+import java.lang.invoke.*;
+import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.Set;
 
@@ -102,7 +102,14 @@ public class DynamicCalls {
     public static CallSite bootstrap(MethodHandles.Lookup lookup, String name, MethodType type) {
         Class<?> aClass = lookup.lookupClass();
 
-        if (name.equals("__add__")) {
+
+        if (name.equals("__super__")) {
+            try {
+                return new ConstantCallSite(MethodHandles.lookup().findStatic(ClassUtils.class, "superCall", MethodType.methodType(Object.class, Object.class)));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
+                throw new PythonVMBug(e);
+            }
+        } else if (name.equals("__add__")) {
             try {
                 return new ConstantCallSite(MethodHandles.lookup().findStatic(Py.class, "__add__", MethodType.methodType(Object.class, Object.class, Object.class)));
             } catch (NoSuchMethodException | IllegalAccessException e) {
