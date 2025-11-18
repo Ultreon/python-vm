@@ -9,9 +9,7 @@
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/compiler" />
-            <option value="$PROJECT_DIR$/examples" />
-            <option value="$PROJECT_DIR$/pylib" />
-            <option value="$PROJECT_DIR$/testing" />
+            <option value="$PROJECT_DIR$/sdk" />
           </set>
         </option>
       </GradleProjectSettings>

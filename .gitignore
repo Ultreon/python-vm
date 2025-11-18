@@ -1,12 +1,15 @@
-# Ignore Gradle project-specific cache directory
-.gradle
-
-# Ignore Gradle build output directory
-build
-
-.idea/
-*.iml
-*.ipr
-._*
-
-*.class
+/.profileconfig.json
+/*/build/
+/build/
+/.gradle/
+/.venv/
+/.idea/
+/pyvm/compiler/build/
+/sdk/src/main/python1/
+/pyvm/compiler/.idea/inspectionProfiles/profiles_settings.xml
+/pyvm/compiler/.idea/inspectionProfiles/Project_Default.xml
+/pyvm/compiler/.idea/.gitignore
+/pyvm/compiler/.idea/compiler.iml
+/pyvm/compiler/.idea/misc.xml
+/pyvm/compiler/.idea/modules.xml
+/pyvm/compiler/.idea/vcs.xml
