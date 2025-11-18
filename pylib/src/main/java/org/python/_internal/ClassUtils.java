@@ -408,13 +408,13 @@ public class ClassUtils {
         stack.push(aClass);
         while (!stack.isEmpty()) {
             for (Method method : aClass.getMethods()) {
-                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), _ -> new ArrayList<>());
+                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), s -> new ArrayList<>());
                 if (methods.contains(method)) continue;
                 methods.add(method);
             }
 
             for (Method method : aClass.getDeclaredMethods()) {
-                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), _ -> new ArrayList<>());
+                List<Method> methods = methodsByName.computeIfAbsent(method.getName(), s -> new ArrayList<>());
                 if (methods.contains(method)) continue;
                 methods.add(method);
             }
@@ -782,7 +782,7 @@ public class ClassUtils {
                         .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
                         .stackSize(1).flags(0).varNames("key")
                         .filename("_builtins.class").name("__getattr__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     Object arg = args[0];
                     if (!(arg instanceof String))
                         throw new TypeError("attribute co_name should be a str");
@@ -809,7 +809,7 @@ public class ClassUtils {
                         .argCount(2).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
                         .stackSize(2).flags(0).varNames("key", "value")
                         .filename("_builtins.class").name("__setattr__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     Object arg = args[0];
                     if (!(arg instanceof String))
                         throw new TypeError("attribute co_name should be a str");
@@ -821,7 +821,7 @@ public class ClassUtils {
                         .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
                         .stackSize(1).flags(0).varNames("key")
                         .filename("_builtins.class").name("__delattr__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     Object arg = args[0];
                     if (!(arg instanceof String))
                         throw new TypeError("attribute co_name should be a str");
@@ -833,7 +833,7 @@ public class ClassUtils {
                         .argCount(0).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
                         .stackSize(2).flags(PyCode.CO_VARARGS | PyCode.CO_VARKEYWORDS).varNames("args", "kwargs")
                         .filename("_builtins.class").name("__init__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     ClassUtils.initialize(args[0]);
                     return null;
                 }));
@@ -846,7 +846,7 @@ public class ClassUtils {
                         .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
                         .stackSize(1).flags(0).varNames("key")
                         .filename("_builtins.class").name("__getattr__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     Object arg = args[0];
                     if (!(arg instanceof String))
                         throw new TypeError("attribute co_name should be a str");
@@ -873,7 +873,7 @@ public class ClassUtils {
                         .argCount(2).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
                         .stackSize(2).flags(0).varNames("key", "value")
                         .filename("_builtins.class").name("__setattr__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     Object arg = args[0];
                     if (!(arg instanceof String))
                         throw new TypeError("attribute co_name should be a str");
@@ -885,7 +885,7 @@ public class ClassUtils {
                         .argCount(1).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(1)
                         .stackSize(1).flags(0).varNames("key")
                         .filename("_builtins.class").name("__delattr__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     Object arg = args[0];
                     if (!(arg instanceof String))
                         throw new TypeError("attribute co_name should be a str");
@@ -897,7 +897,7 @@ public class ClassUtils {
                         .argCount(0).posOnlyArgCount(0).kwOnlyArgCount(0).nLocals(2)
                         .stackSize(2).flags(PyCode.CO_VARARGS | PyCode.CO_VARKEYWORDS).varNames("args", "kwargs")
                         .filename("_builtins.class").name("__init__").firstLineNo(1).build(),
-                (args, _) -> {
+                (args, m) -> {
                     ClassUtils.initialize(args[0]);
                     return null;
                 }));

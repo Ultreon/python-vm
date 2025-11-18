@@ -161,7 +161,7 @@ public final class MetaDataManager {
     private static void initializeClass(Class<?> aClass) {
         try {
             MethodHandles.lookup().ensureInitialized(aClass);
-        } catch (IllegalAccessException _) {
+        } catch (IllegalAccessException e) {
             throw new TypeError("cannot access class " + aClass.getName());
         }
     }
